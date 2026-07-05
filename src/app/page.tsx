@@ -7,15 +7,16 @@ type BillerItem = {
   item_code: string;
   name: string;
   biller_name: string;
+  short_name: string;
   amount: number;
   is_airtime: boolean;
   label_name: string;
 };
 
 const TABS = [
-  { key: "electricity", label: "Electricity", match: (b: BillerItem) => /ELECTRIC|DISCO|PREPAID|POSTPAID|EKEDC|IKEDC|EEDC|AEDC|IBEDC|PHED|KEDCO|BEDC|JED|YEDC/i.test(b.biller_name + " " + b.name) },
-  { key: "cable", label: "Cable TV", match: (b: BillerItem) => /DSTV|GOTV|STARTIMES|SHOWMAX|CABLE/i.test(b.biller_name + " " + b.name) },
-  { key: "airtime", label: "Airtime", match: (b: BillerItem) => b.is_airtime },
+  { key: "electricity", label: "Electricity", match: (b: BillerItem) => /ELECTRIC|DISCO|PREPAID METER|EKEDC|IKEDC|EEDC|AEDC|IBEDC|PHED|KEDCO|BEDC|JED|YEDC|ABUJA|ENUGU DISCO|KANO DISCO|KADUNA/i.test(b.biller_name + " " + b.name) },
+  { key: "cable", label: "Cable TV", match: (b: BillerItem) => /DSTV|GOTV|STARTIMES|SHOWMAX/i.test(b.biller_name + " " + b.name) },
+  { key: "airtime", label: "Airtime", match: (b: BillerItem) => b.is_airtime || /VTU|AIRTIME/i.test(b.biller_name + " " + b.name + " " + (b.short_name ?? "")) },
   { key: "data", label: "Data", match: (b: BillerItem) => /DATA/i.test(b.biller_name + " " + b.name) && !b.is_airtime },
 ];
 
