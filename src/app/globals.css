@@ -1,0 +1,18 @@
+@import url('https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@400;600;800&family=Instrument+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap');
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body { @apply bg-night text-paper font-body antialiased; }
+
+/* Signature: the filament flicker — NEPA coming back on */
+@keyframes upnepa-flicker {
+  0% { opacity: 0.1; } 8% { opacity: 0.9; } 12% { opacity: 0.2; }
+  20% { opacity: 1; } 24% { opacity: 0.4; } 34% { opacity: 1; }
+  38% { opacity: 0.7; } 100% { opacity: 1; }
+}
+.flicker { animation: upnepa-flicker 1.6s ease-out both; }
+@media (prefers-reduced-motion: reduce) { .flicker { animation: none; } }
+
+input, select { @apply bg-panel border border-line rounded-lg px-3 py-2.5 w-full text-paper placeholder:text-haze/50 focus:outline-none focus:border-tungsten/70; }
+label { @apply block text-xs uppercase tracking-widest text-haze mb-1.5 font-mono; }
