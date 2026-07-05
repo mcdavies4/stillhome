@@ -5,8 +5,8 @@ import { validateCustomer } from "@/lib/flutterwave";
 import { quoteGbp, gbp, ngn } from "@/lib/fx";
 
 // Creates the order row + Stripe Checkout session.
-// Re-validates the identifier server-side — never trust the client's
-// earlier validate call.
+// Re-validates the identifier server-side where the biller supports it —
+// airtime/data have no validation (the phone number IS the account).
 export async function POST(req: Request) {
   try {
     const b = await req.json();
@@ -16,7 +16,16 @@ export async function POST(req: Request) {
     }
 
     const identifier = String(b.identifier).trim();
-    const v = await validateCustomer(b.itemCode, b.billerCode, identifier);
+
+    let v: { name: string | null } = { name: null };
+    try {
+      v = await validateCustomer(b.itemCode, b.billerCode, identifier);
+    } catch (err) {
+      // Airtime/data have no validation; only hard-fail for validatable billers
+      const noValidate = /VTU|AIRTIME|DATA/i.test(`${b.billerName} ${b.itemCode}`);
+      if (!noValidate) throw err;
+    }
+
     const quote = quoteGbp(Number(b.amountNgn));
 
     const db = supabaseAdmin();
