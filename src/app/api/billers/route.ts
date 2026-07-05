@@ -8,7 +8,7 @@ export async function GET() {
     const items = await getBillCategories();
     const seen = new Set<string>();
     const deduped = items.filter((i) => {
-      const key = `${i.biller_code}:${i.item_code}`;
+      const key = `${i.biller_code}:${i.item_code}:${i.short_name ?? i.name}`;
       if (seen.has(key)) return false;
       seen.add(key);
       return true;
