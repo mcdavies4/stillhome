@@ -47,9 +47,17 @@ export default function Home() {
   }, [items, tab]);
 
   const fixedAmount = item && item.amount > 0;
+  const isNoValidate = (i: BillerItem | null) =>
+    !!i && (i.is_airtime || /VTU|AIRTIME|DATA/i.test(i.biller_name + " " + i.name));
 
   async function validate() {
     if (!item || !identifier) return;
+    // Airtime & data have no name lookup — the phone number is the account.
+    if (isNoValidate(item)) {
+      setValidated({ name: null });
+      setError(null);
+      return;
+    }
     setBusy("validate");
     setError(null);
     setValidated(null);
@@ -136,16 +144,16 @@ export default function Home() {
         </div>
         <label>Provider / plan</label>
         <select
-          value={item?.item_code ?? ""}
+          value={item ? `${item.biller_code}:${item.item_code}` : ""}
           onChange={(e) => {
-            const found = tabItems.find((i) => i.item_code === e.target.value) ?? null;
+            const found = tabItems.find((i) => `${i.biller_code}:${i.item_code}` === e.target.value) ?? null;
             setItem(found);
             setValidated(null);
           }}
         >
           <option value="">Select…</option>
           {tabItems.map((i) => (
-            <option key={i.item_code + i.biller_code} value={i.item_code}>
+            <option key={i.biller_code + i.item_code} value={`${i.biller_code}:${i.item_code}`}>
               {i.name}{i.amount > 0 ? ` — ${fmtNgn(i.amount)}` : ""}
             </option>
           ))}
@@ -160,8 +168,8 @@ export default function Home() {
           <input
             value={identifier}
             onChange={(e) => { setIdentifier(e.target.value); setValidated(null); }}
-            placeholder={item.is_airtime ? "+234..." : "e.g. 04512345678"}
-            inputMode={item.is_airtime ? "tel" : "text"}
+            placeholder={isNoValidate(item) ? "+234..." : "e.g. 04512345678"}
+            inputMode={isNoValidate(item) ? "tel" : "text"}
           />
           {!fixedAmount && (
             <div className="mt-3">
@@ -179,14 +187,16 @@ export default function Home() {
             disabled={busy !== null || !identifier}
             className="mt-4 w-full py-3 rounded-xl border border-tungsten/60 text-tungsten font-semibold hover:bg-tungsten/10 disabled:opacity-40"
           >
-            {busy === "validate" ? "Checking…" : "Check account name"}
+            {busy === "validate" ? "Checking…" : isNoValidate(item) ? "Confirm number" : "Check account name"}
           </button>
 
           {validated && (
             <div className="mt-4 border border-ok/40 bg-ok/10 rounded-xl p-4">
-              <p className="font-mono text-xs text-ok uppercase tracking-widest mb-1">Account found</p>
+              <p className="font-mono text-xs text-ok uppercase tracking-widest mb-1">
+                {validated.name ? "Account found" : "Number confirmed"}
+              </p>
               <p className="font-display text-xl font-semibold">
-                {validated.name ?? "Verified"}
+                {validated.name ?? identifier}
               </p>
               <p className="text-haze text-sm mt-1">
                 Confirm this is who you meant — bill payments can’t be reversed
