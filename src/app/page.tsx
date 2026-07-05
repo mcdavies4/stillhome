@@ -13,6 +13,8 @@ type BillerItem = {
   label_name: string;
 };
 
+const itemKey = (i: BillerItem) => `${i.biller_code}:${i.item_code}:${i.short_name ?? i.name}`;
+
 const TABS = [
   { key: "electricity", label: "Electricity", match: (b: BillerItem) => /ELECTRIC|DISCO|PREPAID METER|EKEDC|IKEDC|EEDC|AEDC|IBEDC|PHED|KEDCO|BEDC|JED|YEDC|ABUJA|ENUGU DISCO|KANO DISCO|KADUNA/i.test(b.biller_name + " " + b.name) },
   { key: "cable", label: "Cable TV", match: (b: BillerItem) => /DSTV|GOTV|STARTIMES|SHOWMAX/i.test(b.biller_name + " " + b.name) },
@@ -144,16 +146,16 @@ export default function Home() {
         </div>
         <label>Provider / plan</label>
         <select
-          value={item ? `${item.biller_code}:${item.item_code}` : ""}
+          value={item ? itemKey(item) : ""}
           onChange={(e) => {
-            const found = tabItems.find((i) => `${i.biller_code}:${i.item_code}` === e.target.value) ?? null;
+            const found = tabItems.find((i) => itemKey(i) === e.target.value) ?? null;
             setItem(found);
             setValidated(null);
           }}
         >
           <option value="">Select…</option>
           {tabItems.map((i) => (
-            <option key={i.biller_code + i.item_code} value={`${i.biller_code}:${i.item_code}`}>
+            <option key={itemKey(i)} value={itemKey(i)}>
               {i.name}{i.amount > 0 ? ` — ${fmtNgn(i.amount)}` : ""}
             </option>
           ))}
@@ -245,7 +247,7 @@ export default function Home() {
             Terms, refunds &amp; privacy
           </a>
         </p>
-        <p className="mt-2">© {new Date().getFullYear()} The 36th Company Ltd</p>
+        <p className="mt-2">© {new Date().getFullYear()} The 36th Solutions Ltd</p>
       </footer>
     </main>
   );
