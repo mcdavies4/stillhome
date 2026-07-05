@@ -12,9 +12,6 @@ import { sendWhatsApp, receiptText } from "@/lib/whatsapp";
 //     -> vend via Flutterwave Bills (idempotent reference = order id)
 //     -> success: store token, receipt via WhatsApp, status=fulfilled
 //     -> failure: auto-refund the Stripe payment, status=failed_refunded
-//
-// Non-refundable at FLW means: never vend twice (idempotency), never keep
-// money for a failed vend (auto-refund). Customer can never lose money.
 
 export async function POST(req: Request) {
   const sig = req.headers.get("stripe-signature");
@@ -56,9 +53,13 @@ export async function POST(req: Request) {
   const reference = `STILLHOME-${order.id}`;
 
   try {
-    // Fail fast if the NGN float can't cover this vend (cheaper than a
-    // failed vend + refund cycle, and it pages you to top up).
-    const balance = await getNgnBalance().catch(() => Number.MAX_SAFE_INTEGER);
+    // Fail fast if the NGN float can't cover this vend — live mode only.
+    // Sandbox wallets are ₦0 and FLW simulates vends without balance.
+    const isTestMode = (process.env.FLW_SECRET_KEY ?? "").startsWith("FLWSECK_TEST");
+    const balance = isTestMode
+      ? Number.MAX_SAFE_INTEGER
+      : await getNgnBalance().catch(() => Number.MAX_SAFE_INTEGER);
+
     if (balance < Number(order.amount_ngn)) {
       throw new FlwError(
         `Insufficient wallet balance (₦${balance.toLocaleString()}) for ₦${Number(order.amount_ngn).toLocaleString()} vend`
