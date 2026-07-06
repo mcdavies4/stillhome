@@ -51,14 +51,11 @@ export async function POST(req: Request) {
 
   if (!order) return NextResponse.json({ received: true, note: "already processed" });
 
-  const reference = `STILLHOME-${order.id}`;
+  const reference = `NOLGIC-${order.id}`;
 
   try {
     // Fail fast if the NGN float can't cover this vend — live mode only.
-<<<<<<< HEAD
     // Sandbox wallets are ₦0 and FLW simulates vends without balance.
-=======
->>>>>>> efae5e23ed39faeeedcb1f8edfb2d38ce72c15b6
     const isTestMode = (process.env.FLW_SECRET_KEY ?? "").startsWith("FLWSECK_TEST");
     const balance = isTestMode
       ? Number.MAX_SAFE_INTEGER
@@ -129,6 +126,7 @@ export async function POST(req: Request) {
         `Order ${order.id} (${order.biller_name} ₦${Number(order.amount_ngn).toLocaleString()})\nError: ${errMsg}`
       );
     } catch (refundErr: any) {
+      // Worst case: needs a human. Surface loudly.
       await db
         .from("orders")
         .update({ status: "refund_failed", error: `${errMsg} | REFUND FAILED: ${refundErr.message}` })
@@ -139,6 +137,7 @@ export async function POST(req: Request) {
       );
     }
 
+    // 200 so Stripe doesn't retry — we've handled it terminally.
     return NextResponse.json({ fulfilled: false, refunded: true });
   }
 }

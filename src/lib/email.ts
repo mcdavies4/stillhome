@@ -33,21 +33,21 @@ export async function sendReceiptEmail(o: OrderForEmail, opts?: { tokenFollowUp?
   const text =
     (opts?.tokenFollowUp
       ? `Good news — the provider has issued the meter token for your payment.\n\n`
-      : `Your StillHome payment was delivered.\n\n`) +
+      : `Your Nolgic payment was delivered.\n\n`) +
     `Service: ${o.biller_name}\n` +
     `${o.identifier_label}: ${o.identifier}\n` +
     (o.customer_name ? `Account: ${o.customer_name}\n` : ``) +
     `Amount: ${ngn} (charged ${gbp})\n\n` +
     (/(ELECTRIC|DISCO|PREPAID|METER)/i.test(o.biller_name) || o.flw_token ? tokenBlock : ``) +
     `Order page (keep this link): ${orderUrl}\n\n` +
-    `Questions? Reply to this email.\n— StillHome, The 36th Solutions Ltd`;
+    `Questions? Reply to this email.\n— Nolgic, The 36th Solutions Ltd`;
 
   try {
     const res = await fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
       body: JSON.stringify({
-        from: process.env.EMAIL_FROM ?? "StillHome <receipts@songsnap.online>",
+        from: process.env.EMAIL_FROM ?? "Nolgic <receipts@songsnap.online>",
         to: [o.email],
         reply_to: "the36thltd@outlook.com",
         subject,

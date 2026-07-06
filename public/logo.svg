@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 520 140" role="img" aria-label="Nolgic">
+  <defs>
+    <radialGradient id="glow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#FFB627" stop-opacity="0.55"/>
+      <stop offset="60%" stop-color="#FFB627" stop-opacity="0.18"/>
+      <stop offset="100%" stop-color="#FFB627" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <!-- halo behind the bulb-o -->
+  <circle cx="163" cy="70" r="58" fill="url(#glow)"/>
+
+  <!-- n -->
+  <path d="M40 100 V52 q0 -14 14 -14 h6 q14 0 14 14 v48" fill="none" stroke="#F5F2E9" stroke-width="13" stroke-linecap="round"/>
+
+  <!-- o as tungsten bulb with filament -->
+  <circle cx="163" cy="70" r="30" fill="none" stroke="#FFB627" stroke-width="13"/>
+  <path d="M150 70 q6.5 -9 13 0 t13 0" fill="none" stroke="#FFB627" stroke-width="5" stroke-linecap="round"/>
+
+  <!-- l -->
+  <path d="M218 30 V100" fill="none" stroke="#F5F2E9" stroke-width="13" stroke-linecap="round"/>
+
+  <!-- g -->
+  <circle cx="270" cy="70" r="24" fill="none" stroke="#F5F2E9" stroke-width="13"/>
+  <path d="M294 48 v54 q0 22 -22 22 h-14" fill="none" stroke="#F5F2E9" stroke-width="13" stroke-linecap="round"/>
+
+  <!-- i with tungsten dot -->
+  <path d="M334 52 V100" fill="none" stroke="#F5F2E9" stroke-width="13" stroke-linecap="round"/>
+  <circle cx="334" cy="28" r="8.5" fill="#FFB627"/>
+
+  <!-- c -->
+  <path d="M414 52 a26 26 0 1 0 0 36" fill="none" stroke="#F5F2E9" stroke-width="13" stroke-linecap="round"/>
+</svg>

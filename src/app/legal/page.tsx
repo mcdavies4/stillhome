@@ -1,19 +1,19 @@
-export const metadata = { title: "Terms, Refunds & Privacy — StillHome" };
+export const metadata = { title: "Terms, Refunds & Privacy — Nolgic" };
 
 export default function Legal() {
   return (
     <main className="max-w-xl mx-auto px-5 py-16 leading-relaxed">
       <h1 className="font-display font-extrabold text-3xl mb-2">Terms, Refunds &amp; Privacy</h1>
       <p className="text-haze text-sm mb-10">
-        StillHome is operated by The 36th Solutions Ltd. Last updated July 2026.
+        Nolgic is operated by The 36th Solutions Ltd. Last updated July 2026.
       </p>
 
-      <h2 className="font-display font-semibold text-xl mb-3">What StillHome is</h2>
+      <h2 className="font-display font-semibold text-xl mb-3">What Nolgic is</h2>
       <p className="text-haze mb-8">
-        StillHome sells prepaid digital products: electricity tokens, TV
+        Nolgic sells prepaid digital products: electricity tokens, TV
         subscriptions, mobile airtime and data for Nigerian service providers.
         When you pay, you are buying a product from us at the pound price shown
-        at checkout — StillHome is not a money transfer or remittance service
+        at checkout — Nolgic is not a money transfer or remittance service
         and does not send, hold or convert money on your behalf. The naira
         value shown describes the product you are buying, not an exchange we
         perform for you.
@@ -64,7 +64,7 @@ export default function Legal() {
         Support: the36thltd@outlook.com — The 36th Solutions Ltd.
       </p>
 
-      <a href="/" className="text-tungsten underline underline-offset-4">← Back to StillHome</a>
+      <a href="/" className="text-tungsten underline underline-offset-4">← Back to Nolgic</a>
     </main>
   );
 }

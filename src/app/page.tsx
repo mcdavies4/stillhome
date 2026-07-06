@@ -122,7 +122,7 @@ export default function Home() {
   return (
     <main className="max-w-5xl mx-auto px-5 pb-24">
       {/* ── Hero: the thesis + the payoff ─────────────────────── */}
-      <header className="pt-14 pb-16 grid md:grid-cols-2 gap-10 items-center">
+      <header className="pt-10 pb-16 grid md:grid-cols-2 gap-10 items-center">
         <div>
           <p className="font-mono text-tungsten text-xs tracking-[0.3em] uppercase mb-4">
             UK → Nigeria · delivered in seconds
@@ -163,7 +163,7 @@ export default function Home() {
             </p>
             <div className="space-y-2.5">
               <div className="msg msg-1 bg-night border border-line rounded-2xl rounded-tl-sm px-4 py-3 mr-10">
-                <p className="font-mono text-xs text-ok mb-1">✅ StillHome — payment successful</p>
+                <p className="font-mono text-xs text-ok mb-1">✅ Nolgic — payment successful</p>
                 <p className="text-sm">EKEDC Prepaid — ₦20,000</p>
               </div>
               <div className="msg msg-2 bg-night border border-line rounded-2xl rounded-tl-sm px-4 py-3 mr-10">
@@ -328,7 +328,7 @@ export default function Home() {
 
       {/* ── Why we built this ─────────────────────────────────── */}
       <section className="max-w-2xl mx-auto mb-8">
-        <p className="font-mono text-xs text-haze uppercase tracking-[0.3em] mb-3">Why StillHome exists</p>
+        <p className="font-mono text-xs text-haze uppercase tracking-[0.3em] mb-3">Why Nolgic exists</p>
         <h2 className="font-display font-extrabold text-3xl mb-5">
           Every Sunday call ends the same way.
         </h2>
@@ -342,7 +342,7 @@ export default function Home() {
             football starts.
           </p>
           <p>
-            StillHome skips the middle. You&rsquo;re not sending money —
+            Nolgic skips the middle. You&rsquo;re not sending money —
             you&rsquo;re buying the actual thing: the token, the subscription,
             the top-up, delivered straight to the meter, decoder or phone in
             seconds. The price you see in pounds is everything you pay, and the
@@ -357,8 +357,10 @@ export default function Home() {
       </section>
 
       <footer className="mt-16 pt-6 border-t border-line text-haze text-xs leading-relaxed">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/logo.svg" alt="Nolgic" className="h-6 w-auto mb-4 opacity-80" />
         <p>
-          StillHome sells prepaid digital products (tokens, subscriptions,
+          Nolgic sells prepaid digital products (tokens, subscriptions,
           top-ups) — it is not a money transfer service.{" "}
           <a href="/legal" className="text-tungsten underline underline-offset-2">
             Terms, refunds &amp; privacy

@@ -1,4 +1,4 @@
-# StillHome ⚡
+# Nolgic ⚡
 
 Pay light, DSTV, airtime & data for family in Nigeria — from the UK, in pounds.
 Product model: you sell prepaid digital goods (not remittance). Stripe collects

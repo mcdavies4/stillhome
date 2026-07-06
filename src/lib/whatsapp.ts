@@ -1,6 +1,6 @@
 // WhatsApp Cloud API receipts.
 // Business-initiated messages MUST use an approved template (24-hour rule),
-// so we send the `stillhome_receipt` utility template.
+// so we send the receipt utility template (WHATSAPP_TEMPLATE env, default stillhome_receipt).
 // Silently no-ops if env vars are missing — never blocks the payment pipeline.
 
 export async function sendReceipt(
@@ -32,7 +32,7 @@ export async function sendReceipt(
         to: toE164.replace(/[^\d]/g, ""),
         type: "template",
         template: {
-          name: "stillhome_receipt",
+          name: process.env.WHATSAPP_TEMPLATE ?? "stillhome_receipt",
           language: { code: "en" },
           components: [
             {

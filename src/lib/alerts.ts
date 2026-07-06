@@ -13,9 +13,9 @@ export async function alertFounder(subject: string, text: string) {
       method: "POST",
       headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
       body: JSON.stringify({
-        from: process.env.ALERT_FROM ?? "StillHome <alerts@songsnap.online>",
+        from: process.env.ALERT_FROM ?? "Nolgic <alerts@songsnap.online>",
         to: [to],
-        subject: `[StillHome] ${subject}`,
+        subject: `[Nolgic] ${subject}`,
         text,
       }),
     });
