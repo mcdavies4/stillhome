@@ -31,6 +31,33 @@ const PROMISES = [
   { label: "NO ACCOUNT", text: "Pay in under a minute. No signup, no app to install." },
 ];
 
+const FAQS = [
+  {
+    q: "How do I pay a NEPA / electricity bill in Nigeria from the UK?",
+    a: "Pick the DisCo (EKEDC, IKEDC, EEDC and others), enter the meter number, and we show you the registered account name. Pay in pounds by card and the prepaid token is issued in seconds — we show it on screen, email it to you, and can WhatsApp it to your family.",
+  },
+  {
+    q: "Can I pay for DSTV or GOTV from abroad?",
+    a: "Yes. Choose the package, enter the smartcard/IUC number, confirm the account holder's name we look up, and pay by card. The decoder is credited within seconds — no one in Nigeria needs to queue or do anything.",
+  },
+  {
+    q: "How do I buy MTN, Airtel or Glo airtime from the UK?",
+    a: "Select the network, enter the Nigerian phone number and amount, and pay in pounds. The airtime lands on the phone instantly. Data bundles work the same way.",
+  },
+  {
+    q: "Is Nolgic a money transfer service?",
+    a: "No — you're buying a prepaid product (a token, subscription or top-up) at a pound price shown upfront. We deliver the product directly; we never move money to a person.",
+  },
+  {
+    q: "What happens if delivery fails?",
+    a: "Your card is refunded automatically and in full. You can never pay for something that wasn't delivered.",
+  },
+  {
+    q: "What does it cost?",
+    a: "The pound price shown at checkout is everything — product price plus a small service fee. No hidden exchange-rate surprises after the fact.",
+  },
+];
+
 const STEPS = [
   { n: "1", title: "Pick the bill", text: "Electricity token, DSTV, GOTV, airtime or data — for any meter, decoder or phone number in Nigeria." },
   { n: "2", title: "See who you're paying", text: "We look the number up with the provider and show you the registered name. You confirm it's your people before a kobo moves." },
@@ -326,6 +353,23 @@ export default function Home() {
         )}
       </section>
 
+      {/* ── FAQ ───────────────────────────────────────────────── */}
+      <section id="faq" className="max-w-2xl mx-auto mb-20 scroll-mt-8">
+        <p className="font-mono text-xs text-haze uppercase tracking-[0.3em] mb-3">FAQ</p>
+        <h2 className="font-display font-extrabold text-3xl mb-8">Questions, answered.</h2>
+        <div className="space-y-3">
+          {FAQS.map((f) => (
+            <details key={f.q} className="bg-panel border border-line rounded-2xl p-5 group">
+              <summary className="font-display font-semibold cursor-pointer list-none flex justify-between items-center gap-4">
+                {f.q}
+                <span className="text-tungsten group-open:rotate-45 transition-transform text-xl leading-none">+</span>
+              </summary>
+              <p className="text-haze text-sm leading-relaxed mt-3">{f.a}</p>
+            </details>
+          ))}
+        </div>
+      </section>
+
       {/* ── Why we built this ─────────────────────────────────── */}
       <section className="max-w-2xl mx-auto mb-8">
         <p className="font-mono text-xs text-haze uppercase tracking-[0.3em] mb-3">Why Nolgic exists</p>
@@ -355,6 +399,38 @@ export default function Home() {
           </p>
         </div>
       </section>
+
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{
+          __html: JSON.stringify([
+            {
+              "@context": "https://schema.org",
+              "@type": "Organization",
+              name: "Nolgic",
+              legalName: "The 36th Solutions Ltd",
+              url: process.env.NEXT_PUBLIC_APP_URL ?? "https://stillhome-ten.vercel.app",
+              logo: `${process.env.NEXT_PUBLIC_APP_URL ?? "https://stillhome-ten.vercel.app"}/logo.svg`,
+              email: "the36thltd@outlook.com",
+            },
+            {
+              "@context": "https://schema.org",
+              "@type": "WebSite",
+              name: "Nolgic",
+              url: process.env.NEXT_PUBLIC_APP_URL ?? "https://stillhome-ten.vercel.app",
+            },
+            {
+              "@context": "https://schema.org",
+              "@type": "FAQPage",
+              mainEntity: FAQS.map((f) => ({
+                "@type": "Question",
+                name: f.q,
+                acceptedAnswer: { "@type": "Answer", text: f.a },
+              })),
+            },
+          ]),
+        }}
+      />
 
       <footer className="mt-16 pt-6 border-t border-line text-haze text-xs leading-relaxed">
         {/* eslint-disable-next-line @next/next/no-img-element */}

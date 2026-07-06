@@ -1,10 +1,44 @@
 import type { Metadata } from "next";
 import "./globals.css";
 
+const BASE = process.env.NEXT_PUBLIC_APP_URL ?? "https://stillhome-ten.vercel.app";
+
 export const metadata: Metadata = {
-  title: "Nolgic — pay light, DSTV & airtime for family in Nigeria, from the UK",
+  metadataBase: new URL(BASE),
+  title: {
+    default: "Nolgic — pay light, DSTV & airtime for family in Nigeria, from the UK",
+    template: "%s — Nolgic",
+  },
   description:
-    "Buy electricity tokens, DSTV, GOTV, airtime and data for family in Nigeria from the UK. See the account name before you pay. Instant delivery, WhatsApp receipts.",
+    "Buy electricity tokens, DSTV, GOTV, airtime and data for family in Nigeria from the UK. See the account name before you pay. Delivered in seconds, receipt on WhatsApp.",
+  keywords: [
+    "pay NEPA bill from UK",
+    "pay electricity bill in Nigeria from abroad",
+    "buy electricity token Nigeria from UK",
+    "DSTV payment from UK",
+    "pay GOTV from abroad",
+    "buy MTN airtime from UK",
+    "recharge Nigerian phone from UK",
+    "send data to Nigeria",
+    "Nigeria bill payment UK diaspora",
+  ],
+  alternates: { canonical: "/" },
+  openGraph: {
+    type: "website",
+    url: BASE,
+    siteName: "Nolgic",
+    title: "Nolgic — 3,000 miles away. Still home.",
+    description:
+      "Pay light, DSTV, airtime and data for family in Nigeria — from your card in pounds. Name-check before you pay, WhatsApp receipt after.",
+    images: [{ url: "/og.png", width: 1200, height: 630, alt: "Nolgic — pay bills for family in Nigeria from the UK" }],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Nolgic — pay light, DSTV & airtime for family in Nigeria, from the UK",
+    description:
+      "Name-check before you pay. Delivered in seconds. Receipt on their WhatsApp.",
+    images: ["/og.png"],
+  },
   icons: { icon: "/favicon.svg" },
 };
 
@@ -21,6 +55,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <div className="flex items-center gap-2 sm:gap-5 text-sm">
               <a href="/#how" className="text-haze hover:text-paper hidden sm:block">
                 How it works
+              </a>
+              <a href="/#faq" className="text-haze hover:text-paper hidden sm:block">
+                FAQ
               </a>
               <a href="/legal" className="text-haze hover:text-paper hidden sm:block">
                 Terms
