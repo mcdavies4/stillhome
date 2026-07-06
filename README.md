@@ -8,7 +8,7 @@ flat fee is the margin.
 ## Architecture
 
 ```
-UK customer ──£──> Stripe Checkout (The 36th Company Ltd, UK)
+UK customer ──£──> Stripe Checkout (The 36th Solutions Ltd)
                       │ checkout.session.completed webhook
                       ▼
               /api/stripe/webhook  ← the fulfilment pipeline

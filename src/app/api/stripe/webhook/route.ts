@@ -4,17 +4,15 @@ import { stripe } from "@/lib/stripe";
 import { supabaseAdmin } from "@/lib/supabase";
 import { createBillPayment, getBillStatus, getNgnBalance, FlwError } from "@/lib/flutterwave";
 import { alertFounder } from "@/lib/alerts";
-import { sendWhatsApp, receiptText } from "@/lib/whatsapp";
+import { sendReceipt } from "@/lib/whatsapp";
+import { sendReceiptEmail } from "@/lib/email";
 
 // The heart of the product:
 //   checkout.session.completed
 //     -> mark paid
 //     -> vend via Flutterwave Bills (idempotent reference = order id)
-//     -> success: store token, receipt via WhatsApp, status=fulfilled
+//     -> success: store token, email payer, WhatsApp recipient, status=fulfilled
 //     -> failure: auto-refund the Stripe payment, status=failed_refunded
-//
-// Non-refundable at FLW means: never vend twice (idempotency), never keep
-// money for a failed vend (auto-refund). Customer can never lose money.
 
 export async function POST(req: Request) {
   const sig = req.headers.get("stripe-signature");
@@ -56,9 +54,13 @@ export async function POST(req: Request) {
   const reference = `STILLHOME-${order.id}`;
 
   try {
-    // Fail fast if the NGN float can't cover this vend (cheaper than a
-    // failed vend + refund cycle, and it pages you to top up).
-    const balance = await getNgnBalance().catch(() => Number.MAX_SAFE_INTEGER);
+    // Fail fast if the NGN float can't cover this vend — live mode only.
+    // Sandbox wallets are ₦0 and FLW simulates vends without balance.
+    const isTestMode = (process.env.FLW_SECRET_KEY ?? "").startsWith("FLWSECK_TEST");
+    const balance = isTestMode
+      ? Number.MAX_SAFE_INTEGER
+      : await getNgnBalance().catch(() => Number.MAX_SAFE_INTEGER);
+
     if (balance < Number(order.amount_ngn)) {
       throw new FlwError(
         `Insufficient wallet balance (₦${balance.toLocaleString()}) for ₦${Number(order.amount_ngn).toLocaleString()} vend`
@@ -90,7 +92,7 @@ export async function POST(req: Request) {
         const status = await getBillStatus(reference);
         token = (status.data as any)?.extra ?? (status.data as any)?.token ?? null;
       } catch {
-        /* token pickup is best-effort; requery again from a cron if needed */
+        /* lazy recovery via /api/orders + daily cron will pick it up */
       }
     }
 
@@ -99,11 +101,9 @@ export async function POST(req: Request) {
       .update({ status: "fulfilled", flw_token: token })
       .eq("id", order.id);
 
+    await sendReceiptEmail({ ...order, flw_token: token });
     if (order.recipient_whatsapp) {
-      await sendWhatsApp(
-        order.recipient_whatsapp,
-        receiptText({ ...order, flw_token: token })
-      );
+      await sendReceipt(order.recipient_whatsapp, { ...order, flw_token: token });
     }
 
     return NextResponse.json({ fulfilled: true });

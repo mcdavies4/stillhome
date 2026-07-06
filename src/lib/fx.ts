@@ -11,7 +11,7 @@ export type Quote = {
 export function quoteGbp(amountNgn: number): Quote {
   const ngnPerGbp = Number(process.env.NGN_PER_GBP ?? "2000");
   const serviceFeePence = Number(process.env.SERVICE_FEE_PENCE ?? "99");
-  const min = Number(process.env.MIN_ORDER_NGN ?? "1000");
+  const min = Number(process.env.MIN_ORDER_NGN ?? "50");
   const max = Number(process.env.MAX_ORDER_NGN ?? "500000");
 
   if (!Number.isFinite(amountNgn) || amountNgn < min || amountNgn > max) {
