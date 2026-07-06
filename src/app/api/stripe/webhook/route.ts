@@ -4,13 +4,13 @@ import { stripe } from "@/lib/stripe";
 import { supabaseAdmin } from "@/lib/supabase";
 import { createBillPayment, getBillStatus, getNgnBalance, FlwError } from "@/lib/flutterwave";
 import { alertFounder } from "@/lib/alerts";
-import { sendWhatsApp, receiptText } from "@/lib/whatsapp";
+import { sendReceipt } from "@/lib/whatsapp";
 
 // The heart of the product:
 //   checkout.session.completed
 //     -> mark paid
 //     -> vend via Flutterwave Bills (idempotent reference = order id)
-//     -> success: store token, receipt via WhatsApp, status=fulfilled
+//     -> success: store token, WhatsApp template receipt, status=fulfilled
 //     -> failure: auto-refund the Stripe payment, status=failed_refunded
 
 export async function POST(req: Request) {
@@ -101,10 +101,7 @@ export async function POST(req: Request) {
       .eq("id", order.id);
 
     if (order.recipient_whatsapp) {
-      await sendWhatsApp(
-        order.recipient_whatsapp,
-        receiptText({ ...order, flw_token: token })
-      );
+      await sendReceipt(order.recipient_whatsapp, { ...order, flw_token: token });
     }
 
     return NextResponse.json({ fulfilled: true });
