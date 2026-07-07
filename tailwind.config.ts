@@ -2,18 +2,19 @@ import type { Config } from "tailwindcss";
 
 const config: Config = {
   content: ["./src/**/*.{ts,tsx}"],
+  darkMode: "class",
   theme: {
     extend: {
       colors: {
-        night: "#0B1026",      // NEPA-out darkness
-        panel: "#141A38",
-        line: "#232B52",
-        tungsten: "#FFB627",   // filament glow
-        ember: "#FF7A1A",
-        haze: "#9AA3C7",
-        paper: "#F5F2E9",
-        ok: "#3DDC97",
-        bad: "#FF5D5D"
+        night: "rgb(var(--night) / <alpha-value>)",
+        panel: "rgb(var(--panel) / <alpha-value>)",
+        line: "rgb(var(--line) / <alpha-value>)",
+        tungsten: "rgb(var(--tungsten) / <alpha-value>)",
+        ember: "rgb(var(--ember) / <alpha-value>)",
+        haze: "rgb(var(--haze) / <alpha-value>)",
+        paper: "rgb(var(--paper) / <alpha-value>)",
+        ok: "rgb(var(--ok) / <alpha-value>)",
+        bad: "rgb(var(--bad) / <alpha-value>)"
       },
       fontFamily: {
         display: ["'Bricolage Grotesque'", "sans-serif"],
