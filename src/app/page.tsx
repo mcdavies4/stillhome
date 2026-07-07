@@ -1,5 +1,7 @@
 "use client";
 
+import Logo from "@/components/Logo";
+
 import { useEffect, useMemo, useState } from "react";
 
 type BillerItem = {
@@ -433,10 +435,7 @@ export default function Home() {
       />
 
       <footer className="mt-16 pt-6 border-t border-line text-haze text-xs leading-relaxed">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src="/logo.svg" alt="Nolgic" className="h-6 w-auto mb-4 opacity-80 dark:hidden" />
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src="/logo-dark.svg" alt="Nolgic" className="h-6 w-auto mb-4 opacity-80 hidden dark:block" />
+        <div className="mb-4 opacity-90"><Logo size="sm" /></div>
         <p>
           Nolgic sells prepaid digital products (tokens, subscriptions,
           top-ups) — it is not a money transfer service.{" "}
