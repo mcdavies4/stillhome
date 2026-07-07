@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import ThemeToggle from "@/components/ThemeToggle";
 
 const BASE = process.env.NEXT_PUBLIC_APP_URL ?? "https://stillhome-ten.vercel.app";
 
@@ -42,15 +43,27 @@ export const metadata: Metadata = {
   icons: { icon: "/favicon.svg" },
 };
 
+const themeInit = `
+try {
+  var t = localStorage.getItem("nolgic-theme");
+  if (t === "dark") document.documentElement.classList.add("dark");
+} catch (e) {}
+`;
+
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: themeInit }} />
+      </head>
       <body>
         <nav className="sticky top-0 z-50 bg-night/85 backdrop-blur border-b border-line">
           <div className="max-w-5xl mx-auto px-5 h-16 flex items-center justify-between">
             <a href="/" className="flex items-center gap-2.5" aria-label="Nolgic home">
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src="/logo.svg" alt="Nolgic" className="h-7 w-auto" />
+              <img src="/logo.svg" alt="Nolgic" className="h-7 w-auto dark:hidden" />
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src="/logo-dark.svg" alt="Nolgic" className="h-7 w-auto hidden dark:block" />
             </a>
             <div className="flex items-center gap-2 sm:gap-5 text-sm">
               <a href="/#how" className="text-haze hover:text-paper hidden sm:block">
@@ -62,9 +75,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               <a href="/legal" className="text-haze hover:text-paper hidden sm:block">
                 Terms
               </a>
+              <ThemeToggle />
               <a
                 href="/#pay"
-                className="px-4 py-2 rounded-lg bg-tungsten text-night font-display font-bold hover:brightness-110"
+                className="px-4 py-2 rounded-lg bg-tungsten text-white dark:text-night font-display font-bold hover:brightness-110"
               >
                 Pay a bill
               </a>
@@ -73,6 +87,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         </nav>
         {children}
       </body>
-    </html>
+    </nav>
   );
 }
