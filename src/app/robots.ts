@@ -4,7 +4,7 @@ const BASE = process.env.NEXT_PUBLIC_APP_URL ?? "https://stillhome-ten.vercel.ap
 
 export default function robots(): MetadataRoute.Robots {
   return {
-    rules: [{ userAgent: "*", allow: "/", disallow: ["/order/", "/api/"] }],
+    rules: [{ userAgent: "*", allow: "/", disallow: ["/order/", "/api/", "/admin"] }],
     sitemap: `${BASE}/sitemap.xml`,
   };
 }
