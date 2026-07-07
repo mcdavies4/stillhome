@@ -432,10 +432,11 @@ export default function Home() {
         }}
       />
 
-      <footer className="mt-16 pt-6 border-t border-line text-haze text-xs leading-relaxed">
+      <footer className="mt-16 pt-6 border-t border-line text-haze text-xs leading-        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/logo.svg" alt="Nolgic" className="h-6 w-auto mb-4 opacity-80 dark:hidden" />
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src="/logo.svg" alt="Nolgic" className="h-6 w-auto mb-4 opacity-80" />
-        <p>
+        <img src="/logo-dark.svg" alt="Nolgic" className="h-6 w-auto mb-4 opacity-80 hidden dark:block" />
+
           Nolgic sells prepaid digital products (tokens, subscriptions,
           top-ups) — it is not a money transfer service.{" "}
           <a href="/legal" className="text-tungsten underline underline-offset-2">
