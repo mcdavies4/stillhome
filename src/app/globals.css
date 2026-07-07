@@ -3,6 +3,32 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ── Theme tokens (RGB triplets for Tailwind alpha support) ── */
+:root {
+  /* Light: warm daylight */
+  --night: 250 249 246;     /* page background */
+  --panel: 255 255 255;     /* cards */
+  --line: 229 225 216;      /* borders */
+  --tungsten: 199 120 0;    /* deep amber — readable on white */
+  --ember: 234 88 12;
+  --haze: 91 97 120;        /* secondary text */
+  --paper: 26 31 54;        /* primary text (ink) */
+  --ok: 15 157 110;
+  --bad: 220 38 38;
+}
+.dark {
+  /* Dark: the original NEPA night */
+  --night: 11 16 38;
+  --panel: 20 26 56;
+  --line: 35 43 82;
+  --tungsten: 255 182 39;
+  --ember: 255 122 26;
+  --haze: 154 163 199;
+  --paper: 245 242 233;
+  --ok: 61 220 151;
+  --bad: 255 93 93;
+}
+
 body { @apply bg-night text-paper font-body antialiased; }
 
 /* Signature: the filament flicker — power coming back on */
