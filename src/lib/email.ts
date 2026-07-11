@@ -40,7 +40,7 @@ export async function sendReceiptEmail(o: OrderForEmail, opts?: { tokenFollowUp?
     `Amount: ${ngn} (charged ${gbp})\n\n` +
     (/(ELECTRIC|DISCO|PREPAID|METER)/i.test(o.biller_name) || o.flw_token ? tokenBlock : ``) +
     `Order page (keep this link): ${orderUrl}\n\n` +
-    `Questions? Reply to this email.\n— Nolgic, The 36th Solutions Ltd`;
+    `Questions? Reply to this email.\n— Nolgic · Designed with love in London`;
 
   try {
     const res = await fetch("https://api.resend.com/emails", {
