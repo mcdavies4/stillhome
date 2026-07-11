@@ -49,7 +49,7 @@ export async function sendReceiptEmail(o: OrderForEmail, opts?: { tokenFollowUp?
       body: JSON.stringify({
         from: process.env.EMAIL_FROM ?? "Nolgic <receipts@songsnap.online>",
         to: [o.email],
-        reply_to: "the36thltd@outlook.com",
+        reply_to: "nolgichq@gmail.com",
         subject,
         text,
       }),
