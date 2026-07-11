@@ -409,10 +409,9 @@ export default function Home() {
               "@context": "https://schema.org",
               "@type": "Organization",
               name: "Nolgic",
-              legalName: "The 36th Solutions Ltd",
               url: process.env.NEXT_PUBLIC_APP_URL ?? "https://stillhome-ten.vercel.app",
               logo: `${process.env.NEXT_PUBLIC_APP_URL ?? "https://stillhome-ten.vercel.app"}/logo.svg`,
-              email: "the36thltd@outlook.com",
+              email: "nolgichq@gmail.com",
             },
             {
               "@context": "https://schema.org",
