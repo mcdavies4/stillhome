@@ -396,8 +396,7 @@ export default function Home() {
             &ldquo;did it go through?&rdquo;
           </p>
           <p className="text-paper">
-            Built in London by The 36th Solutions Ltd — because we make the
-            same Sunday calls.
+            Designed with ❤️ in London — because we make the same Sunday calls.
           </p>
         </div>
       </section>
@@ -443,7 +442,7 @@ export default function Home() {
             Terms, refunds &amp; privacy
           </a>
         </p>
-        <p className="mt-2">© {new Date().getFullYear()} The 36th Solutions Ltd</p>
+        <p className="mt-2">Designed with ❤️ in London · © {new Date().getFullYear()} Nolgic</p>
       </footer>
     </main>
   );
