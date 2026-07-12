@@ -5,7 +5,7 @@ import crypto from "crypto";
 
 const GRAPH = "https://graph.facebook.com/v21.0";
 const PHONE_ID = process.env.WHATSAPP_PHONE_NUMBER_ID!;
-const TOKEN = process.env.WHATSAPP_ACCESS_TOKEN!;
+const TOKEN = process.env.WHATSAPP_TOKEN!;
 
 /** Validate X-Hub-Signature-256 against the raw request body. */
 export function verifySignature(rawBody: string, signatureHeader: string | null): boolean {
