@@ -60,7 +60,8 @@ export async function handleInbound(
       `👋 Welcome to *Nolgic* — pay Nigerian bills from the UK, right here in WhatsApp.\n\n` +
         `⚡ Electricity: *IKEDC 10k meter 04123456789*\n` +
         `📺 TV: *DStv Compact 1034567890*\n` +
-        `📱 Data: *MTN 2GB 08031234567*\n\n` +
+        `📱 Data: *MTN 2GB 08031234567*\n` +
+        `📞 Airtime: *1k airtime 08031234567*\n\n` +
         `You pay in £ by card. Say *help* anytime.`
     );
     if (!text.trim()) return;
@@ -187,7 +188,7 @@ async function handleCollecting(
       }
       if (ex.updates.biller_key) {
         const def = await billerByKey(ex.updates.biller_key);
-        if (def && def.category === "electricity") applyBiller(draft, def);
+        if (def && (def.category === "electricity" || def.category === "airtime")) applyBiller(draft, def);
       }
       if (ex.updates.brand) {
         draft.brand = ex.updates.brand;
@@ -208,7 +209,7 @@ async function handleCollecting(
         draft.item_code = undefined;
       }
       if (ex.updates.identifier) draft.identifier = ex.updates.identifier;
-      if (ex.updates.amount_ngn && (draft.category ?? "electricity") === "electricity") {
+      if (ex.updates.amount_ngn && ["electricity", "airtime"].includes(draft.category ?? "electricity")) {
         draft.amount_ngn = ex.updates.amount_ngn;
       }
       if (ex.updates.beneficiary_alias) draft.beneficiary_alias = String(ex.updates.beneficiary_alias).toLowerCase();
@@ -252,7 +253,7 @@ async function advance(user: WaUser, draft: Draft): Promise<void> {
   const missing: string[] = [];
   if (!draft.biller_code) missing.push("product");
   if (!draft.identifier) missing.push("identifier");
-  if ((draft.category ?? "electricity") === "electricity" && !draft.amount_ngn) missing.push("amount");
+  if (["electricity", "airtime"].includes(draft.category ?? "electricity") && !draft.amount_ngn) missing.push("amount");
 
   if (missing.length) {
     await setConversation(user.id, { state: "collecting", draft, expires_at: ttl(TTL_MIN.collecting) });
@@ -260,7 +261,7 @@ async function advance(user: WaUser, draft: Draft): Promise<void> {
   }
 
   // Category-specific identifier sanity before hitting FLW
-  if (draft.category === "data") {
+  if (draft.category === "data" || draft.category === "airtime") {
     const d = draft.identifier!;
     const ok = (d.length === 11 && d.startsWith("0")) || (d.length === 13 && d.startsWith("234"));
     if (!ok) {
@@ -287,7 +288,9 @@ async function questionFor(field: string, draft: Draft): Promise<string> {
       return `What's the ${label.toLowerCase()}? (digits only)`;
     }
     case "amount":
-      return "How much in naira? e.g. *10k* or *10,000*";
+      return draft.category === "airtime"
+        ? "How much airtime in naira? e.g. *500* or *1k*"
+        : "How much in naira? e.g. *10k* or *10,000*";
     default:
       return "Could you give me a bit more detail?";
   }
@@ -297,7 +300,7 @@ async function questionFor(field: string, draft: Draft): Promise<string> {
 async function validateAndQuote(user: WaUser, draft: Draft): Promise<void> {
   const checking =
     draft.category === "tv" ? "🔍 Checking that smartcard…"
-    : draft.category === "data" ? "🔍 Checking that number…"
+    : draft.category === "data" || draft.category === "airtime" ? "🔍 Checking that number…"
     : "🔍 Checking that meter…";
   await sendText(user.wa_phone, checking);
 
@@ -337,7 +340,7 @@ async function validateAndQuote(user: WaUser, draft: Draft): Promise<void> {
       validated = true;
     } catch (e) {
       lastErr = e instanceof FlwError ? e.message : lastErr;
-      if (draft.category === "data") {
+      if (draft.category === "data" || draft.category === "airtime") {
         validated = true; // proceed — confirmation shows the number for the user to verify
         name = null;
       }
@@ -354,6 +357,17 @@ async function validateAndQuote(user: WaUser, draft: Draft): Promise<void> {
     return sendText(user.wa_phone, `❌ ${lastErr}. Please double-check the ${what} and send it again (digits only).`);
   }
   draft.customer_name = name ?? undefined;
+
+  if (draft.category === "airtime") {
+    if (draft.amount_ngn! < 50) {
+      await setConversation(user.id, { state: "collecting", draft: { ...draft, amount_ngn: undefined }, expires_at: ttl(TTL_MIN.collecting) });
+      return sendText(user.wa_phone, "Minimum airtime is ₦50. How much would you like?");
+    }
+    if (draft.amount_ngn! > 50000) {
+      await setConversation(user.id, { state: "collecting", draft: { ...draft, amount_ngn: undefined }, expires_at: ttl(TTL_MIN.collecting) });
+      return sendText(user.wa_phone, "Maximum airtime per order is ₦50,000. How much would you like?");
+    }
+  }
 
   if (draft.category === "electricity" || !draft.category) {
     if (minimum && draft.amount_ngn! < minimum) {
@@ -374,7 +388,7 @@ async function validateAndQuote(user: WaUser, draft: Draft): Promise<void> {
 
   await setConversation(user.id, { state: "confirming", draft, expires_at: ttl(TTL_MIN.confirming) });
 
-  const icon = draft.category === "tv" ? "📺" : draft.category === "data" ? "📱" : "⚡";
+  const icon = draft.category === "tv" ? "📺" : draft.category === "data" ? "📱" : draft.category === "airtime" ? "📞" : "⚡";
   const idLine = `${draft.identifier_label ?? "Number"}: ${draft.identifier}`;
   await sendButtons(
     user.wa_phone,

@@ -6,7 +6,7 @@
 
 import { getBillCategories } from "@/lib/flutterwave";
 
-export type Category = "electricity" | "tv" | "data";
+export type Category = "electricity" | "tv" | "data" | "airtime";
 
 export interface WaBiller {
   key: string;              // stable `${biller_code}|${item_code}`
@@ -55,6 +55,11 @@ const CODE_MAP: Record<string, { category: Category; brand: string }> = {
   BIL110: { category: "data", brand: "Airtel" },
   BIL111: { category: "data", brand: "9mobile" },
   BIL124: { category: "data", brand: "Smile" },
+  // Universal airtime item — FLW auto-detects the network from the phone
+  // number, so one entry covers MTN/Glo/Airtel/9mobile. Per-network VTU
+  // codes (BIL100/BIL102/BIL103) exist but are intentionally excluded to
+  // avoid ambiguity; add as fallbacks only if the universal item misbehaves.
+  BIL099: { category: "airtime", brand: "Airtime" },
 };
 
 const ELECTRIC_RE = /(ELECTRIC|DISCO|IKEDC|EKEDC|AEDC|PHED|EEDC|IBEDC|BEDC|KEDCO|KAEDCO|JED|YEDC)/i;
@@ -77,6 +82,7 @@ const IDENTIFIER_LABEL: Record<Category, string> = {
   electricity: "Meter Number",
   tv: "Smartcard Number",
   data: "Phone Number",
+  airtime: "Phone Number",
 };
 
 let cache: { billers: WaBiller[]; at: number } | null = null;
@@ -95,9 +101,9 @@ export async function getCatalogue(): Promise<WaBiller[]> {
 
   if (row?.data && Date.now() - new Date(row.fetched_at).getTime() < DB_CACHE_MS) {
     const billers = row.data as WaBiller[];
-    // Cache rows written by the electricity-only build lack `category` —
-    // treat them as stale so the multi-category build repopulates.
-    if (billers.length && billers[0].category) {
+    // Cache rows from older builds lack `category` or the airtime entry —
+    // treat them as stale so this build repopulates.
+    if (billers.length && billers[0].category && billers.some((b) => b.category === "airtime")) {
       cache = { billers, at: Date.now() };
       return billers;
     }
@@ -124,8 +130,9 @@ async function buildFromFlutterwave(): Promise<WaBiller[]> {
   const billers: WaBiller[] = [];
 
   for (const i of items) {
-    if (i.is_airtime) continue;
     if (i.country && i.country !== "NG") continue;
+    // Airtime rows: admit only the universal item mapped in CODE_MAP.
+    if (i.is_airtime && CODE_MAP[i.biller_code]?.category !== "airtime") continue;
 
     const mapped = CODE_MAP[i.biller_code];
     const text = `${i.biller_name ?? ""} ${i.name ?? ""} ${i.short_name ?? ""}`;
@@ -145,6 +152,10 @@ async function buildFromFlutterwave(): Promise<WaBiller[]> {
     const aliases = new Set<string>([label.toLowerCase(), brand.toLowerCase()]);
     if (category === "electricity") {
       for (const [re, list] of ALIAS_HINTS) if (re.test(text)) list.forEach((a) => aliases.add(a));
+    }
+    if (category === "airtime") {
+      ["airtime", "credit", "recharge", "top up", "topup", "vtu",
+       "mtn", "glo", "airtel", "9mobile", "etisalat"].forEach((a) => aliases.add(a));
     }
 
     billers.push({
@@ -238,6 +249,7 @@ export async function brandsForCategory(category: Category): Promise<string[]> {
 export async function catalogueForPrompt(): Promise<string> {
   const all = await getCatalogue();
   const elec = all.filter((b) => b.category === "electricity");
+  const airtime = all.filter((b) => b.category === "airtime");
   const tvBrands = await brandsForCategory("tv");
   const dataBrands = await brandsForCategory("data");
   return [
@@ -245,6 +257,7 @@ export async function catalogueForPrompt(): Promise<string> {
     ...elec.map((b) => `- key: ${b.key} | ${b.label} | aliases: ${b.aliases.join(", ")}`),
     `TV SUBSCRIPTIONS (fixed-price packages, identifier = smartcard number) — return brand + package_query, NOT a key. Brands: ${tvBrands.join(", ")}`,
     `MOBILE DATA (fixed-price bundles, identifier = the recipient's phone number) — return brand + package_query (e.g. "2gb", "1.5gb weekly"), NOT a key. Brands: ${dataBrands.join(", ")}`,
+    ...airtime.map((b) => `AIRTIME (variable amount, identifier = the recipient's phone number, ANY network — MTN/Glo/Airtel/9mobile all use this one item) — return the exact key:\n- key: ${b.key} | ${b.label}`),
   ].join("\n");
 }
 
@@ -255,5 +268,5 @@ export async function billersForHelp(): Promise<string> {
     const m = b.brand.match(/[A-Z]{3,6}/);
     discos.add(m ? m[0] : b.brand.split(" ")[0]);
   }
-  return `Electricity: ${Array.from(discos).slice(0, 12).join(", ")}\nTV: DStv, GOtv, StarTimes\nData: MTN, Glo, Airtel, 9mobile, Smile`;
+  return `Electricity: ${Array.from(discos).slice(0, 12).join(", ")}\nTV: DStv, GOtv, StarTimes\nData: MTN, Glo, Airtel, 9mobile, Smile\nAirtime: any network`;
 }

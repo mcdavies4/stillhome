@@ -14,7 +14,7 @@ export type ConversationState =
   | "failed";
 
 export interface Draft {
-  category?: "electricity" | "tv" | "data";
+  category?: "electricity" | "tv" | "data" | "airtime";
   brand?: string;             // "DStv", "MTN", ... (tv/data)
   package_query?: string;     // what the user asked for, pre-match (tv/data)
   biller_code?: string;

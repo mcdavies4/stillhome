@@ -19,7 +19,7 @@ export interface Extraction {
   reply_if_other: string | null;
 }
 
-const SYSTEM_PROMPT = (catalogue: string, beneficiaries: Beneficiary[], draft: Draft) => `You extract structured bill-purchase orders from WhatsApp messages sent to Nolgic, a UK→Nigeria bill payment service. Users are typically UK-based Nigerians paying for themselves or relatives in Nigeria: electricity, TV subscriptions (DStv/GOtv/StarTimes), and mobile data. Messages are informal: "10k light for mum", "renew dstv compact 1034567890", "2gb mtn for 08031234567", "same as last time".
+const SYSTEM_PROMPT = (catalogue: string, beneficiaries: Beneficiary[], draft: Draft) => `You extract structured bill-purchase orders from WhatsApp messages sent to Nolgic, a UK→Nigeria bill payment service. Users are typically UK-based Nigerians paying for themselves or relatives in Nigeria: electricity, TV subscriptions (DStv/GOtv/StarTimes), mobile data, and airtime. Messages are informal: "10k light for mum", "renew dstv compact 1034567890", "2gb mtn for 08031234567", "send 1k credit to 08031234567", "same as last time".
 
 CATALOGUE:
 ${catalogue}
@@ -38,15 +38,15 @@ Respond with ONLY a JSON object, no prose, no markdown fences:
 {
   "intent": "buy_bill" | "check_status" | "list_beneficiaries" | "repeat_last" | "cancel" | "help" | "other",
   "updates": {
-    "biller_key": string?,       // ELECTRICITY ONLY: exact key from the catalogue
+    "biller_key": string?,       // ELECTRICITY or AIRTIME: exact key from the catalogue
     "brand": string?,            // TV/DATA ONLY: brand name exactly as listed
     "package_query": string?,    // TV/DATA ONLY: the package/bundle the user asked for, e.g. "compact", "2gb", "jolli", "premium". Empty string if they named the brand but no package.
     "identifier": string?,       // meter/smartcard/phone number, digits only as given (keep leading zeros)
-    "amount_ngn": number?,       // ELECTRICITY ONLY: integer naira
+    "amount_ngn": number?,       // ELECTRICITY or AIRTIME: integer naira
     "beneficiary_alias": string? // if the user names someone new, lowercase
   },
   "resolved_beneficiary_id": string | null,
-  "missing": string[],  // what's still needed for a complete order, considering BOTH the draft and your updates. Electricity needs: biller_key, identifier, amount_ngn. TV/data needs: brand, package_query, identifier. If resolved_beneficiary_id is set, the product and identifier come from it.
+  "missing": string[],  // what's still needed for a complete order, considering BOTH the draft and your updates. Electricity needs: biller_key, identifier, amount_ngn. Airtime needs: biller_key (the airtime key), identifier, amount_ngn. TV/data needs: brand, package_query, identifier. If resolved_beneficiary_id is set, the product and identifier come from it.
   "reply_if_other": string | null
 }
 
@@ -54,8 +54,9 @@ STRICT RULES:
 - NEVER invent meter numbers, smartcard numbers, phone numbers, or amounts. If not explicitly present, leave them out and list in "missing".
 - identifier is a STRING — preserve leading zeros exactly (e.g. "08031234567", "047001297002").
 - Amount parsing (electricity): "10k" = 10000, "N5000" = 5000, "10,000" = 10000. A bare number under 100 with no context is AMBIGUOUS — omit and mark missing.
-- "light", "nepa", "electricity", "units" → electricity. "dstv", "gotv", "startimes", "cable", "decoder" → TV. "data", "GB", "MB" with a network name → data.
-- For data, an 11-digit number starting 0 in the message is the recipient phone number (identifier).
+- "light", "nepa", "electricity", "units" → electricity. "dstv", "gotv", "startimes", "cable", "decoder" → TV. "data", "GB", "MB" with a network name → data. "airtime", "credit", "recharge", "top up", or a network name with a plain naira amount (no GB/MB) → AIRTIME (return the airtime key; the network does not matter, one item serves all networks).
+- For data and airtime, an 11-digit number starting 0 in the message is the recipient phone number (identifier).
+- Airtime amounts: "1k credit" = 1000. Airtime and data are DIFFERENT: "1GB" is data; "N1000 for his phone" is airtime.
 - "again", "repeat", "same as last time" → intent "repeat_last".
 - "cancel", "stop", "forget it" → intent "cancel".
 - Greetings/thanks → "other" with a brief warm reply_if_other (under 2 sentences). "How does this work" → "help".`;
@@ -130,6 +131,6 @@ function fallbackExtraction(): Extraction {
     resolved_beneficiary_id: null,
     missing: [],
     reply_if_other:
-      "Sorry, I didn't catch that. Try: *IKEDC 10k meter 04123456789*, *DStv Compact 1034567890*, or *MTN 2GB 08031234567* — or say *help*.",
+      "Sorry, I didn't catch that. Try: *IKEDC 10k meter 04123456789*, *DStv Compact 1034567890*, *MTN 2GB 08031234567*, or *1k airtime 08031234567* — or say *help*.",
   };
 }

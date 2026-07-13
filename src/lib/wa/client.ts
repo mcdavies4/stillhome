@@ -166,12 +166,13 @@ export async function deliverConfirmation(
     gbpPaid: string;
   }
 ): Promise<void> {
+  const isPhone = o.identifierLabel.toLowerCase().includes("phone");
   const body =
     `✅ Payment received — £${o.gbpPaid}\n\n` +
-    `📺 *${o.productLabel}* — done!\n` +
+    `${isPhone ? "📞" : "📺"} *${o.productLabel}* — done!\n` +
     `${o.identifierLabel}: ${o.identifier}${o.customerName ? ` (${o.customerName})` : ""}\n` +
     `Ref: ${o.reference}\n\n` +
-    `It can take a few minutes to reflect on the ${o.identifierLabel.toLowerCase().includes("phone") ? "line" : "decoder"}.\n` +
+    `It can take a few minutes to reflect on the ${isPhone ? "line" : "decoder"}.\n` +
     `Say *again* anytime to repeat this order.`;
   try {
     await sendText(to, body);
