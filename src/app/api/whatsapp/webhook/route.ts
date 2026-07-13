@@ -92,9 +92,17 @@ export async function POST(req: NextRequest) {
         }
 
         jobs.push(
-          handleInbound(msg.from, profileName, text, buttonId).catch((err) =>
-            console.error("[webhook] handleInbound failed", err)
-          )
+          handleInbound(msg.from, profileName, text, buttonId).catch(async (err) => {
+            console.error("[webhook] handleInbound failed", err);
+            // Never leave the user in silence — a dead bot loses trust instantly.
+            try {
+              const { sendText } = await import("@/lib/wa/client");
+              await sendText(
+                msg.from,
+                "⚠️ Something went wrong on our side just now. Please send that again in a moment — nothing was charged."
+              );
+            } catch { /* send also failing → logs already have the root cause */ }
+          })
         );
       }
     }
