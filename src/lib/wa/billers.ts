@@ -45,11 +45,46 @@ const ALIAS_HINTS: [RegExp, string[]][] = [
 ];
 
 let cache: { billers: WaBiller[]; at: number } | null = null;
-const CACHE_MS = 60 * 60 * 1000;
+const MEM_CACHE_MS = 10 * 60 * 1000;       // hot instance: skip even the DB read
+const DB_CACHE_MS = 6 * 60 * 60 * 1000;    // refetch FLW at most every 6h
 
 export async function getElectricityBillers(): Promise<WaBiller[]> {
-  if (cache && Date.now() - cache.at < CACHE_MS) return cache.billers;
+  // 1. Hot in-memory cache (same warm instance)
+  if (cache && Date.now() - cache.at < MEM_CACHE_MS) return cache.billers;
 
+  // 2. Supabase-backed cache — survives serverless cold starts, so messages
+  //    never pay Flutterwave's slow catalogue fetch (5-15s) on a cold instance.
+  const { db } = await import("./db");
+  const { data: row } = await db
+    .from("wa_biller_cache")
+    .select("data, fetched_at")
+    .eq("id", 1)
+    .maybeSingle();
+
+  if (row?.data && Date.now() - new Date(row.fetched_at).getTime() < DB_CACHE_MS) {
+    const billers = row.data as WaBiller[];
+    cache = { billers, at: Date.now() };
+    return billers;
+  }
+
+  // 3. Cache miss/stale → fetch FLW, store for every other instance
+  const billers = await buildFromFlutterwave();
+  cache = { billers, at: Date.now() };
+  await db
+    .from("wa_biller_cache")
+    .upsert({ id: 1, data: billers, fetched_at: new Date().toISOString() })
+    .then(() => undefined, (e) => console.error("[billers] cache write failed", e));
+
+  // Stale-if-error: if FLW returned nothing but we had an old row, use it.
+  if (!billers.length && row?.data) {
+    const staleBillers = row.data as WaBiller[];
+    cache = { billers: staleBillers, at: Date.now() };
+    return staleBillers;
+  }
+  return billers;
+}
+
+async function buildFromFlutterwave(): Promise<WaBiller[]> {
   const items = (await getBillCategories()) as unknown as CatalogueItem[];
   const seen = new Set<string>();
   const billers: WaBiller[] = [];
@@ -82,7 +117,6 @@ export async function getElectricityBillers(): Promise<WaBiller[]> {
     });
   }
 
-  cache = { billers, at: Date.now() };
   return billers;
 }
 
