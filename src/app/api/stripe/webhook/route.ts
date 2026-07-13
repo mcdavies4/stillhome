@@ -6,6 +6,7 @@ import { createBillPayment, getBillStatus, getNgnBalance, FlwError } from "@/lib
 import { alertFounder } from "@/lib/alerts";
 import { sendReceipt } from "@/lib/whatsapp";
 import { sendReceiptEmail } from "@/lib/email";
+import { waOnFulfilled, waOnFailedRefunded, waOnNeedsReview } from "@/lib/wa/hooks";
 
 // The heart of the product:
 //   checkout.session.completed
@@ -13,6 +14,10 @@ import { sendReceiptEmail } from "@/lib/email";
 //     -> vend via Flutterwave Bills (idempotent reference = order id)
 //     -> success: store token, email payer, WhatsApp recipient, status=fulfilled
 //     -> failure: auto-refund the Stripe payment, status=failed_refunded
+//
+// WhatsApp-bot orders (source === "whatsapp") flow through the same pipeline;
+// the wa hooks handle the chat side (token message, conversation reset,
+// beneficiary save, refund/review notices) and are no-ops for web orders.
 
 export async function POST(req: Request) {
   const sig = req.headers.get("stripe-signature");
@@ -103,10 +108,17 @@ export async function POST(req: Request) {
       .update({ status: "fulfilled", flw_token: token })
       .eq("id", order.id);
 
-    await sendReceiptEmail({ ...order, flw_token: token });
-    if (order.recipient_whatsapp) {
+    // WA PATCH: bot orders have no email; guard the email receipt.
+    if (order.email) {
+      await sendReceiptEmail({ ...order, flw_token: token });
+    }
+    // WA PATCH: the bot's hook sends its own richer token message, so skip
+    // the generic WhatsApp receipt for bot orders to avoid a double message.
+    if (order.recipient_whatsapp && order.source !== "whatsapp") {
       await sendReceipt(order.recipient_whatsapp, { ...order, flw_token: token });
     }
+    // WA PATCH: token message + conversation reset + beneficiary save.
+    await waOnFulfilled({ ...order, flw_token: token });
 
     return NextResponse.json({ fulfilled: true });
   } catch (e) {
@@ -126,10 +138,14 @@ export async function POST(req: Request) {
           token = (status.data as any)?.extra ?? (status.data as any)?.token ?? null;
         } catch {}
         await db.from("orders").update({ status: "fulfilled", flw_token: token, error: null }).eq("id", order.id);
-        await sendReceiptEmail({ ...order, flw_token: token });
-        if (order.recipient_whatsapp) {
+        // WA PATCH: same guards as the main fulfil path.
+        if (order.email) {
+          await sendReceiptEmail({ ...order, flw_token: token });
+        }
+        if (order.recipient_whatsapp && order.source !== "whatsapp") {
           await sendReceipt(order.recipient_whatsapp, { ...order, flw_token: token });
         }
+        await waOnFulfilled({ ...order, flw_token: token });
         return NextResponse.json({ fulfilled: true, note: "recovered after error" });
       }
       if (outcome === "ambiguous") {
@@ -139,6 +155,8 @@ export async function POST(req: Request) {
           "🔍 Order needs review — do NOT ignore",
           `Order ${order.id} (${order.biller_name} ₦${Number(order.amount_ngn).toLocaleString()})\nVend outcome unknown after error: ${errMsg}\nCheck FLW dashboard for reference ${reference}: refund in Stripe if NOT delivered.`
         );
+        // WA PATCH: tell the buyer their payment is safe and being checked.
+        await waOnNeedsReview(order);
         return NextResponse.json({ fulfilled: false, review: true });
       }
       // outcome === "failed": confirmed no delivery — safe to refund below.
@@ -158,6 +176,8 @@ export async function POST(req: Request) {
         "Vend failed — customer auto-refunded",
         `Order ${order.id} (${order.biller_name} ₦${Number(order.amount_ngn).toLocaleString()})\nError: ${errMsg}`
       );
+      // WA PATCH: refund notice into the chat + conversation reset.
+      await waOnFailedRefunded(order);
     } catch (refundErr: any) {
       await db
         .from("orders")
@@ -167,6 +187,10 @@ export async function POST(req: Request) {
         "🚨 REFUND FAILED — manual action needed",
         `Order ${order.id}\nVend error: ${errMsg}\nRefund error: ${refundErr.message}\nPayment intent: ${session.payment_intent}`
       );
+      // WA PATCH: buyer paid, vend failed, refund also failed — they must not
+      // sit in silence while it's fixed by hand. Reuses the review notice
+      // ("confirming your token… or a full refund"), which is accurate here.
+      await waOnNeedsReview(order);
     }
 
     return NextResponse.json({ fulfilled: false, refunded: true });

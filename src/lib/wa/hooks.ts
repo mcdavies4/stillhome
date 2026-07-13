@@ -54,6 +54,33 @@ export async function waOnFulfilled(order: OrderRow): Promise<void> {
   await db.rpc("increment_wa_order_count", { p_user: waUser.id }).then(() => undefined, () => undefined);
 }
 
+/**
+ * Call when the vend outcome is ambiguous and the order goes to `needs_review`.
+ * The buyer has paid and is waiting — tell them it's being checked so the
+ * silence doesn't look like their money vanished. The conversation resets so
+ * they aren't locked out of chatting; the order resolves server-side.
+ */
+export async function waOnNeedsReview(order: OrderRow): Promise<void> {
+  if (order.source !== "whatsapp" || !order.wa_user_id) return;
+  const { data: waUser } = await db
+    .from("wa_users")
+    .select("id, wa_phone")
+    .eq("id", order.wa_user_id)
+    .single();
+  if (!waUser) return;
+  await resetConversation(waUser.id);
+  try {
+    await sendText(
+      waUser.wa_phone,
+      `⏳ Your payment went through, but the provider's response is delayed — ` +
+        `we're confirming your token now. You'll get it here shortly, or a full refund ` +
+        `if it can't be completed. No action needed.`
+    );
+  } catch (err) {
+    console.error("[wa-hooks] needs-review notice failed", order.id, err);
+  }
+}
+
 /** Call after the webhook auto-refunds a failed vend (`failed_refunded`). */
 export async function waOnFailedRefunded(order: OrderRow): Promise<void> {
   if (order.source !== "whatsapp" || !order.wa_user_id) return;
