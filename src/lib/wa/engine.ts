@@ -380,9 +380,9 @@ async function validateAndQuote(user: WaUser, draft: Draft): Promise<void> {
   draft.customer_name = name ?? undefined;
 
   if (draft.category === "airtime") {
-    if (draft.amount_ngn! < 500) {
+    if (draft.amount_ngn! < 1000) {
       await setConversation(user.id, { state: "collecting", draft: { ...draft, amount_ngn: undefined }, expires_at: ttl(TTL_MIN.collecting) });
-      return sendText(user.wa_phone, "Minimum airtime is ₦500. How much would you like?");
+      return sendText(user.wa_phone, "Minimum airtime order is ₦1,000. How much would you like?");
     }
     if (draft.amount_ngn! > 50000) {
       await setConversation(user.id, { state: "collecting", draft: { ...draft, amount_ngn: undefined }, expires_at: ttl(TTL_MIN.collecting) });
@@ -401,7 +401,14 @@ async function validateAndQuote(user: WaUser, draft: Draft): Promise<void> {
     }
   }
 
-  const quote = quoteGbp(draft.amount_ngn!);
+  let quote: ReturnType<typeof quoteGbp>;
+  try {
+    quote = quoteGbp(draft.amount_ngn!);
+  } catch (e) {
+    console.error("[wa] quoteGbp failed for", draft.amount_ngn, e);
+    await setConversation(user.id, { state: "collecting", draft: { ...draft, amount_ngn: undefined }, expires_at: ttl(TTL_MIN.collecting) });
+    return sendText(user.wa_phone, "I couldn't price that amount — the minimum order is ₦1,000. How much would you like?");
+  }
   if (quote.totalPence < 50) {
     await setConversation(user.id, { state: "collecting", draft: { ...draft, amount_ngn: undefined }, expires_at: ttl(TTL_MIN.collecting) });
     return sendText(user.wa_phone, "That amount is too small to charge by card — the minimum order is about ₦1,000. How much would you like?");
