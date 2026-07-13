@@ -1,41 +1,39 @@
 // src/lib/wa/engine.ts
-// Conversation state machine. Entry point: handleInbound().
-//
-// INTEGRATION POINTS (marked ⚠️): quoting and Flutterwave calls should reuse
-// Nolgic's existing pricing + Bills API code where noted.
+// Conversation state machine — fully wired to the existing Nolgic modules:
+//   validateCustomer (FLW meter validation, returns name + min/max)
+//   quoteGbp        (site pricing — identical quotes on web and WhatsApp)
+//   stripe          (shared Stripe client)
+// Orders are inserted in the exact shape the existing Stripe webhook expects
+// (status 'pending_payment', identifier/amount_gbp_pence/etc), so payment →
+// vend → refund-on-failure all flow through the already-tested pipeline.
 
-import Stripe from "stripe";
+import { stripe } from "@/lib/stripe";
+import { validateCustomer, FlwError } from "@/lib/flutterwave";
+import { quoteGbp } from "@/lib/fx";
 import {
   db, upsertWaUser, getConversation, setConversation, resetConversation,
-  getBeneficiaries, type Conversation, type Draft, type WaUser, type Beneficiary,
+  getBeneficiaries, type Conversation, type Draft, type WaUser,
 } from "./db";
 import { sendText, sendButtons } from "./client";
-import { extractOrder, type Extraction } from "./extract";
-import { BILLERS, billerByKey, billersForHelp } from "./billers";
+import { extractOrder } from "./extract";
+import { getElectricityBillers, billerByKey, billerByCodes, billersForHelp } from "./billers";
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);
-const SITE = process.env.NEXT_PUBLIC_SITE_URL ?? "https://nolgic.com";
-
+const SITE = process.env.NEXT_PUBLIC_APP_URL ?? "https://nolgic.com";
 const TTL_MIN = { collecting: 30, confirming: 30, awaiting_payment: 20 } as const;
 const DAILY_ORDER_CAP = 10;
 
-function ttl(minutes: number): string {
-  return new Date(Date.now() + minutes * 60_000).toISOString();
-}
+const ttl = (minutes: number) => new Date(Date.now() + minutes * 60_000).toISOString();
 
-// ---------------------------------------------------------------------------
-// Entry point — called from the webhook route for each deduped text/button msg
 // ---------------------------------------------------------------------------
 export async function handleInbound(
   waPhone: string,
   profileName: string | undefined,
   text: string,
-  buttonId?: string // set when the message is an interactive button reply
+  buttonId?: string
 ): Promise<void> {
   const user = await upsertWaUser(waPhone, profileName);
   let convo = await getConversation(user.id);
 
-  // Lazy TTL enforcement
   if (convo.expires_at && new Date(convo.expires_at) < new Date()) {
     if (convo.state === "awaiting_payment") {
       await expireOrder(convo);
@@ -45,14 +43,12 @@ export async function handleInbound(
     convo = await getConversation(user.id);
   }
 
-  // First contact welcome
   if (!user.welcomed) {
     await db.from("wa_users").update({ welcomed: true }).eq("id", user.id);
     await sendText(
       waPhone,
       `👋 Welcome to *Nolgic* — pay Nigerian electricity bills from the UK, right here in WhatsApp.\n\n` +
-        `Just tell me what you need, e.g.:\n` +
-        `*IKEDC ₦10,000 meter 04123456789*\n\n` +
+        `Just tell me what you need, e.g.:\n*IKEDC ₦10,000 meter 04123456789*\n\n` +
         `You pay in £ by card, the token arrives in this chat. Say *help* anytime.`
     );
     if (!text.trim()) return;
@@ -75,11 +71,12 @@ export async function handleInbound(
 }
 
 // ---------------------------------------------------------------------------
-// idle / collecting
-// ---------------------------------------------------------------------------
 async function handleCollecting(user: WaUser, convo: Conversation, text: string): Promise<void> {
-  const beneficiaries = await getBeneficiaries(user.id);
-  const ex = await extractOrder(text, beneficiaries, convo.draft);
+  const [billers, beneficiaries] = await Promise.all([
+    getElectricityBillers(),
+    getBeneficiaries(user.id),
+  ]);
+  const ex = await extractOrder(text, billers, beneficiaries, convo.draft);
 
   switch (ex.intent) {
     case "cancel":
@@ -94,15 +91,15 @@ async function handleCollecting(user: WaUser, convo: Conversation, text: string)
           `2️⃣ I confirm the meter owner's name and the £ price\n` +
           `3️⃣ You pay by card (secure Stripe link)\n` +
           `4️⃣ Token arrives in this chat ⚡\n\n` +
-          `Supported: ${billersForHelp()}\n` +
+          `Supported: ${billersForHelp(billers)}\n` +
           `Shortcuts: *again* (repeat last order), *list* (saved meters), *status* (last order).`
       );
 
     case "list_beneficiaries": {
       if (!beneficiaries.length)
-        return sendText(user.wa_phone, "No saved meters yet. After your first order I'll offer to save it.");
+        return sendText(user.wa_phone, "No saved meters yet. After your first order I'll save it for quick repeats.");
       const lines = beneficiaries
-        .map((b) => `• *${b.alias}* — ${b.meter_number}${b.customer_name ? ` (${b.customer_name})` : ""}`)
+        .map((b) => `• *${b.alias}* — ${b.identifier}${b.customer_name ? ` (${b.customer_name})` : ""}`)
         .join("\n");
       return sendText(user.wa_phone, `Saved meters:\n${lines}\n\nSay e.g. *${beneficiaries[0].alias} ₦5k* to buy.`);
     }
@@ -110,33 +107,35 @@ async function handleCollecting(user: WaUser, convo: Conversation, text: string)
     case "check_status": {
       const { data: order } = await db
         .from("orders")
-        .select("status, created_at, amount_ngn")
+        .select("status, amount_ngn, biller_name")
         .eq("wa_user_id", user.id)
         .order("created_at", { ascending: false })
         .limit(1)
         .maybeSingle();
       if (!order) return sendText(user.wa_phone, "No orders yet — tell me what you'd like to buy!");
-      return sendText(user.wa_phone, `Last order: ₦${Number(order.amount_ngn).toLocaleString()} — status: *${order.status}*.`);
+      return sendText(
+        user.wa_phone,
+        `Last order: ${order.biller_name} ₦${Number(order.amount_ngn).toLocaleString()} — status: *${order.status}*.`
+      );
     }
 
     case "repeat_last": {
       const { data: last } = await db
         .from("orders")
-        .select("biller_code, item_code, meter_number, amount_ngn")
+        .select("biller_code, item_code, biller_name, identifier, identifier_label, amount_ngn")
         .eq("wa_user_id", user.id)
-        .eq("status", "complete")
+        .eq("status", "fulfilled")
         .order("created_at", { ascending: false })
         .limit(1)
         .maybeSingle();
       if (!last) return sendText(user.wa_phone, "No previous completed order to repeat. Tell me what you need!");
-      const biller = BILLERS.find((b) => b.biller_code === last.biller_code && b.item_code === last.item_code);
       const draft: Draft = {
         biller_code: last.biller_code,
         item_code: last.item_code,
-        biller_label: biller?.label ?? "Electricity",
-        meter_type: biller?.meter_type ?? "prepaid",
-        meter_number: last.meter_number,
-        amount_ngn: (ex.updates.amount_ngn as number) ?? Number(last.amount_ngn),
+        biller_name: last.biller_name,
+        identifier: last.identifier,
+        identifier_label: last.identifier_label ?? "Meter Number",
+        amount_ngn: ex.updates.amount_ngn ?? Number(last.amount_ngn),
       };
       return validateAndQuote(user, draft);
     }
@@ -147,58 +146,51 @@ async function handleCollecting(user: WaUser, convo: Conversation, text: string)
         return sendText(user.wa_phone, ex.reply_if_other ?? "Tell me the disco, amount, and meter number to get started.");
       }
 
-      // Merge extraction into draft
       const draft: Draft = { ...convo.draft };
       if (ex.resolved_beneficiary_id) {
         const b = beneficiaries.find((x) => x.id === ex.resolved_beneficiary_id);
         if (b) {
           draft.biller_code = b.biller_code;
           draft.item_code = b.item_code;
-          draft.meter_number = b.meter_number;
-          const def = BILLERS.find((d) => d.biller_code === b.biller_code && d.item_code === b.item_code);
-          draft.biller_label = def?.label ?? "Electricity";
-          draft.meter_type = (b.meter_type as Draft["meter_type"]) ?? def?.meter_type;
+          draft.biller_name = b.biller_name ?? undefined;
+          draft.identifier = b.identifier;
+          draft.identifier_label = "Meter Number";
           draft.beneficiary_alias = b.alias;
         }
       }
       if (ex.updates.biller_key) {
-        const def = billerByKey(ex.updates.biller_key)!;
-        draft.biller_code = def.biller_code;
-        draft.item_code = def.item_code;
-        draft.biller_label = def.label;
-        draft.meter_type = def.meter_type;
+        const def = await billerByKey(ex.updates.biller_key);
+        if (def) {
+          draft.biller_code = def.biller_code;
+          draft.item_code = def.item_code;
+          draft.biller_name = def.biller_name;
+          draft.identifier_label = def.identifier_label;
+        }
       }
-      if (ex.updates.meter_number) draft.meter_number = ex.updates.meter_number;
+      if (ex.updates.identifier) draft.identifier = ex.updates.identifier;
       if (ex.updates.amount_ngn) draft.amount_ngn = ex.updates.amount_ngn;
       if (ex.updates.beneficiary_alias) draft.beneficiary_alias = String(ex.updates.beneficiary_alias).toLowerCase();
-      if (ex.updates.save_beneficiary) draft.save_beneficiary = true;
 
-      // What's still missing?
       const missing: string[] = [];
       if (!draft.biller_code) missing.push("biller");
-      if (!draft.meter_number) missing.push("meter");
+      if (!draft.identifier) missing.push("meter");
       if (!draft.amount_ngn) missing.push("amount");
 
       if (missing.length) {
         await setConversation(user.id, { state: "collecting", draft, expires_at: ttl(TTL_MIN.collecting) });
-        return sendText(user.wa_phone, questionFor(missing[0]));
+        return sendText(user.wa_phone, await questionFor(missing[0]));
       }
-
-      // Minimum amount check
-      const def = BILLERS.find((b) => b.biller_code === draft.biller_code && b.item_code === draft.item_code);
-      if (def && draft.amount_ngn! < def.min_ngn) {
-        await setConversation(user.id, { state: "collecting", draft: { ...draft, amount_ngn: undefined }, expires_at: ttl(TTL_MIN.collecting) });
-        return sendText(user.wa_phone, `Minimum for ${def.label} is ₦${def.min_ngn.toLocaleString()}. How much would you like?`);
-      }
-
       return validateAndQuote(user, draft);
     }
   }
 }
 
-function questionFor(field: string): string {
+async function questionFor(field: string): Promise<string> {
   switch (field) {
-    case "biller": return `Which disco is this for? (${billersForHelp()})`;
+    case "biller": {
+      const billers = await getElectricityBillers();
+      return `Which disco is this for? (${billersForHelp(billers)})`;
+    }
     case "meter": return "What's the meter number? (digits only)";
     case "amount": return "How much in naira? e.g. *₦10,000* or *10k*";
     default: return "Could you give me a bit more detail?";
@@ -206,40 +198,63 @@ function questionFor(field: string): string {
 }
 
 // ---------------------------------------------------------------------------
-// validate meter → quote GBP → confirming
-// ---------------------------------------------------------------------------
 async function validateAndQuote(user: WaUser, draft: Draft): Promise<void> {
   await sendText(user.wa_phone, "🔍 Checking that meter…");
 
-  const validation = await flwValidateMeter(draft.item_code!, draft.biller_code!, draft.meter_number!);
-  if (!validation.ok) {
+  let name: string;
+  let minimum: number | undefined;
+  let maximum: number | undefined;
+  try {
+    const v = await validateCustomer(draft.item_code!, draft.biller_code!, draft.identifier!);
+    name = v.name;
+    minimum = v.minimum ?? undefined;
+    maximum = v.maximum ?? undefined;
+  } catch (e) {
+    const msg = e instanceof FlwError ? e.message : "the provider couldn't validate this number";
     await setConversation(user.id, {
       state: "collecting",
-      draft: { ...draft, meter_number: undefined },
+      draft: { ...draft, identifier: undefined },
       expires_at: ttl(TTL_MIN.collecting),
     });
     return sendText(
       user.wa_phone,
-      `❌ That meter number didn't validate with ${draft.biller_label ?? "the provider"}. ` +
-        `Please double-check and send it again (digits only).`
+      `❌ ${msg}. Please double-check the meter number and send it again (digits only).`
     );
   }
-  draft.customer_name = validation.customerName;
+  draft.customer_name = name;
 
-  // ⚠️ INTEGRATION: replace with Nolgic's existing pricing function.
-  const quote = await getGbpQuote(draft.amount_ngn!);
-  draft.quoted_gbp = quote.gbp;
-  draft.fx_rate = quote.fxRate;
+  if (minimum && draft.amount_ngn! < minimum) {
+    await setConversation(user.id, {
+      state: "collecting",
+      draft: { ...draft, amount_ngn: undefined },
+      expires_at: ttl(TTL_MIN.collecting),
+    });
+    return sendText(user.wa_phone, `Minimum for ${draft.biller_name} is ₦${minimum.toLocaleString()}. How much would you like?`);
+  }
+  if (maximum && draft.amount_ngn! > maximum) {
+    await setConversation(user.id, {
+      state: "collecting",
+      draft: { ...draft, amount_ngn: undefined },
+      expires_at: ttl(TTL_MIN.collecting),
+    });
+    return sendText(user.wa_phone, `Maximum for ${draft.biller_name} is ₦${maximum.toLocaleString()}. How much would you like?`);
+  }
+
+  // Same pricing as the website — one source of truth.
+  const quote = quoteGbp(draft.amount_ngn!);
+  draft.total_pence = quote.totalPence;
+  draft.service_fee_pence = quote.serviceFeePence;
+  draft.ngn_per_gbp = quote.ngnPerGbp;
   draft.quoted_at = new Date().toISOString();
 
   await setConversation(user.id, { state: "confirming", draft, expires_at: ttl(TTL_MIN.confirming) });
 
   await sendButtons(
     user.wa_phone,
-    `⚡ *${draft.biller_label}*\n` +
-      `Meter: ${draft.meter_number}\n` +
+    `⚡ *${draft.biller_name}*\n` +
+      `Meter: ${draft.identifier}\n` +
       `Name: *${draft.customer_name}*\n` +
-      `Amount: ₦${draft.amount_ngn!.toLocaleString()} → *£${draft.quoted_gbp.toFixed(2)}* (all fees included)\n\n` +
+      `Amount: ₦${draft.amount_ngn!.toLocaleString()} → *£${(quote.totalPence / 100).toFixed(2)}* (all fees included)\n\n` +
       `Is this correct?`,
     [
       { id: "confirm_pay", title: "Pay ✓" },
@@ -250,8 +265,6 @@ async function validateAndQuote(user: WaUser, draft: Draft): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
-// confirming
-// ---------------------------------------------------------------------------
 async function handleConfirming(user: WaUser, convo: Conversation, text: string, buttonId?: string): Promise<void> {
   const t = (buttonId ?? text).trim().toLowerCase();
 
@@ -259,14 +272,11 @@ async function handleConfirming(user: WaUser, convo: Conversation, text: string,
     await resetConversation(user.id);
     return sendText(user.wa_phone, "Cancelled — nothing charged. 👍");
   }
-
   if (["confirm_change", "change", "edit"].includes(t)) {
     await setConversation(user.id, { state: "collecting", expires_at: ttl(TTL_MIN.collecting) });
     return sendText(user.wa_phone, "No problem — what should I change? (disco, meter number, or amount)");
   }
-
   if (["confirm_pay", "yes", "y", "1", "pay", "ok"].includes(t)) {
-    // Daily cap — basic abuse control
     const since = new Date(Date.now() - 24 * 3600_000).toISOString();
     const { count } = await db
       .from("orders")
@@ -280,7 +290,6 @@ async function handleConfirming(user: WaUser, convo: Conversation, text: string,
     return createOrderAndPaymentLink(user, convo);
   }
 
-  // Anything else while confirming → treat as an edit attempt
   await setConversation(user.id, { state: "collecting", expires_at: ttl(TTL_MIN.collecting) });
   return handleCollecting(user, { ...convo, state: "collecting" }, text);
 }
@@ -288,45 +297,50 @@ async function handleConfirming(user: WaUser, convo: Conversation, text: string,
 async function createOrderAndPaymentLink(user: WaUser, convo: Conversation): Promise<void> {
   const d = convo.draft;
 
-  // ⚠️ INTEGRATION: align these columns with Nolgic's existing `orders` schema.
+  // Exact shape the existing Stripe webhook claims and fulfils.
   const { data: order, error } = await db
     .from("orders")
     .insert({
       source: "whatsapp",
       wa_user_id: user.id,
-      status: "awaiting_payment",
+      email: null,
       biller_code: d.biller_code,
       item_code: d.item_code,
-      meter_number: d.meter_number,
+      biller_name: d.biller_name,
+      identifier: d.identifier,
+      identifier_label: d.identifier_label ?? "Meter Number",
       customer_name: d.customer_name,
+      recipient_whatsapp: user.wa_phone,       // existing receipt path delivers here
       amount_ngn: d.amount_ngn,
-      amount_gbp: d.quoted_gbp,
-      fx_rate: d.fx_rate,
+      fx_ngn_per_gbp: d.ngn_per_gbp,
+      service_fee_pence: d.service_fee_pence,
+      amount_gbp_pence: d.total_pence,
+      status: "pending_payment",
     })
     .select("id")
     .single();
   if (error || !order) {
-    console.error("[engine] order insert failed", error);
+    console.error("[wa-engine] order insert failed", error);
     return sendText(user.wa_phone, "Something went wrong on our side — please try again in a minute.");
   }
 
   const session = await stripe.checkout.sessions.create({
     mode: "payment",
-    expires_at: Math.floor(Date.now() / 1000) + 30 * 60, // Stripe minimum 30 min
+    expires_at: Math.floor(Date.now() / 1000) + 30 * 60,
     line_items: [
       {
         quantity: 1,
         price_data: {
           currency: "gbp",
-          unit_amount: Math.round(d.quoted_gbp! * 100),
+          unit_amount: d.total_pence!,
           product_data: {
-            name: `${d.biller_label} — ₦${d.amount_ngn!.toLocaleString()}`,
-            description: `Meter •••${d.meter_number!.slice(-4)} (${d.customer_name})`,
+            name: `${d.biller_name} — ₦${d.amount_ngn!.toLocaleString()}`,
+            description: `Meter •••${d.identifier!.slice(-4)} (${d.customer_name})`,
           },
         },
       },
     ],
-    metadata: { order_id: order.id, wa_user_id: user.id, source: "whatsapp" },
+    metadata: { order_id: order.id, source: "whatsapp" },
     success_url: `${SITE}/wa/paid`,
     cancel_url: `${SITE}/wa/cancelled`,
   });
@@ -340,13 +354,11 @@ async function createOrderAndPaymentLink(user: WaUser, convo: Conversation): Pro
 
   await sendText(
     user.wa_phone,
-    `💳 Pay *£${d.quoted_gbp!.toFixed(2)}* securely here:\n${session.url}\n\n` +
+    `💳 Pay *£${(d.total_pence! / 100).toFixed(2)}* securely here:\n${session.url}\n\n` +
       `Link valid for 20 minutes. The token arrives in this chat right after payment. ⚡`
   );
 }
 
-// ---------------------------------------------------------------------------
-// awaiting_payment
 // ---------------------------------------------------------------------------
 async function handleAwaitingPayment(user: WaUser, convo: Conversation, text: string): Promise<void> {
   const t = text.trim().toLowerCase();
@@ -357,10 +369,10 @@ async function handleAwaitingPayment(user: WaUser, convo: Conversation, text: st
   }
   const { data: order } = await db
     .from("orders")
-    .select("stripe_session_id, amount_gbp")
+    .select("stripe_session_id, status")
     .eq("id", convo.order_id!)
     .single();
-  if (order?.stripe_session_id) {
+  if (order?.status === "pending_payment" && order.stripe_session_id) {
     const session = await stripe.checkout.sessions.retrieve(order.stripe_session_id);
     if (session.url && session.status === "open") {
       return sendText(user.wa_phone, `Still waiting on payment — here's your link again:\n${session.url}\n\nSay *cancel* to stop.`);
@@ -370,56 +382,17 @@ async function handleAwaitingPayment(user: WaUser, convo: Conversation, text: st
   return sendText(user.wa_phone, "That order lapsed. Say *retry* to start it again.");
 }
 
-async function expireOrder(convo: Conversation): Promise<void> {
+export async function expireOrder(convo: Conversation): Promise<void> {
   if (!convo.order_id) return;
   const { data: order } = await db
     .from("orders")
     .select("stripe_session_id, status")
     .eq("id", convo.order_id)
     .single();
-  if (order?.status === "awaiting_payment") {
+  if (order?.status === "pending_payment") {
     await db.from("orders").update({ status: "expired" }).eq("id", convo.order_id);
     if (order.stripe_session_id) {
       try { await stripe.checkout.sessions.expire(order.stripe_session_id); } catch { /* already expired/paid */ }
     }
   }
-}
-
-// ---------------------------------------------------------------------------
-// Flutterwave validation + quoting
-// ---------------------------------------------------------------------------
-async function flwValidateMeter(
-  itemCode: string,
-  billerCode: string,
-  meterNumber: string
-): Promise<{ ok: boolean; customerName?: string }> {
-  // ⚠️ INTEGRATION: if Nolgic already wraps this endpoint, import and reuse it.
-  try {
-    const res = await fetch(
-      `https://api.flutterwave.com/v3/bill-items/${itemCode}/validate?code=${billerCode}&customer=${encodeURIComponent(meterNumber)}`,
-      { headers: { Authorization: `Bearer ${process.env.FLW_SECRET_KEY}` } }
-    );
-    const data = await res.json();
-    if (data?.status === "success" && data?.data?.name) {
-      return { ok: true, customerName: String(data.data.name).trim() };
-    }
-    return { ok: false };
-  } catch (err) {
-    console.error("[flw] validate error", err);
-    return { ok: false };
-  }
-}
-
-/**
- * ⚠️ INTEGRATION: Replace this with Nolgic's existing NGN→GBP pricing
- * (same FX source + margin as the website so the two channels never disagree).
- * The placeholder below reads a rate + margin from env as a stopgap.
- */
-async function getGbpQuote(amountNgn: number): Promise<{ gbp: number; fxRate: number }> {
-  const fxRate = Number(process.env.NGN_PER_GBP ?? 0);       // e.g. 2050
-  const marginPct = Number(process.env.NOLGIC_MARGIN_PCT ?? 4);
-  if (!fxRate) throw new Error("NGN_PER_GBP not configured and pricing integration not wired");
-  const raw = amountNgn / fxRate;
-  const gbp = Math.ceil(raw * (1 + marginPct / 100) * 100) / 100;
-  return { gbp, fxRate };
 }

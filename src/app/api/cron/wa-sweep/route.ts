@@ -1,20 +1,19 @@
 // src/app/api/cron/wa-sweep/route.ts
-// Vercel cron: expire stale awaiting_payment conversations proactively so
-// users get told without having to message first. Also prunes dedupe rows.
+// Vercel cron (*/10): proactively expire stale WhatsApp payment links and
+// prune webhook-dedupe rows.
 //
 // vercel.json:
 // { "crons": [{ "path": "/api/cron/wa-sweep", "schedule": "*/10 * * * *" }] }
 
 import { NextRequest } from "next/server";
-import Stripe from "stripe";
+import { stripe } from "@/lib/stripe";
 import { db, resetConversation } from "@/lib/wa/db";
 import { sendText } from "@/lib/wa/client";
 
 export const runtime = "nodejs";
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);
+export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest) {
-  // Vercel cron sends this header; also allow manual trigger with CRON_SECRET
   const auth = req.headers.get("authorization");
   if (process.env.CRON_SECRET && auth !== `Bearer ${process.env.CRON_SECRET}`) {
     return new Response("Unauthorized", { status: 401 });
@@ -36,8 +35,8 @@ export async function GET(req: NextRequest) {
         .select("status, stripe_session_id")
         .eq("id", convo.order_id)
         .single();
-      // Guard against race: only expire if still unpaid
-      if (order?.status === "awaiting_payment") {
+      // Race guard: only expire if genuinely still unpaid
+      if (order?.status === "pending_payment") {
         await db.from("orders").update({ status: "expired" }).eq("id", convo.order_id);
         if (order.stripe_session_id) {
           try { await stripe.checkout.sessions.expire(order.stripe_session_id); } catch { /* paid or gone */ }
@@ -45,7 +44,7 @@ export async function GET(req: NextRequest) {
         await resetConversation(convo.wa_user_id);
         try {
           await sendText(phone, "Your payment link expired ⏰ Nothing was charged. Say *retry* to place the order again.");
-        } catch { /* outside 24h window — silent is fine here */ }
+        } catch { /* outside 24h window — silence is fine */ }
         expired++;
       } else {
         await resetConversation(convo.wa_user_id);
