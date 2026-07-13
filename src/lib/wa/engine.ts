@@ -206,7 +206,7 @@ async function validateAndQuote(user: WaUser, draft: Draft): Promise<void> {
   let maximum: number | undefined;
   try {
     const v = await validateCustomer(draft.item_code!, draft.biller_code!, draft.identifier!);
-    name = v.name;
+    name = v.name ?? "(name not returned by provider)";
     minimum = v.minimum ?? undefined;
     maximum = v.maximum ?? undefined;
   } catch (e) {
