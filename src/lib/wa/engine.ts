@@ -100,6 +100,13 @@ async function handleCollecting(
     }
   }
 
+  // Deterministic shortcut: the draft is waiting for an identifier and the
+  // message is just a number — no extraction needed, no ambiguity possible.
+  const bare = text.trim().replace(/[\s-]/g, "");
+  if (/^\d{8,15}$/.test(bare) && !convo.draft.identifier && (convo.draft.biller_code || convo.draft.brand)) {
+    return advance(user, { ...convo.draft, identifier: bare });
+  }
+
   const beneficiaries = await getBeneficiaries(user.id);
   const ex = await extractOrder(text, beneficiaries, convo.draft);
 
@@ -172,7 +179,21 @@ async function handleCollecting(
     case "buy_bill":
     case "other": {
       if (ex.intent === "other") {
-        return sendText(user.wa_phone, ex.reply_if_other ?? "Tell me what you'd like to pay for to get started.");
+        const u = ex.updates ?? {};
+        const hasUpdates =
+          !!u.biller_key || !!u.brand || u.package_query !== undefined ||
+          !!u.identifier || !!u.amount_ngn || !!ex.resolved_beneficiary_id;
+        // Pure chit-chat with an order in progress → re-ask, don't reset the thread.
+        if (!hasUpdates) {
+          if (convo.draft.biller_code || convo.draft.brand) {
+            const missingNow: string[] = [];
+            if (!convo.draft.identifier) missingNow.push("identifier");
+            if (["electricity", "airtime"].includes(convo.draft.category ?? "electricity") && !convo.draft.amount_ngn) missingNow.push("amount");
+            if (missingNow.length) return sendText(user.wa_phone, await questionFor(missingNow[0], convo.draft));
+          }
+          return sendText(user.wa_phone, ex.reply_if_other ?? "Tell me what you'd like to pay for to get started.");
+        }
+        // Extracted something useful → treat exactly like buy_bill below.
       }
 
       const draft: Draft = { ...convo.draft };
@@ -359,9 +380,9 @@ async function validateAndQuote(user: WaUser, draft: Draft): Promise<void> {
   draft.customer_name = name ?? undefined;
 
   if (draft.category === "airtime") {
-    if (draft.amount_ngn! < 50) {
+    if (draft.amount_ngn! < 500) {
       await setConversation(user.id, { state: "collecting", draft: { ...draft, amount_ngn: undefined }, expires_at: ttl(TTL_MIN.collecting) });
-      return sendText(user.wa_phone, "Minimum airtime is ₦50. How much would you like?");
+      return sendText(user.wa_phone, "Minimum airtime is ₦500. How much would you like?");
     }
     if (draft.amount_ngn! > 50000) {
       await setConversation(user.id, { state: "collecting", draft: { ...draft, amount_ngn: undefined }, expires_at: ttl(TTL_MIN.collecting) });
@@ -381,6 +402,10 @@ async function validateAndQuote(user: WaUser, draft: Draft): Promise<void> {
   }
 
   const quote = quoteGbp(draft.amount_ngn!);
+  if (quote.totalPence < 50) {
+    await setConversation(user.id, { state: "collecting", draft: { ...draft, amount_ngn: undefined }, expires_at: ttl(TTL_MIN.collecting) });
+    return sendText(user.wa_phone, "That amount is too small to charge by card — the minimum order is about ₦1,000. How much would you like?");
+  }
   draft.total_pence = quote.totalPence;
   draft.service_fee_pence = quote.serviceFeePence;
   draft.ngn_per_gbp = quote.ngnPerGbp;
