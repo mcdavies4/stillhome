@@ -130,6 +130,21 @@ export async function billerByCodes(billerCode: string, itemCode: string): Promi
   );
 }
 
+/**
+ * All catalogue entries belonging to the same disco as `chosen` (shared alias),
+ * chosen first. FLW's catalogue often lists several entries per disco
+ * (prepaid/postpaid variants, duplicate item codes) and only one of them will
+ * validate a given meter — the caller tries them in order.
+ */
+export async function billersSameDisco(chosen: WaBiller): Promise<WaBiller[]> {
+  const all = await getElectricityBillers();
+  const chosenAliases = new Set(chosen.aliases);
+  const siblings = all.filter(
+    (b) => b.key !== chosen.key && b.aliases.some((a) => chosenAliases.has(a))
+  );
+  return [chosen, ...siblings];
+}
+
 /** Compact list for the Claude extraction prompt. */
 export function billersForPrompt(billers: WaBiller[]): string {
   return billers

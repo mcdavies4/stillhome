@@ -16,7 +16,7 @@ import {
 } from "./db";
 import { sendText, sendButtons } from "./client";
 import { extractOrder } from "./extract";
-import { getElectricityBillers, billerByKey, billerByCodes, billersForHelp } from "./billers";
+import { getElectricityBillers, billerByKey, billerByCodes, billersSameDisco, billersForHelp } from "./billers";
 
 const SITE = process.env.NEXT_PUBLIC_APP_URL ?? "https://nolgic.com";
 const TTL_MIN = { collecting: 30, confirming: 30, awaiting_payment: 20 } as const;
@@ -201,16 +201,39 @@ async function questionFor(field: string): Promise<string> {
 async function validateAndQuote(user: WaUser, draft: Draft): Promise<void> {
   await sendText(user.wa_phone, "🔍 Checking that meter…");
 
-  let name: string;
+  // FLW lists several entries per disco (prepaid/postpaid variants, duplicate
+  // item codes); only one validates a given meter. Try the chosen entry first,
+  // then its siblings — same thing a user does with the website dropdown.
+  const chosen = await billerByCodes(draft.biller_code!, draft.item_code!);
+  const candidates = chosen ? await billersSameDisco(chosen) : [];
+  const tryList = candidates.length
+    ? candidates.slice(0, 6)
+    : [{ biller_code: draft.biller_code!, item_code: draft.item_code!, biller_name: draft.biller_name ?? "Electricity", identifier_label: draft.identifier_label ?? "Meter Number" }];
+
+  let name: string | null = null;
   let minimum: number | undefined;
   let maximum: number | undefined;
-  try {
-    const v = await validateCustomer(draft.item_code!, draft.biller_code!, draft.identifier!);
-    name = v.name ?? "(name not returned by provider)";
-    minimum = v.minimum ?? undefined;
-    maximum = v.maximum ?? undefined;
-  } catch (e) {
-    const msg = e instanceof FlwError ? e.message : "the provider couldn't validate this number";
+  let lastErr = "the provider couldn't validate this number";
+
+  for (const c of tryList) {
+    try {
+      console.log("[wa] validating", c.biller_name, c.biller_code, c.item_code, draft.identifier);
+      const v = await validateCustomer(c.item_code, c.biller_code, draft.identifier!);
+      name = v.name ?? "(name not returned by provider)";
+      minimum = v.minimum ?? undefined;
+      maximum = v.maximum ?? undefined;
+      // Winner: pin the validated codes onto the draft/order.
+      draft.biller_code = c.biller_code;
+      draft.item_code = c.item_code;
+      draft.biller_name = c.biller_name;
+      draft.identifier_label = c.identifier_label ?? draft.identifier_label ?? "Meter Number";
+      break;
+    } catch (e) {
+      lastErr = e instanceof FlwError ? e.message : lastErr;
+    }
+  }
+
+  if (name === null) {
     await setConversation(user.id, {
       state: "collecting",
       draft: { ...draft, identifier: undefined },
@@ -218,7 +241,7 @@ async function validateAndQuote(user: WaUser, draft: Draft): Promise<void> {
     });
     return sendText(
       user.wa_phone,
-      `❌ ${msg}. Please double-check the meter number and send it again (digits only).`
+      `❌ ${lastErr}. Please double-check the meter number and send it again (digits only).`
     );
   }
   draft.customer_name = name;
