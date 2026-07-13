@@ -1,15 +1,17 @@
 // src/lib/wa/extract.ts
-// Claude-powered extraction of bill-purchase intent from a WhatsApp message.
+// Claude-powered extraction of bill-purchase intent (electricity, TV, data).
 
-import { billersForPrompt, type WaBiller } from "./billers";
+import { catalogueForPrompt } from "./billers";
 import type { Beneficiary, Draft } from "./db";
 
 export interface Extraction {
   intent: "buy_bill" | "check_status" | "list_beneficiaries" | "repeat_last" | "cancel" | "help" | "other";
   updates: {
-    biller_key?: string;
+    biller_key?: string;       // electricity only
+    brand?: string;            // tv/data only
+    package_query?: string;    // tv/data only
     identifier?: string;
-    amount_ngn?: number;
+    amount_ngn?: number;       // electricity only
     beneficiary_alias?: string;
   };
   resolved_beneficiary_id: string | null;
@@ -17,15 +19,15 @@ export interface Extraction {
   reply_if_other: string | null;
 }
 
-const SYSTEM_PROMPT = (billers: WaBiller[], beneficiaries: Beneficiary[], draft: Draft) => `You extract structured electricity-purchase orders from WhatsApp messages sent to Nolgic, a UK→Nigeria utility bill payment service. Users are typically UK-based Nigerians buying electricity for themselves or relatives in Nigeria. Messages are informal: "10k light for mum", "abeg buy 5k ikedc 04123456789", "same as last time but 20k".
+const SYSTEM_PROMPT = (catalogue: string, beneficiaries: Beneficiary[], draft: Draft) => `You extract structured bill-purchase orders from WhatsApp messages sent to Nolgic, a UK→Nigeria bill payment service. Users are typically UK-based Nigerians paying for themselves or relatives in Nigeria: electricity, TV subscriptions (DStv/GOtv/StarTimes), and mobile data. Messages are informal: "10k light for mum", "renew dstv compact 1034567890", "2gb mtn for 08031234567", "same as last time".
 
-SUPPORTED BILLERS (match by name or alias; return the key exactly as shown):
-${billersForPrompt(billers)}
+CATALOGUE:
+${catalogue}
 
-SAVED BENEFICIARIES for this user (resolve phrases like "mum", "for my mum", "the shop"):
+SAVED BENEFICIARIES for this user (resolve phrases like "mum", "the shop"):
 ${
   beneficiaries.length
-    ? beneficiaries.map((b) => `- id: ${b.id} | alias: "${b.alias}" | meter: ${b.identifier} | biller: ${b.biller_name ?? b.biller_code}`).join("\n")
+    ? beneficiaries.map((b) => `- id: ${b.id} | alias: "${b.alias}" | number: ${b.identifier} | product: ${b.biller_name ?? b.biller_code}`).join("\n")
     : "(none saved yet)"
 }
 
@@ -36,30 +38,34 @@ Respond with ONLY a JSON object, no prose, no markdown fences:
 {
   "intent": "buy_bill" | "check_status" | "list_beneficiaries" | "repeat_last" | "cancel" | "help" | "other",
   "updates": {
-    "biller_key": string?,        // key from the supported list above
-    "identifier": string?,        // meter number, digits only as the user gave it
-    "amount_ngn": number?,        // integer naira
-    "beneficiary_alias": string?  // if the user names someone new, lowercase
+    "biller_key": string?,       // ELECTRICITY ONLY: exact key from the catalogue
+    "brand": string?,            // TV/DATA ONLY: brand name exactly as listed
+    "package_query": string?,    // TV/DATA ONLY: the package/bundle the user asked for, e.g. "compact", "2gb", "jolli", "premium". Empty string if they named the brand but no package.
+    "identifier": string?,       // meter/smartcard/phone number, digits only as given (keep leading zeros)
+    "amount_ngn": number?,       // ELECTRICITY ONLY: integer naira
+    "beneficiary_alias": string? // if the user names someone new, lowercase
   },
   "resolved_beneficiary_id": string | null,
-  "missing": string[],  // among: "biller_key","identifier","amount_ngn" — required for a complete order considering BOTH the draft and your updates. If resolved_beneficiary_id is set, biller and identifier come from it, so only amount may be missing.
-  "reply_if_other": string | null  // short friendly reply ONLY when intent is "other"
+  "missing": string[],  // what's still needed for a complete order, considering BOTH the draft and your updates. Electricity needs: biller_key, identifier, amount_ngn. TV/data needs: brand, package_query, identifier. If resolved_beneficiary_id is set, the product and identifier come from it.
+  "reply_if_other": string | null
 }
 
 STRICT RULES:
-- NEVER invent, guess, or autocomplete meter numbers or amounts. If not explicitly present, leave them out and list them in "missing".
-- Amount parsing: "10k" = 10000, "10,000" = 10000, "₦5000" = 5000. A bare number under 100 with no k/naira context is AMBIGUOUS — leave amount out and include "amount_ngn" in missing.
-- "again", "repeat", "same as last time" → intent "repeat_last" (a new amount in the same message goes in updates).
+- NEVER invent meter numbers, smartcard numbers, phone numbers, or amounts. If not explicitly present, leave them out and list in "missing".
+- identifier is a STRING — preserve leading zeros exactly (e.g. "08031234567", "047001297002").
+- Amount parsing (electricity): "10k" = 10000, "N5000" = 5000, "10,000" = 10000. A bare number under 100 with no context is AMBIGUOUS — omit and mark missing.
+- "light", "nepa", "electricity", "units" → electricity. "dstv", "gotv", "startimes", "cable", "decoder" → TV. "data", "GB", "MB" with a network name → data.
+- For data, an 11-digit number starting 0 in the message is the recipient phone number (identifier).
+- "again", "repeat", "same as last time" → intent "repeat_last".
 - "cancel", "stop", "forget it" → intent "cancel".
-- Greetings/thanks → intent "other" with a brief warm reply_if_other (under 2 sentences). Questions about how the service works → intent "help".
-- If the user mentions a person not in the saved list ("for mum" with none saved), set beneficiary_alias and treat biller/identifier as missing unless given.`;
+- Greetings/thanks → "other" with a brief warm reply_if_other (under 2 sentences). "How does this work" → "help".`;
 
 export async function extractOrder(
   message: string,
-  billers: WaBiller[],
   beneficiaries: Beneficiary[],
   draft: Draft
 ): Promise<Extraction> {
+  const catalogue = await catalogueForPrompt();
   const res = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: {
@@ -70,7 +76,7 @@ export async function extractOrder(
     body: JSON.stringify({
       model: "claude-haiku-4-5",
       max_tokens: 500,
-      system: SYSTEM_PROMPT(billers, beneficiaries, draft),
+      system: SYSTEM_PROMPT(catalogue, beneficiaries, draft),
       messages: [{ role: "user", content: message }],
     }),
   });
@@ -90,10 +96,6 @@ export async function extractOrder(
     const parsed = JSON.parse(text.replace(/```json|```/g, "").trim()) as Extraction;
 
     // Server-side hardening — never trust model output blindly:
-    if (parsed.updates?.biller_key && !billers.some((b) => b.key === parsed.updates.biller_key)) {
-      delete parsed.updates.biller_key;
-      if (!parsed.missing.includes("biller_key")) parsed.missing.push("biller_key");
-    }
     if (parsed.updates?.identifier) {
       const digits = String(parsed.updates.identifier).replace(/\D/g, "");
       if (digits.length < 8 || digits.length > 15) {
@@ -112,6 +114,8 @@ export async function extractOrder(
         parsed.updates.amount_ngn = n;
       }
     }
+    if (parsed.updates?.brand) parsed.updates.brand = String(parsed.updates.brand).trim();
+    if (parsed.updates?.package_query != null) parsed.updates.package_query = String(parsed.updates.package_query).trim();
     return parsed;
   } catch (err) {
     console.error("[extract] parse failed", err, text);
@@ -126,6 +130,6 @@ function fallbackExtraction(): Extraction {
     resolved_beneficiary_id: null,
     missing: [],
     reply_if_other:
-      "Sorry, I didn't catch that. Try something like: *IKEDC ₦10,000 meter 04123456789* — or say *help*.",
+      "Sorry, I didn't catch that. Try: *IKEDC 10k meter 04123456789*, *DStv Compact 1034567890*, or *MTN 2GB 08031234567* — or say *help*.",
   };
 }

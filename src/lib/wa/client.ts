@@ -103,3 +103,79 @@ export async function deliverToken(
     await sendTokenTemplate(to, [o.billerLabel, o.identifier, o.token, "-", o.reference]);
   }
 }
+
+/** Interactive list message — up to 10 rows, titles ≤24 chars, desc ≤72. */
+export async function sendList(
+  to: string,
+  body: string,
+  buttonText: string,
+  rows: { id: string; title: string; description?: string }[]
+): Promise<void> {
+  await send({
+    to,
+    type: "interactive",
+    interactive: {
+      type: "list",
+      body: { text: body },
+      action: {
+        button: buttonText.slice(0, 20),
+        sections: [
+          {
+            title: "Options",
+            rows: rows.slice(0, 10).map((r) => ({
+              id: r.id,
+              title: r.title.slice(0, 24),
+              description: r.description?.slice(0, 72),
+            })),
+          },
+        ],
+      },
+    },
+  });
+}
+
+/**
+ * Approved template `nolgic_order_receipt` (4 params) — fallback for
+ * non-token orders (TV, data) outside the 24h window:
+ *   Your {{1}} payment is complete. / For: {{2}} / Amount: {{3}} / Ref: {{4}} / ...
+ */
+export async function sendOrderReceiptTemplate(
+  to: string,
+  params: [product: string, identifier: string, amount: string, ref: string]
+): Promise<void> {
+  await send({
+    to,
+    type: "template",
+    template: {
+      name: "nolgic_order_receipt",
+      language: { code: "en" },
+      components: [{ type: "body", parameters: params.map((text) => ({ type: "text", text })) }],
+    },
+  });
+}
+
+/** Non-token delivery (TV/data): free-form first, template fallback. */
+export async function deliverConfirmation(
+  to: string,
+  o: {
+    productLabel: string;   // "DSTV COMPACT" / "MTN 2GB data purchase"
+    identifier: string;     // smartcard / phone
+    identifierLabel: string;
+    customerName?: string | null;
+    reference: string;
+    gbpPaid: string;
+  }
+): Promise<void> {
+  const body =
+    `✅ Payment received — £${o.gbpPaid}\n\n` +
+    `📺 *${o.productLabel}* — done!\n` +
+    `${o.identifierLabel}: ${o.identifier}${o.customerName ? ` (${o.customerName})` : ""}\n` +
+    `Ref: ${o.reference}\n\n` +
+    `It can take a few minutes to reflect on the ${o.identifierLabel.toLowerCase().includes("phone") ? "line" : "decoder"}.\n` +
+    `Say *again* anytime to repeat this order.`;
+  try {
+    await sendText(to, body);
+  } catch {
+    await sendOrderReceiptTemplate(to, [o.productLabel, o.identifier, `£${o.gbpPaid}`, o.reference]);
+  }
+}

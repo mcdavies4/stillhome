@@ -7,7 +7,8 @@
 // save the meter as a beneficiary for one-line repeat orders.
 
 import { db, resetConversation } from "./db";
-import { deliverToken, sendText } from "./client";
+import { deliverToken, deliverConfirmation, sendText } from "./client";
+import { billerByCodes } from "./billers";
 
 interface OrderRow {
   id: string;
@@ -37,16 +38,28 @@ export async function waOnFulfilled(order: OrderRow): Promise<void> {
   if (!waUser) return;
 
   try {
-    await deliverToken(waUser.wa_phone, {
-      billerLabel: order.biller_name,
-      identifier: order.identifier,
-      customerName: order.customer_name ?? "",
-      token: order.flw_token ?? "(token sent by the provider — check the meter or SMS)",
-      reference: shortRef(order.id),
-      gbpPaid: (order.amount_gbp_pence / 100).toFixed(2),
-    });
+    const def = await billerByCodes(order.biller_code, order.item_code);
+    if (!def || def.category === "electricity") {
+      await deliverToken(waUser.wa_phone, {
+        billerLabel: order.biller_name,
+        identifier: order.identifier,
+        customerName: order.customer_name ?? "",
+        token: order.flw_token ?? "(token sent by the provider — check the meter or SMS)",
+        reference: shortRef(order.id),
+        gbpPaid: (order.amount_gbp_pence / 100).toFixed(2),
+      });
+    } else {
+      await deliverConfirmation(waUser.wa_phone, {
+        productLabel: order.biller_name,
+        identifier: order.identifier,
+        identifierLabel: def.identifier_label,
+        customerName: order.customer_name,
+        reference: shortRef(order.id),
+        gbpPaid: (order.amount_gbp_pence / 100).toFixed(2),
+      });
+    }
   } catch (err) {
-    console.error("[wa-hooks] token delivery failed", order.id, err);
+    console.error("[wa-hooks] delivery failed", order.id, err);
   }
 
   await resetConversation(waUser.id);

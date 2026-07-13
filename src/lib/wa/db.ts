@@ -14,11 +14,14 @@ export type ConversationState =
   | "failed";
 
 export interface Draft {
+  category?: "electricity" | "tv" | "data";
+  brand?: string;             // "DStv", "MTN", ... (tv/data)
+  package_query?: string;     // what the user asked for, pre-match (tv/data)
   biller_code?: string;
   item_code?: string;
-  biller_name?: string;       // e.g. "IKEDC PREPAID" — matches orders.biller_name
-  identifier?: string;        // meter number — matches orders.identifier
-  identifier_label?: string;  // "Meter Number" — matches orders.identifier_label
+  biller_name?: string;       // e.g. "IKEDC PREPAID" / "DSTV COMPACT" — matches orders.biller_name
+  identifier?: string;        // meter/smartcard/phone — matches orders.identifier
+  identifier_label?: string;  // "Meter Number" etc — matches orders.identifier_label
   amount_ngn?: number;
   beneficiary_alias?: string;
   // filled after validation / quoting:

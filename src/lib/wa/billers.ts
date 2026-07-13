@@ -1,21 +1,26 @@
 // src/lib/wa/billers.ts
-// Electricity catalogue for the WhatsApp channel — built dynamically from the
-// repo's existing getBillCategories() (same source the website uses), so there
-// are no hardcoded biller/item codes to drift out of date.
+// Multi-category catalogue for the WhatsApp channel, built from the repo's
+// existing getBillCategories() — electricity discos, TV (DStv/GOtv/StarTimes),
+// and mobile data bundles. Fixed-price items (TV packages, data bundles)
+// carry their catalogue amount; electricity is user-priced (amount = 0).
 
 import { getBillCategories } from "@/lib/flutterwave";
 
+export type Category = "electricity" | "tv" | "data";
+
 export interface WaBiller {
-  key: string;          // stable `${biller_code}|${item_code}`
-  label: string;        // human label, e.g. "IKEDC PREPAID"
+  key: string;              // stable `${biller_code}|${item_code}`
+  label: string;            // "IKEDC PREPAID" | "DSTV COMPACT" | "MTN 2GB data purchase"
   biller_code: string;
   item_code: string;
-  biller_name: string;  // as stored on orders.biller_name
-  identifier_label: string; // usually "Meter Number"
+  biller_name: string;      // stored on orders.biller_name
+  identifier_label: string; // "Meter Number" | "Smartcard Number" | "Phone Number"
   aliases: string[];
+  category: Category;
+  brand: string;            // "IKEDC (Ikeja)" | "DStv" | "GOtv" | "StarTimes" | "MTN" | ...
+  amount: number;           // fixed price in NGN; 0 = user chooses amount
 }
 
-// FLW category items — loose shape, matching what the site's catalogue returns.
 interface CatalogueItem {
   biller_code: string;
   item_code: string;
@@ -25,35 +30,62 @@ interface CatalogueItem {
   label_name?: string;
   country?: string;
   is_airtime?: boolean;
+  amount?: number;
 }
 
-const ELECTRIC_RE = /(ELECTRIC|DISCO|PREPAID|POSTPAID|IKEDC|EKEDC|AEDC|PHED|EEDC|IBEDC|BEDC|KEDCO|KAEDCO|JED|APLE|YEDC)/i;
+// Category + brand by FLW biller_code (from this account's live catalogue).
+// Regex fallback below catches electricity under new/unknown codes.
+const CODE_MAP: Record<string, { category: Category; brand: string }> = {
+  BIL204: { category: "electricity", brand: "AEDC (Abuja)" },
+  BIL112: { category: "electricity", brand: "EKEDC (Eko)" },
+  BIL113: { category: "electricity", brand: "IKEDC (Ikeja)" },
+  BIL114: { category: "electricity", brand: "IBEDC (Ibadan)" },
+  BIL115: { category: "electricity", brand: "EEDC (Enugu)" },
+  BIL116: { category: "electricity", brand: "PHED (Port Harcourt)" },
+  BIL117: { category: "electricity", brand: "BEDC (Benin)" },
+  BIL118: { category: "electricity", brand: "YEDC (Yola)" },
+  BIL119: { category: "electricity", brand: "KAEDCO (Kaduna)" },
+  BIL120: { category: "electricity", brand: "KEDCO (Kano)" },
+  BIL215: { category: "electricity", brand: "JED (Jos)" },
+  BIL121: { category: "tv", brand: "DStv" },
+  BIL122: { category: "tv", brand: "GOtv" },
+  BIL123: { category: "tv", brand: "StarTimes" },
+  BIL108: { category: "data", brand: "MTN" },
+  BIL109: { category: "data", brand: "Glo" },
+  BIL110: { category: "data", brand: "Airtel" },
+  BIL111: { category: "data", brand: "9mobile" },
+  BIL124: { category: "data", brand: "Smile" },
+};
 
-// Common diaspora shorthand → matched against biller text
+const ELECTRIC_RE = /(ELECTRIC|DISCO|IKEDC|EKEDC|AEDC|PHED|EEDC|IBEDC|BEDC|KEDCO|KAEDCO|JED|YEDC)/i;
+
 const ALIAS_HINTS: [RegExp, string[]][] = [
   [/IKEDC|IKEJA/i, ["ikedc", "ikeja", "ikeja electric", "ie"]],
   [/EKEDC|EKO/i, ["ekedc", "eko", "eko electric"]],
-  [/AEDC|ABUJA/i, ["aedc", "abuja", "abuja electric"]],
-  [/PHED|PORT\s*HARCOURT/i, ["phed", "ph", "port harcourt"]],
-  [/EEDC|ENUGU/i, ["eedc", "enugu"]],
-  [/IBEDC|IBADAN/i, ["ibedc", "ibadan"]],
-  [/BEDC|BENIN/i, ["bedc", "benin"]],
-  [/KEDCO|KANO/i, ["kedco", "kano"]],
-  [/KAEDCO|KADUNA/i, ["kaedco", "kaduna"]],
-  [/JED|JOS/i, ["jed", "jos"]],
-  [/YEDC|YOLA/i, ["yedc", "yola"]],
+  [/ABUJA/i, ["aedc", "abuja", "abuja electric", "abuja disco"]],
+  [/PHC|PORT\s*HARCOURT/i, ["phed", "ph", "port harcourt", "phc"]],
+  [/ENUGU/i, ["eedc", "enugu"]],
+  [/IBADAN/i, ["ibedc", "ibadan"]],
+  [/BENIN/i, ["bedc", "benin"]],
+  [/KANO/i, ["kedco", "kano"]],
+  [/KADUNA/i, ["kaedco", "kaduna"]],
+  [/JOS/i, ["jed", "jos"]],
+  [/YOLA/i, ["yedc", "yola"]],
 ];
 
-let cache: { billers: WaBiller[]; at: number } | null = null;
-const MEM_CACHE_MS = 10 * 60 * 1000;       // hot instance: skip even the DB read
-const DB_CACHE_MS = 6 * 60 * 60 * 1000;    // refetch FLW at most every 6h
+const IDENTIFIER_LABEL: Record<Category, string> = {
+  electricity: "Meter Number",
+  tv: "Smartcard Number",
+  data: "Phone Number",
+};
 
-export async function getElectricityBillers(): Promise<WaBiller[]> {
-  // 1. Hot in-memory cache (same warm instance)
+let cache: { billers: WaBiller[]; at: number } | null = null;
+const MEM_CACHE_MS = 10 * 60 * 1000;
+const DB_CACHE_MS = 6 * 60 * 60 * 1000;
+
+export async function getCatalogue(): Promise<WaBiller[]> {
   if (cache && Date.now() - cache.at < MEM_CACHE_MS) return cache.billers;
 
-  // 2. Supabase-backed cache — survives serverless cold starts, so messages
-  //    never pay Flutterwave's slow catalogue fetch (5-15s) on a cold instance.
   const { db } = await import("./db");
   const { data: row } = await db
     .from("wa_biller_cache")
@@ -63,11 +95,14 @@ export async function getElectricityBillers(): Promise<WaBiller[]> {
 
   if (row?.data && Date.now() - new Date(row.fetched_at).getTime() < DB_CACHE_MS) {
     const billers = row.data as WaBiller[];
-    cache = { billers, at: Date.now() };
-    return billers;
+    // Cache rows written by the electricity-only build lack `category` —
+    // treat them as stale so the multi-category build repopulates.
+    if (billers.length && billers[0].category) {
+      cache = { billers, at: Date.now() };
+      return billers;
+    }
   }
 
-  // 3. Cache miss/stale → fetch FLW, store for every other instance
   const billers = await buildFromFlutterwave();
   cache = { billers, at: Date.now() };
   await db
@@ -75,7 +110,6 @@ export async function getElectricityBillers(): Promise<WaBiller[]> {
     .upsert({ id: 1, data: billers, fetched_at: new Date().toISOString() })
     .then(() => undefined, (e) => console.error("[billers] cache write failed", e));
 
-  // Stale-if-error: if FLW returned nothing but we had an old row, use it.
   if (!billers.length && row?.data) {
     const staleBillers = row.data as WaBiller[];
     cache = { billers: staleBillers, at: Date.now() };
@@ -92,19 +126,26 @@ async function buildFromFlutterwave(): Promise<WaBiller[]> {
   for (const i of items) {
     if (i.is_airtime) continue;
     if (i.country && i.country !== "NG") continue;
+
+    const mapped = CODE_MAP[i.biller_code];
     const text = `${i.biller_name ?? ""} ${i.name ?? ""} ${i.short_name ?? ""}`;
-    if (!ELECTRIC_RE.test(text)) continue;
+    let category: Category | null = mapped?.category ?? null;
+    let brand = mapped?.brand ?? "";
+    if (!category && ELECTRIC_RE.test(text)) {
+      category = "electricity";
+      brand = (i.biller_name ?? i.name ?? "Electricity").trim();
+    }
+    if (!category) continue; // churches, taxes, school fees, tolls, etc.
 
     const key = `${i.biller_code}|${i.item_code}`;
     if (seen.has(key)) continue;
     seen.add(key);
 
-    const aliases = new Set<string>();
-    for (const [re, list] of ALIAS_HINTS) {
-      if (re.test(text)) list.forEach((a) => aliases.add(a));
+    const label = (i.biller_name ?? i.name ?? i.short_name ?? brand).trim();
+    const aliases = new Set<string>([label.toLowerCase(), brand.toLowerCase()]);
+    if (category === "electricity") {
+      for (const [re, list] of ALIAS_HINTS) if (re.test(text)) list.forEach((a) => aliases.add(a));
     }
-    const label = (i.biller_name ?? i.name ?? i.short_name ?? "Electricity").trim();
-    aliases.add(label.toLowerCase());
 
     billers.push({
       key,
@@ -112,52 +153,107 @@ async function buildFromFlutterwave(): Promise<WaBiller[]> {
       biller_code: i.biller_code,
       item_code: i.item_code,
       biller_name: label,
-      identifier_label: i.label_name ?? "Meter Number",
+      identifier_label: i.label_name ?? IDENTIFIER_LABEL[category],
       aliases: Array.from(aliases),
+      category,
+      brand,
+      amount: Number(i.amount ?? 0) || 0,
     });
   }
-
   return billers;
 }
 
 export async function billerByKey(key: string): Promise<WaBiller | undefined> {
-  return (await getElectricityBillers()).find((b) => b.key === key);
+  return (await getCatalogue()).find((b) => b.key === key);
 }
 
 export async function billerByCodes(billerCode: string, itemCode: string): Promise<WaBiller | undefined> {
-  return (await getElectricityBillers()).find(
+  return (await getCatalogue()).find(
     (b) => b.biller_code === billerCode && b.item_code === itemCode
   );
 }
 
-/**
- * All catalogue entries belonging to the same disco as `chosen` (shared alias),
- * chosen first. FLW's catalogue often lists several entries per disco
- * (prepaid/postpaid variants, duplicate item codes) and only one of them will
- * validate a given meter — the caller tries them in order.
- */
+/** All entries sharing the chosen entry's disco (electricity only), chosen first. */
 export async function billersSameDisco(chosen: WaBiller): Promise<WaBiller[]> {
-  const all = await getElectricityBillers();
+  const all = await getCatalogue();
   const chosenAliases = new Set(chosen.aliases);
   const siblings = all.filter(
-    (b) => b.key !== chosen.key && b.aliases.some((a) => chosenAliases.has(a))
+    (b) =>
+      b.category === "electricity" &&
+      b.key !== chosen.key &&
+      b.aliases.some((a) => chosenAliases.has(a))
   );
   return [chosen, ...siblings];
 }
 
-/** Compact list for the Claude extraction prompt. */
-export function billersForPrompt(billers: WaBiller[]): string {
-  return billers
-    .map((b) => `- key: ${b.key} | label: ${b.label} | aliases: ${b.aliases.join(", ")}`)
-    .join("\n");
+/**
+ * Match a package request ("compact plus", "2gb", "jolli") against a brand's
+ * items. Scores by token overlap; size matches ("2gb") float to the top.
+ */
+export async function matchPackages(brand: string, query: string, limit = 9): Promise<WaBiller[]> {
+  const all = await getCatalogue();
+  const pool = all.filter(
+    (b) => (b.category === "tv" || b.category === "data") && b.brand.toLowerCase() === brand.toLowerCase()
+  );
+  const q = query.toLowerCase().replace(/\s+/g, " ").trim();
+  if (!q) return popularFirst(pool).slice(0, limit);
+
+  const qTokens = q.split(" ").filter(Boolean);
+  const scored = pool
+    .map((b) => {
+      const label = b.label.toLowerCase();
+      let score = 0;
+      if (label === q) score += 100;
+      if (label.includes(q)) score += 40;
+      for (const t of qTokens) if (label.includes(t)) score += 10;
+      const qSize = q.match(/(\d+(?:\.\d+)?)\s*(gb|mb|tb)/);
+      const lSize = label.match(/(\d+(?:\.\d+)?)\s*(gb|mb|tb)/);
+      if (qSize && lSize && qSize[1] === lSize[1] && qSize[2] === lSize[2]) score += 50;
+      return { b, score };
+    })
+    .filter((x) => x.score > 0)
+    .sort((a, z) => z.score - a.score);
+  return scored.slice(0, limit).map((x) => x.b);
 }
 
-/** Short human list for help copy. */
-export function billersForHelp(billers: WaBiller[]): string {
-  const names = new Set<string>();
-  for (const b of billers) {
-    const m = b.label.match(/[A-Z]{3,6}/);
-    names.add(m ? m[0] : b.label.split(" ")[0]);
+const POPULAR = [/COMPACT(?!\s*PLUS)/i, /COMPACT PLUS/i, /YANGA/i, /CONFAM/i, /PADI/i, /PREMIUM(?!\s)/i, /JOLLI/i, /JINJA/i, /MAX/i, /BASIC/i, /CLASSIC/i, /NOVA/i];
+function popularFirst(pool: WaBiller[]): WaBiller[] {
+  const sorted = pool.slice();
+  sorted.sort((a, z) => {
+    const ai = POPULAR.findIndex((re) => re.test(a.label));
+    const zi = POPULAR.findIndex((re) => re.test(z.label));
+    return (ai === -1 ? 99 : ai) - (zi === -1 ? 99 : zi);
+  });
+  return sorted;
+}
+
+export async function brandsForCategory(category: Category): Promise<string[]> {
+  const all = await getCatalogue();
+  const brands = new Set<string>();
+  for (const b of all) if (b.category === category) brands.add(b.brand);
+  return Array.from(brands);
+}
+
+/** Compact biller/brand overview for the extraction prompt (not every package). */
+export async function catalogueForPrompt(): Promise<string> {
+  const all = await getCatalogue();
+  const elec = all.filter((b) => b.category === "electricity");
+  const tvBrands = await brandsForCategory("tv");
+  const dataBrands = await brandsForCategory("data");
+  return [
+    "ELECTRICITY (variable amount, identifier = meter number) — return the exact key:",
+    ...elec.map((b) => `- key: ${b.key} | ${b.label} | aliases: ${b.aliases.join(", ")}`),
+    `TV SUBSCRIPTIONS (fixed-price packages, identifier = smartcard number) — return brand + package_query, NOT a key. Brands: ${tvBrands.join(", ")}`,
+    `MOBILE DATA (fixed-price bundles, identifier = the recipient's phone number) — return brand + package_query (e.g. "2gb", "1.5gb weekly"), NOT a key. Brands: ${dataBrands.join(", ")}`,
+  ].join("\n");
+}
+
+export async function billersForHelp(): Promise<string> {
+  const all = await getCatalogue();
+  const discos = new Set<string>();
+  for (const b of all) if (b.category === "electricity") {
+    const m = b.brand.match(/[A-Z]{3,6}/);
+    discos.add(m ? m[0] : b.brand.split(" ")[0]);
   }
-  return Array.from(names).slice(0, 12).join(", ");
+  return `Electricity: ${Array.from(discos).slice(0, 12).join(", ")}\nTV: DStv, GOtv, StarTimes\nData: MTN, Glo, Airtel, 9mobile, Smile`;
 }
