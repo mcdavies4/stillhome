@@ -78,7 +78,7 @@ export async function getElectricityBillers(): Promise<WaBiller[]> {
       item_code: i.item_code,
       biller_name: label,
       identifier_label: i.label_name ?? "Meter Number",
-      aliases: [...aliases],
+      aliases: Array.from(aliases),
     });
   }
 
@@ -110,5 +110,5 @@ export function billersForHelp(billers: WaBiller[]): string {
     const m = b.label.match(/[A-Z]{3,6}/);
     names.add(m ? m[0] : b.label.split(" ")[0]);
   }
-  return [...names].slice(0, 12).join(", ");
+  return Array.from(names).slice(0, 12).join(", ");
 }
