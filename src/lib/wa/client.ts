@@ -96,7 +96,8 @@ export async function deliverToken(
     `Meter: ${o.identifier} (${o.customerName})\n` +
     `Ref: ${o.reference}\n\n` +
     `Forward this message to the meter owner 👆\n` +
-    `Say *again* anytime to repeat this order.`;
+    `Say *again* anytime to repeat this order.\n\n` +
+    `_Paid from the UK with Nolgic → wa.me/447459233682_`;
   try {
     await sendText(to, body);
   } catch {
@@ -173,7 +174,8 @@ export async function deliverConfirmation(
     `${o.identifierLabel}: ${o.identifier}${o.customerName ? ` (${o.customerName})` : ""}\n` +
     `Ref: ${o.reference}\n\n` +
     `It can take a few minutes to reflect on the ${isPhone ? "line" : "decoder"}.\n` +
-    `Say *again* anytime to repeat this order.`;
+    `Say *again* anytime to repeat this order.\n\n` +
+    `_Paid from the UK with Nolgic → wa.me/447459233682_`;
   try {
     await sendText(to, body);
   } catch {
