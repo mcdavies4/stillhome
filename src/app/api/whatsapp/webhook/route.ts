@@ -27,6 +27,7 @@ interface MetaWebhookBody {
   entry?: {
     changes?: {
       value?: {
+        metadata?: { phone_number_id?: string; display_phone_number?: string };
         contacts?: { wa_id: string; profile?: { name?: string } }[];
         messages?: {
           id: string;
@@ -65,6 +66,21 @@ export async function POST(req: NextRequest) {
     for (const change of entry.changes ?? []) {
       const value = change.value;
       if (!value?.messages?.length) continue;
+
+      // GUARD: only handle messages addressed to Nolgic's own WhatsApp number.
+      // Protects against cross-delivery if another product (e.g. Inkline)
+      // shares a Meta app, WABA, or webhook route. Meta stamps the receiving
+      // number's id on every change in value.metadata.phone_number_id.
+      const toNumberId = value.metadata?.phone_number_id;
+      const NOLGIC_ID = process.env.WHATSAPP_PHONE_NUMBER_ID;
+      if (NOLGIC_ID && toNumberId && toNumberId !== NOLGIC_ID) {
+        console.warn(
+          `[webhook] ignoring message for phone_number_id ${toNumberId} ` +
+          `(expected Nolgic ${NOLGIC_ID}) — not this product's number`
+        );
+        continue;
+      }
+
       const profileName = value.contacts?.[0]?.profile?.name;
 
       for (const msg of value.messages) {
