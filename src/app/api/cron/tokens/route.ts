@@ -1,14 +1,14 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { tryRecoverToken, expectsToken } from "@/lib/fulfilment";
-import { sendReconcileEmail } from "@/app/api/cron/reconcile/route";
+import { sendReconcileEmail } from "@/lib/reconcile";
 
 // Daily backstop: recover tokens for fulfilled orders still missing one
 // (last 72h). Vercel Cron calls this with Authorization: Bearer CRON_SECRET.
 //
-// This 8am cron also sends the daily reconciliation email — folded in here
-// rather than as a separate cron, because Vercel Hobby allows only two cron
-// jobs and both slots (this + the 7am FX guard) are already used.
+// Also sends the daily reconciliation email — folded in here rather than as a
+// separate cron, because Vercel Hobby allows only two cron jobs and both slots
+// (this + the 7am FX guard) are already used.
 export async function GET(req: Request) {
   const auth = req.headers.get("authorization");
   if (process.env.CRON_SECRET && auth !== `Bearer ${process.env.CRON_SECRET}`) {
@@ -32,7 +32,6 @@ export async function GET(req: Request) {
     if (token) recovered++;
   }
 
-  // Daily reconciliation email (never let it break token recovery).
   let reconcile: { ok: boolean; flags: number } | { error: string };
   try {
     reconcile = await sendReconcileEmail();

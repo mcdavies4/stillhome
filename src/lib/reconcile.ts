@@ -141,3 +141,34 @@ export function reconEmailHtml(r: ReconResult): string {
     <p style="color:#999;font-size:12px;margin-top:20px">Margin is indicative (flat ₦${process.env.NGN_PER_GBP ?? 2050}/£), not accounting. Read-only report.</p>
   </div>`;
 }
+
+
+// ---------------------------------------------------------------------------
+// Email sender — lives here (not in the route) because Next.js route files may
+// only export GET/POST/etc. Any other export from a route breaks the build.
+// Called by /api/cron/reconcile and folded into the daily token cron.
+// ---------------------------------------------------------------------------
+export async function sendReconcileEmail(): Promise<{ ok: boolean; flags: number }> {
+  const result = await runReconcile(); // yesterday, deep
+  const html = reconEmailHtml(result);
+  const subject = result.ok
+    ? `\u2713 Nolgic reconciled \u2014 ${result.date} (all matched)`
+    : `\u26a0 Nolgic reconciliation \u2014 ${result.date} (${result.flags.length} to check)`;
+
+  const ADMIN_EMAIL = process.env.ADMIN_ALERT_EMAIL ?? "azubuikedavies@gmail.com";
+  const res = await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${process.env.RESEND_API_KEY}`,
+    },
+    body: JSON.stringify({
+      from: process.env.RESEND_FROM ?? "Nolgic <noreply@songsnap.online>",
+      to: ADMIN_EMAIL,
+      subject,
+      html,
+    }),
+  });
+  if (!res.ok) console.error("[reconcile] email send failed", res.status, await res.text());
+  return { ok: result.ok, flags: result.flags.length };
+}
