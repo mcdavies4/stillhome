@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import { stripe } from "@/lib/stripe";
 import { supabaseAdmin } from "@/lib/supabase";
 import { validateCustomer } from "@/lib/flutterwave";
-import { quoteGbp, gbp, ngn } from "@/lib/fx";
+import { quoteGbp, gbp, money } from "@/lib/fx";
+import { getCountry, isSupportedCountry, DEFAULT_COUNTRY } from "@/lib/countries";
 import { rateLimit } from "@/lib/ratelimit";
 import { velocityCheck } from "@/lib/velocity";
 import { alertFounder } from "@/lib/alerts";
@@ -21,10 +22,19 @@ export async function POST(req: Request) {
 
   try {
     const b = await req.json();
-    const required = ["email", "billerCode", "itemCode", "billerName", "identifier", "identifierLabel", "amountNgn"];
+    // amountLocal replaces amountNgn; accept both for backward-compat with any cached client.
+    const amountLocal = b.amountLocal ?? b.amountNgn;
+    const required = ["email", "billerCode", "itemCode", "billerName", "identifier", "identifierLabel"];
     for (const k of required) {
       if (!b[k]) return NextResponse.json({ error: `Missing ${k}` }, { status: 400 });
     }
+    if (!amountLocal) return NextResponse.json({ error: "Missing amount" }, { status: 400 });
+
+    // Country: validate against supported list, default NG (existing behaviour).
+    const countryCode = isSupportedCountry((b.country ?? "").toUpperCase())
+      ? (b.country as string).toUpperCase()
+      : DEFAULT_COUNTRY;
+    const country = getCountry(countryCode);
 
     const identifier = String(b.identifier).trim();
 
@@ -37,14 +47,14 @@ export async function POST(req: Request) {
       if (!noValidate) throw err;
     }
 
-    const quote = quoteGbp(Number(b.amountNgn));
+    const quote = quoteGbp(Number(amountLocal), countryCode);
 
     // Fraud velocity gate (cashout pattern / first-order cap)
     const vel = await velocityCheck({ email: b.email, ip, amountGbpPence: quote.totalPence });
     if (vel.blocked) {
       alertFounder(
         "Order blocked by velocity check",
-        `Email: ${b.email}\nIP: ${ip}\nReason: ${vel.reason}\nAmount: £${(quote.totalPence/100).toFixed(2)} · ${b.billerName}`
+        `Email: ${b.email}\nIP: ${ip}\nReason: ${vel.reason}\nAmount: £${(quote.totalPence/100).toFixed(2)} · ${b.billerName} · ${countryCode}`
       );
       return NextResponse.json(
         { error: "For your security this order needs review. Please contact nolgichq@gmail.com if you believe this is a mistake." },
@@ -59,6 +69,8 @@ export async function POST(req: Request) {
         user_id: b.userId ?? null,
         email: b.email,
         ip,
+        country: countryCode,
+        currency: country.currency,
         biller_code: b.billerCode,
         item_code: b.itemCode,
         biller_name: b.billerName,
@@ -66,8 +78,8 @@ export async function POST(req: Request) {
         identifier_label: b.identifierLabel,
         customer_name: v.name,
         recipient_whatsapp: b.recipientWhatsapp ?? null,
-        amount_ngn: quote.amountNgn,
-        fx_ngn_per_gbp: quote.ngnPerGbp,
+        amount_ngn: quote.amountLocal,          // legacy column name; now holds local-currency amount
+        fx_ngn_per_gbp: quote.fxLocalPerGbp,    // legacy column name; now holds local-per-GBP rate
         service_fee_pence: quote.serviceFeePence,
         amount_gbp_pence: quote.totalPence,
         status: "pending_payment",
@@ -86,7 +98,7 @@ export async function POST(req: Request) {
             currency: "gbp",
             unit_amount: quote.subtotalPence,
             product_data: {
-              name: `${b.billerName} — ${ngn(quote.amountNgn)}`,
+              name: `${b.billerName} — ${money(quote.amountLocal, countryCode)}`,
               description: v.name
                 ? `${b.identifierLabel}: ${identifier} · ${v.name}`
                 : `${b.identifierLabel}: ${identifier}`,
@@ -106,8 +118,6 @@ export async function POST(req: Request) {
       metadata: { order_id: order.id },
       payment_method_options: {
         card: {
-          // Force Strong Customer Auth on higher-value orders — shifts fraud
-          // dispute liability to the issuer. Threshold env-tunable.
           request_three_d_secure:
             quote.totalPence >= Number(process.env.THREEDS_MIN_PENCE ?? "5000") ? "any" : "automatic",
         },

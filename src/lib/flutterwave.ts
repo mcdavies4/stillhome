@@ -1,4 +1,6 @@
-// Flutterwave Bills API client (v3, current endpoints)
+// Flutterwave Bills API client (v3, current endpoints). Multi-country aware.
+// Existing NG callers keep working: every country arg defaults to "NG".
+
 const FLW_BASE = "https://api.flutterwave.com/v3";
 
 export class FlwError extends Error {
@@ -46,9 +48,11 @@ export type BillerItem = {
   label_name: string;
 };
 
-export async function getBillCategories(): Promise<BillerItem[]> {
-  const body = await flw<{ data: BillerItem[] }>(`/bill-categories?country=NG`);
-  return (body.data ?? []).filter((b) => b.country === "NG");
+// Country-aware: defaults to NG so existing callers are unaffected.
+export async function getBillCategories(country: string = "NG"): Promise<BillerItem[]> {
+  const c = country.toUpperCase();
+  const body = await flw<{ data: BillerItem[] }>(`/bill-categories?country=${encodeURIComponent(c)}`);
+  return (body.data ?? []).filter((b) => b.country === c);
 }
 
 export type ValidateResult = {
@@ -89,8 +93,8 @@ export type BillPaymentResult = {
 export async function createBillPayment(params: {
   country?: string;
   identifier: string;
-  amountNgn: number;
-  billerName: string; // kept for signature compatibility; not sent
+  amountLocal: number;      // amount in the biller's local currency (NGN, GHS, ...)
+  billerName: string;       // kept for signature compatibility; not sent
   itemCode: string;
   billerCode: string;
   reference: string;
@@ -104,7 +108,7 @@ export async function createBillPayment(params: {
       body: JSON.stringify({
         country: params.country ?? "NG",
         customer_id: params.identifier,
-        amount: params.amountNgn,
+        amount: params.amountLocal,
         reference: params.reference,
       }),
     }
@@ -118,7 +122,14 @@ export async function getBillStatus(reference: string) {
   );
 }
 
-export async function getNgnBalance(): Promise<number> {
-  const body = await flw<{ data: { available_balance: number } }>(`/balances/NGN`);
+// Country-aware balance check. NG default keeps existing callers working.
+export async function getBalance(currency: string = "NGN"): Promise<number> {
+  const c = currency.toUpperCase();
+  const body = await flw<{ data: { available_balance: number } }>(`/balances/${encodeURIComponent(c)}`);
   return Number(body.data?.available_balance ?? 0);
+}
+
+// Back-compat alias — existing webhook calls getNgnBalance().
+export async function getNgnBalance(): Promise<number> {
+  return getBalance("NGN");
 }

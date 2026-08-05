@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import Stripe from "stripe";
 import { stripe } from "@/lib/stripe";
 import { supabaseAdmin } from "@/lib/supabase";
-import { createBillPayment, getBillStatus, getNgnBalance, FlwError } from "@/lib/flutterwave";
+import { createBillPayment, getBillStatus, getBalance, FlwError } from "@/lib/flutterwave";
+import { getCountry } from "@/lib/countries";
 import { alertFounder } from "@/lib/alerts";
 import { sendReceipt } from "@/lib/whatsapp";
 import { sendReceiptEmail } from "@/lib/email";
@@ -15,9 +16,9 @@ import { waOnFulfilled, waOnFailedRefunded, waOnNeedsReview } from "@/lib/wa/hoo
 //     -> success: store token, email payer, WhatsApp recipient, status=fulfilled
 //     -> failure: auto-refund the Stripe payment, status=failed_refunded
 //
-// WhatsApp-bot orders (source === "whatsapp") flow through the same pipeline;
-// the wa hooks handle the chat side (token message, conversation reset,
-// beneficiary save, refund/review notices) and are no-ops for web orders.
+// Multi-country: each order carries country + currency; the vend and the
+// wallet-balance guard use the order's own currency (NGN, GHS, ...), so a
+// Ghana order vends from the cedi float and a Nigeria order from the naira float.
 
 export async function POST(req: Request) {
   const sig = req.headers.get("stripe-signature");
@@ -41,8 +42,6 @@ export async function POST(req: Request) {
   const db = supabaseAdmin();
 
   // Claim the order atomically: only proceed if we flip pending_payment -> paid.
-  // A webhook retry after this point finds status != pending_payment and exits,
-  // so we can never vend twice.
   const { data: order } = await db
     .from("orders")
     .update({
@@ -56,27 +55,34 @@ export async function POST(req: Request) {
 
   if (!order) return NextResponse.json({ received: true, note: "already processed" });
 
+  // Country/currency for this order (defaults to NG/NGN for legacy rows).
+  const countryCode: string = order.country ?? "NG";
+  const country = getCountry(countryCode);
+  const currency: string = order.currency ?? country.currency; // "NGN" | "GHS"
+  const sym = country.currencySymbol;
+  const amountLocal = Number(order.amount_ngn); // legacy column now holds local-currency amount
+
   const reference = `NOLGIC-${order.id}`;
   let vendAttempted = false;
 
   try {
-    // Fail fast if the NGN float can't cover this vend — live mode only.
-    // Sandbox wallets are ₦0 and FLW simulates vends without balance.
+    // Fail fast if the float for THIS currency can't cover the vend — live only.
     const isTestMode = (process.env.FLW_SECRET_KEY ?? "").startsWith("FLWSECK_TEST");
     const balance = isTestMode
       ? Number.MAX_SAFE_INTEGER
-      : await getNgnBalance().catch(() => Number.MAX_SAFE_INTEGER);
+      : await getBalance(currency).catch(() => Number.MAX_SAFE_INTEGER);
 
-    if (balance < Number(order.amount_ngn)) {
+    if (balance < amountLocal) {
       throw new FlwError(
-        `Insufficient wallet balance (₦${balance.toLocaleString()}) for ₦${Number(order.amount_ngn).toLocaleString()} vend`
+        `Insufficient ${currency} wallet balance (${sym}${balance.toLocaleString()}) for ${sym}${amountLocal.toLocaleString()} vend`
       );
     }
-    const lowWater = Number(process.env.LOW_BALANCE_NGN ?? "100000");
-    if (balance !== Number.MAX_SAFE_INTEGER && balance - Number(order.amount_ngn) < lowWater) {
+    // Low-water alert: per-currency threshold, e.g. LOW_BALANCE_NGN / LOW_BALANCE_GHS
+    const lowWater = Number(process.env[`LOW_BALANCE_${currency}`] ?? (currency === "NGN" ? "100000" : "500"));
+    if (balance !== Number.MAX_SAFE_INTEGER && balance - amountLocal < lowWater) {
       alertFounder(
-        "Wallet running low",
-        `NGN wallet will be ~₦${(balance - Number(order.amount_ngn)).toLocaleString()} after order ${order.id}. Top up.`
+        `${currency} wallet running low`,
+        `${currency} wallet will be ~${sym}${(balance - amountLocal).toLocaleString()} after order ${order.id}. Top up.`
       );
     }
 
@@ -84,8 +90,9 @@ export async function POST(req: Request) {
 
     vendAttempted = true;
     const result = await createBillPayment({
+      country: countryCode,
       identifier: order.identifier,
-      amountNgn: Number(order.amount_ngn),
+      amountLocal,
       billerName: order.biller_name,
       itemCode: order.item_code,
       billerCode: order.biller_code,
@@ -108,16 +115,12 @@ export async function POST(req: Request) {
       .update({ status: "fulfilled", flw_token: token })
       .eq("id", order.id);
 
-    // WA PATCH: bot orders have no email; guard the email receipt.
     if (order.email) {
       await sendReceiptEmail({ ...order, flw_token: token });
     }
-    // WA PATCH: the bot's hook sends its own richer token message, so skip
-    // the generic WhatsApp receipt for bot orders to avoid a double message.
     if (order.recipient_whatsapp && order.source !== "whatsapp") {
       await sendReceipt(order.recipient_whatsapp, { ...order, flw_token: token });
     }
-    // WA PATCH: token message + conversation reset + beneficiary save.
     await waOnFulfilled({ ...order, flw_token: token });
 
     return NextResponse.json({ fulfilled: true });
@@ -125,20 +128,15 @@ export async function POST(req: Request) {
     const errMsg = e instanceof FlwError ? e.message : String(e);
     console.error(`[fulfil] order ${order.id} failed:`, errMsg);
 
-    // Before refunding, resolve ambiguity: if the vend call was attempted,
-    // the failure might be a timeout AFTER FLW delivered. Requery by our
-    // reference — refunding a delivered token means eating the loss.
     if (vendAttempted) {
       const outcome = await requeryOutcome(reference);
       if (outcome === "success") {
-        // It actually delivered — fulfil instead of refunding.
         let token: string | null = null;
         try {
           const status = await getBillStatus(reference);
           token = (status.data as any)?.extra ?? (status.data as any)?.token ?? null;
         } catch {}
         await db.from("orders").update({ status: "fulfilled", flw_token: token, error: null }).eq("id", order.id);
-        // WA PATCH: same guards as the main fulfil path.
         if (order.email) {
           await sendReceiptEmail({ ...order, flw_token: token });
         }
@@ -149,20 +147,17 @@ export async function POST(req: Request) {
         return NextResponse.json({ fulfilled: true, note: "recovered after error" });
       }
       if (outcome === "ambiguous") {
-        // Can't prove it failed — do NOT refund automatically. Human decides.
         await db.from("orders").update({ status: "needs_review", error: `AMBIGUOUS: ${errMsg}` }).eq("id", order.id);
         await alertFounder(
           "🔍 Order needs review — do NOT ignore",
-          `Order ${order.id} (${order.biller_name} ₦${Number(order.amount_ngn).toLocaleString()})\nVend outcome unknown after error: ${errMsg}\nCheck FLW dashboard for reference ${reference}: refund in Stripe if NOT delivered.`
+          `Order ${order.id} (${order.biller_name} ${sym}${amountLocal.toLocaleString()} ${currency})\nVend outcome unknown after error: ${errMsg}\nCheck FLW dashboard for reference ${reference}: refund in Stripe if NOT delivered.`
         );
-        // WA PATCH: tell the buyer their payment is safe and being checked.
         await waOnNeedsReview(order);
         return NextResponse.json({ fulfilled: false, review: true });
       }
       // outcome === "failed": confirmed no delivery — safe to refund below.
     }
 
-    // Vend confirmed not delivered (or never attempted) -> refund the customer.
     try {
       await stripe.refunds.create({
         payment_intent: String(session.payment_intent),
@@ -174,9 +169,8 @@ export async function POST(req: Request) {
         .eq("id", order.id);
       alertFounder(
         "Vend failed — customer auto-refunded",
-        `Order ${order.id} (${order.biller_name} ₦${Number(order.amount_ngn).toLocaleString()})\nError: ${errMsg}`
+        `Order ${order.id} (${order.biller_name} ${sym}${amountLocal.toLocaleString()} ${currency})\nError: ${errMsg}`
       );
-      // WA PATCH: refund notice into the chat + conversation reset.
       await waOnFailedRefunded(order);
     } catch (refundErr: any) {
       await db
@@ -187,9 +181,6 @@ export async function POST(req: Request) {
         "🚨 REFUND FAILED — manual action needed",
         `Order ${order.id}\nVend error: ${errMsg}\nRefund error: ${refundErr.message}\nPayment intent: ${session.payment_intent}`
       );
-      // WA PATCH: buyer paid, vend failed, refund also failed — they must not
-      // sit in silence while it's fixed by hand. Reuses the review notice
-      // ("confirming your token… or a full refund"), which is accurate here.
       await waOnNeedsReview(order);
     }
 
@@ -197,8 +188,6 @@ export async function POST(req: Request) {
   }
 }
 
-// Requery FLW for the definitive vend outcome.
-// "success" = delivered, "failed" = provably not delivered, "ambiguous" = unknown.
 async function requeryOutcome(reference: string): Promise<"success" | "failed" | "ambiguous"> {
   try {
     const status = await getBillStatus(reference);
@@ -207,7 +196,6 @@ async function requeryOutcome(reference: string): Promise<"success" | "failed" |
     if (s.includes("fail")) return "failed";
     return "ambiguous";
   } catch (e) {
-    // FLW returns an error for unknown references -> the vend never registered.
     const msg = e instanceof FlwError ? e.message.toLowerCase() : "";
     if (msg.includes("not found") || msg.includes("no transaction") || msg.includes("404")) {
       return "failed";
