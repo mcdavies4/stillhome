@@ -11,7 +11,8 @@
 // If you keep billers dynamic (built from getBillCategories), you only need the
 // category+brand hints below — the codes are read live.
 
-import type { Category } from "./billers";
+// Self-contained — no imports, so it builds anywhere in the repo.
+type Category = "electricity" | "tv" | "data" | "airtime";
 
 // biller_code → { category, brand, country }
 export const GH_CODE_MAP: Record<string, { category: Category; brand: string; country: "GH" }> = {
