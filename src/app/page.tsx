@@ -33,6 +33,7 @@ const PROMISES = [
 ];
 
 const FAQS = [
+  { q: "Which countries does Nolgic support?", a: "Nigeria and Ghana today — electricity, TV subscriptions, airtime and data in both. We're building Nolgic as one tool for paying bills across Africa, and more countries are on the way. Pick the country at the top of the payment form." },
   { q: "How do I pay a NEPA / electricity bill in Nigeria from the UK?", a: "Pick the DisCo (EKEDC, IKEDC, EEDC and others), enter the meter number, and we show you the registered account name. Pay in pounds by card and the prepaid token is issued in seconds — we show it on screen, email it to you, and can WhatsApp it to your family." },
   { q: "Can I pay for DSTV or GOTV from abroad?", a: "Yes. Choose the package, enter the smartcard/IUC number, confirm the account holder's name we look up, and pay by card. The decoder is credited within seconds — no one in Nigeria needs to queue or do anything." },
   { q: "How do I buy MTN, Airtel or Glo airtime from the UK?", a: "Select the network, enter the phone number and amount, and pay in pounds. The airtime lands on the phone instantly. Data bundles work the same way." },
@@ -127,7 +128,7 @@ export default function Home() {
       <header className="pt-10 pb-16 grid md:grid-cols-2 gap-10 items-center">
         <div>
           <p className="font-mono text-tungsten text-xs tracking-[0.3em] uppercase mb-4">
-            UK → Africa · delivered in seconds
+            UK → Nigeria 🇳🇬 & Ghana 🇬🇭 · delivered in seconds
           </p>
           <h1 className="font-display font-extrabold text-5xl md:text-6xl leading-[1.02]">
             3,000 miles away.{" "}
@@ -136,10 +137,16 @@ export default function Home() {
             </span>
           </h1>
           <p className="text-haze mt-5 text-lg leading-relaxed">
-            Pay light, DSTV, airtime and data for your people back home —
+            One tool for paying bills across Africa — starting with Nigeria and
+            Ghana. Light, TV, airtime and data for your people back home,
             straight from your card in pounds. You see the account name before
             you pay. They see the receipt on WhatsApp.
           </p>
+          <div className="flex items-center gap-2 mt-4 text-sm text-haze">
+            <span className="px-3 py-1 rounded-full border border-line">🇳🇬 Nigeria</span>
+            <span className="px-3 py-1 rounded-full border border-line">🇬🇭 Ghana</span>
+            <span className="px-3 py-1 rounded-full border border-tungsten/40 text-tungsten/90">More of Africa, soon</span>
+          </div>
           <div className="flex gap-3 mt-8 flex-wrap">
             <a href="#pay" className="px-6 py-3.5 rounded-xl bg-tungsten text-night font-display font-bold text-lg shadow-glow hover:brightness-110">Pay a bill now</a>
             <a href="#how" className="px-6 py-3.5 rounded-xl border border-line text-haze hover:border-tungsten/50 hover:text-paper">How it works</a>
@@ -192,7 +199,7 @@ export default function Home() {
 
       <section id="pay" className="max-w-xl mx-auto scroll-mt-8 mb-20">
         <p className="font-mono text-xs text-haze uppercase tracking-[0.3em] mb-3 text-center">Start here</p>
-        <h2 className="font-display font-extrabold text-3xl mb-8 text-center">Who are we paying for today?</h2>
+        <h2 className="font-display font-extrabold text-3xl mb-8 text-center">Who are we paying for today — and where?</h2>
 
         {/* Step 0 — country */}
         <div className="bg-panel border border-line rounded-2xl p-5 mb-4">
@@ -302,6 +309,7 @@ export default function Home() {
         <div className="text-haze leading-relaxed space-y-4">
           <p>&ldquo;NEPA has taken the light.&rdquo; &ldquo;The DSTV has expired.&rdquo; &ldquo;Send me credit.&rdquo; If you&rsquo;re abroad, you know the list — and the old routine: send money through an app, lose a chunk to fees and rates, then wait and hope somebody queues at the right kiosk before the football starts.</p>
           <p>Nolgic skips the middle. You&rsquo;re not sending money — you&rsquo;re buying the actual thing: the token, the subscription, the top-up, delivered straight to the meter, decoder or phone in seconds. The price you see in pounds is everything you pay, and the receipt lands on their WhatsApp so nobody has to ask &ldquo;did it go through?&rdquo;</p>
+          <p>It starts with Nigeria and Ghana — but the idea is bigger: one tool for the African diaspora to pay for what family actually needs, directly, anywhere on the continent.</p>
           <p className="text-paper">Designed with ❤️ in London — because we make the same Sunday calls.</p>
         </div>
       </section>
