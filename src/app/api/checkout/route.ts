@@ -43,7 +43,7 @@ export async function POST(req: Request) {
       v = await validateCustomer(b.itemCode, b.billerCode, identifier);
     } catch (err) {
       // Airtime/data have no validation; only hard-fail for validatable billers
-      const noValidate = /VTU|AIRTIME|DATA/i.test(`${b.billerName} ${b.itemCode}`);
+      const noValidate = /VTU|AIRTIME|DATA|BROADBAND|SURFLINE|POSTPAID PAYMENT/i.test(`${b.billerName} ${b.itemCode}`);
       if (!noValidate) throw err;
     }
 

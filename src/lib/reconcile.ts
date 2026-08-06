@@ -64,7 +64,7 @@ export async function runReconcile(dateStr = yesterdayUTC(), deep = true): Promi
 
   const [{ data: orders }, charges] = await Promise.all([
     db.from("orders")
-      .select("id, status, source, biller_name, identifier, amount_ngn, amount_gbp_pence, flw_reference, created_at")
+      .select("id, status, source, biller_name, identifier, amount_ngn, amount_gbp_pence, flw_reference, currency, created_at")
       .gte("created_at", start.toISOString())
       .lte("created_at", end.toISOString()),
     stripeCharges(start, end),
@@ -108,8 +108,14 @@ export async function runReconcile(dateStr = yesterdayUTC(), deep = true): Promi
   for (const o of rows.filter((o) => o.status === "refund_failed"))
     flags.push({ level: "danger", msg: `refund_failed: order ${o.id} — manual refund needed` });
 
+  // Margin: computed for NGN orders only (rate is per-currency; mixing
+  // currencies through one rate corrupts the figure). Non-NGN vend totals
+  // still show in the vended figure but are excluded from margin.
   const rate = Number(process.env.NGN_PER_GBP ?? 2050);
-  const marginPence = collectedPence - Math.round((vendedNgn / rate) * 100);
+  const ngnFulfilled = fulfilled.filter((o: any) => (o.currency ?? "NGN") === "NGN");
+  const ngnCollected = ngnFulfilled.reduce((a: number, o: any) => a + Number(o.amount_gbp_pence ?? 0), 0);
+  const ngnVended = ngnFulfilled.reduce((a: number, o: any) => a + Number(o.amount_ngn ?? 0), 0);
+  const marginPence = ngnCollected - Math.round((ngnVended / rate) * 100);
 
   return {
     date: dateStr, orderCount: rows.length, byStatus,

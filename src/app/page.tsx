@@ -22,7 +22,7 @@ const TABS = [
   { key: "electricity", label: "Electricity", match: (b: BillerItem) => /ELECTRIC|DISCO|PREPAID METER|EKEDC|IKEDC|EEDC|AEDC|IBEDC|PHED|KEDCO|BEDC|JED|YEDC|ABUJA|ENUGU DISCO|KANO DISCO|KADUNA|ECG|ELECTRICITY COMPANY/i.test(b.biller_name + " " + b.name) },
   { key: "cable", label: "Cable TV", match: (b: BillerItem) => /DSTV|GOTV|STARTIMES|SHOWMAX/i.test(b.biller_name + " " + b.name) },
   { key: "airtime", label: "Airtime", match: (b: BillerItem) => b.is_airtime || /VTU|AIRTIME/i.test(b.biller_name + " " + b.name + " " + (b.short_name ?? "")) },
-  { key: "data", label: "Data", match: (b: BillerItem) => /DATA|BROADBAND|SURFLINE|BUNDLE/i.test(b.biller_name + " " + b.name) && !b.is_airtime },
+  { key: "data", label: "Data", match: (b: BillerItem) => /DATA|BROADBAND|SURFLINE|BUNDLE|POSTPAID PAYMENT/i.test(b.biller_name + " " + b.name) && !b.is_airtime },
 ];
 
 const PROMISES = [
@@ -79,8 +79,10 @@ export default function Home() {
   }, [items, tab]);
 
   const fixedAmount = item && item.amount > 0;
+  // FLW returns some countries' fixed prices in minor units (GH: pesewas).
+  const fixedLocal = item && item.amount > 0 ? item.amount / cfg.fixedAmountDivisor : 0;
   const isNoValidate = (i: BillerItem | null) =>
-    !!i && (i.is_airtime || /VTU|AIRTIME|DATA|BROADBAND/i.test(i.biller_name + " " + i.name));
+    !!i && (i.is_airtime || /VTU|AIRTIME|DATA|BROADBAND|SURFLINE|POSTPAID PAYMENT/i.test(i.biller_name + " " + i.name));
 
   async function validate() {
     if (!item || !identifier) return;
@@ -113,7 +115,7 @@ export default function Home() {
           billerName: item.biller_name,
           identifier,
           identifierLabel: item.label_name || "Account number",
-          amountLocal: fixedAmount ? item.amount : Number(amountLocal),
+          amountLocal: fixedAmount ? fixedLocal : Number(amountLocal),
           recipientWhatsapp: whatsapp || null,
         }),
       });
@@ -235,7 +237,7 @@ export default function Home() {
           <select value={item ? itemKey(item) : ""} onChange={(e) => { const found = tabItems.find((i) => itemKey(i) === e.target.value) ?? null; setItem(found); setValidated(null); }}>
             <option value="">{tabItems.length ? "Select…" : "No options for this category yet"}</option>
             {tabItems.map((i) => (
-              <option key={itemKey(i)} value={itemKey(i)}>{i.name}{i.amount > 0 ? ` — ${fmtLocal(i.amount)}` : ""}</option>
+              <option key={itemKey(i)} value={itemKey(i)}>{i.name}{i.amount > 0 ? ` — ${fmtLocal(i.amount / cfg.fixedAmountDivisor)}` : ""}</option>
             ))}
           </select>
         </div>
@@ -274,7 +276,7 @@ export default function Home() {
             <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" inputMode="email" />
             <div className="mt-3">
               <label>Their WhatsApp (optional — we send them the receipt / token)</label>
-              <input value={whatsapp} onChange={(e) => setWhatsapp(e.target.value)} placeholder="+234..." inputMode="tel" />
+              <input value={whatsapp} onChange={(e) => setWhatsapp(e.target.value)} placeholder={country === "GH" ? "+233..." : "+234..."} inputMode="tel" />
             </div>
             <button onClick={pay} disabled={busy !== null || !email || (!fixedAmount && !amountLocal)}
               className="mt-5 w-full py-3.5 rounded-xl bg-tungsten text-night font-display font-bold text-lg shadow-glow hover:brightness-110 disabled:opacity-40">

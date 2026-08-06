@@ -16,6 +16,10 @@ export interface CountryConfig {
   fxDefault: number;         // fallback if env missing (keep realistic-ish)
   minLocal: number;          // min order in local currency
   maxLocal: number;          // max order in local currency
+  // FLW returns some countries' fixed item amounts in minor units
+  // (GH: pesewas — 115000 = ₵1,150). Divide catalogue `amount` by this
+  // before display/quoting. NG amounts arrive in naira already (divisor 1).
+  fixedAmountDivisor: number;
   // FLW biller_code prefixes / notes are handled in billers.ts CODE_MAP.
   identifierExamples: { electricity: string; tv: string; phone: string };
 }
@@ -31,6 +35,7 @@ export const COUNTRIES: Record<CountryCode, CountryConfig> = {
     fxDefault: 2050,
     minLocal: 1000,
     maxLocal: 500000,
+    fixedAmountDivisor: 1,
     identifierExamples: { electricity: "04123456789", tv: "1034567890", phone: "08031234567" },
   },
   GH: {
@@ -43,6 +48,7 @@ export const COUNTRIES: Record<CountryCode, CountryConfig> = {
     fxDefault: 19,             // ~mid is ~19-20 GHS/£; set env BELOW mid for margin
     minLocal: 5,
     maxLocal: 5000,
+    fixedAmountDivisor: 100,   // pesewas → cedis. VERIFY with one real DStv GH price before launch.
     identifierExamples: { electricity: "P000123456", tv: "1034567890", phone: "0241234567" },
   },
 };
