@@ -8,11 +8,11 @@ const BASE = process.env.NEXT_PUBLIC_APP_URL ?? "https://stillhome-ten.vercel.ap
 export const metadata: Metadata = {
   metadataBase: new URL(BASE),
   title: {
-    default: "Nolgic — pay light, DSTV & airtime for family in Nigeria, from the UK",
+    default: "Nolgic — pay light, TV, airtime & data for family in Nigeria & Ghana",
     template: "%s — Nolgic",
   },
   description:
-    "Buy electricity tokens, DSTV, GOTV, airtime and data for family in Nigeria from the UK. See the account name before you pay. Delivered in seconds, receipt on WhatsApp.",
+    "Buy electricity tokens, DSTV, GOTV, airtime and data for family in Nigeria and Ghana. See the account name before you pay. Delivered in seconds, with an automatic refund if delivery fails.",
   keywords: [
     "pay NEPA bill from UK",
     "pay electricity bill in Nigeria from abroad",
@@ -23,22 +23,25 @@ export const metadata: Metadata = {
     "recharge Nigerian phone from UK",
     "send data to Nigeria",
     "Nigeria bill payment UK diaspora",
+    "pay ECG electricity bill in Ghana from abroad",
+    "Ghana bill payment from the UK",
+    "pay bills in Africa from abroad",
   ],
   alternates: { canonical: "/" },
   openGraph: {
     type: "website",
     url: BASE,
     siteName: "Nolgic",
-    title: "Nolgic — 3,000 miles away. Still home.",
+    title: "Nolgic — the bills back home, paid in seconds.",
     description:
-      "Pay light, DSTV, airtime and data for family in Nigeria — from your card in pounds. Name-check before you pay, WhatsApp receipt after.",
-    images: [{ url: "/og.png", width: 1200, height: 630, alt: "Nolgic — pay bills for family in Nigeria from the UK" }],
+      "Pay light, TV, airtime and data for family in Nigeria and Ghana. Name-check before you pay, delivered in seconds.",
+    images: [{ url: "/og.png", width: 1200, height: 630, alt: "Nolgic — pay bills for family in Nigeria and Ghana" }],
   },
   twitter: {
     card: "summary_large_image",
-    title: "Nolgic — pay light, DSTV & airtime for family in Nigeria, from the UK",
+    title: "Nolgic — pay light, TV, airtime & data for family in Nigeria & Ghana",
     description:
-      "Name-check before you pay. Delivered in seconds. Receipt on their WhatsApp.",
+      "Name-check before you pay. Delivered in seconds. Automatic refund if delivery fails.",
     images: ["/og.png"],
   },
   icons: {
