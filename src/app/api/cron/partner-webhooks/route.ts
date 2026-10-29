@@ -5,6 +5,7 @@
 // invoked ad hoc after a vend for near-instant delivery.
 
 import { supabaseAdmin, signWebhookPayload } from "@/lib/partners";
+import { cronAuthorized } from "@/lib/security";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -12,8 +13,7 @@ export const maxDuration = 60;
 const MAX_ATTEMPTS = 8;
 
 export async function GET(req: Request) {
-  const auth = req.headers.get("authorization");
-  if (auth !== `Bearer ${process.env.CRON_SECRET}`) {
+  if (!cronAuthorized(req)) {
     return new Response("Unauthorized", { status: 401 });
   }
 
@@ -54,8 +54,10 @@ export async function GET(req: Request) {
     let ok = false;
     let errMsg = "";
     try {
+      if (!/^https:\/\//i.test(partner.webhook_url)) throw new Error("webhook_url must be https");
       const res = await fetch(partner.webhook_url, {
         method: "POST",
+        redirect: "manual", // never follow redirects (SSRF hardening)
         headers: {
           "Content-Type": "application/json",
           "X-Nolgic-Signature": signature,

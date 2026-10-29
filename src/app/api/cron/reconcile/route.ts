@@ -4,14 +4,14 @@
 
 import { NextRequest } from "next/server";
 import { sendReconcileEmail } from "@/lib/reconcile";
+import { cronAuthorized } from "@/lib/security";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 export async function GET(req: NextRequest) {
-  const auth = req.headers.get("authorization");
-  if (process.env.CRON_SECRET && auth !== `Bearer ${process.env.CRON_SECRET}`) {
+  if (!cronAuthorized(req)) {
     return new Response("Unauthorized", { status: 401 });
   }
   const r = await sendReconcileEmail();

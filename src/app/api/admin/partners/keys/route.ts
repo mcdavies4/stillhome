@@ -10,7 +10,7 @@ export const runtime = "nodejs";
 
 export async function POST(req: Request) {
   try {
-    requireAdmin(req);
+    await requireAdmin(req);
     const body = await req.json().catch(() => null);
     const { partner_id, environment, label } = body ?? {};
     if (!partner_id || !["test", "live"].includes(environment)) {
@@ -39,7 +39,7 @@ export async function POST(req: Request) {
 
 export async function DELETE(req: Request) {
   try {
-    requireAdmin(req);
+    await requireAdmin(req);
     const body = await req.json().catch(() => null);
     if (!body?.key_id) {
       throw new ApiError(400, "invalid_request", "key_id is required.");

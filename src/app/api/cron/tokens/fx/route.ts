@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { alertFounder } from "@/lib/alerts";
+import { cronAuthorized } from "@/lib/security";
 
 // Daily FX margin guard.
 // Fetches the live GBP->NGN mid-market rate and compares it with the
@@ -14,8 +15,7 @@ import { alertFounder } from "@/lib/alerts";
 export const dynamic = "force-dynamic";
 
 export async function GET(req: Request) {
-  const auth = req.headers.get("authorization");
-  if (process.env.CRON_SECRET && auth !== `Bearer ${process.env.CRON_SECRET}`) {
+  if (!cronAuthorized(req)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 

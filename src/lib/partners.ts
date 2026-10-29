@@ -177,7 +177,7 @@ export async function flwVend(params: {
   const secret = process.env.FLW_SECRET_KEY!;
   try {
     const res = await fetch(
-      `https://api.flutterwave.com/v3/billers/${params.billerCode}/items/${params.itemCode}/payment`,
+      `https://api.flutterwave.com/v3/billers/${encodeURIComponent(params.billerCode)}/items/${encodeURIComponent(params.itemCode)}/payment`,
       {
         method: "POST",
         headers: {

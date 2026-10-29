@@ -28,7 +28,8 @@ export async function POST(req: Request) {
   try {
     event = stripe.webhooks.constructEvent(raw, sig!, process.env.STRIPE_WEBHOOK_SECRET!);
   } catch (e: any) {
-    return NextResponse.json({ error: `Invalid signature: ${e.message}` }, { status: 400 });
+    console.warn("[stripe] invalid webhook signature:", e?.message);
+    return NextResponse.json({ error: "Invalid signature" }, { status: 400 });
   }
 
   if (event.type !== "checkout.session.completed") {
@@ -40,6 +41,43 @@ export async function POST(req: Request) {
   if (!orderId) return NextResponse.json({ error: "No order_id" }, { status: 400 });
 
   const db = supabaseAdmin();
+
+  // ---- Defence in depth: never trust the webhook body alone -------------
+  // A forged or replayed event (e.g. if the signing secret ever leaks) must not
+  // be able to vend for free. Re-fetch the session straight from Stripe's API
+  // (authenticated with our secret key) and require that it is really paid and
+  // really belongs to this order.
+  if (session.payment_status !== "paid") {
+    return NextResponse.json({ received: true, note: "not paid yet" });
+  }
+  try {
+    const live = await stripe.checkout.sessions.retrieve(session.id);
+    if (live.payment_status !== "paid" || live.metadata?.order_id !== orderId) {
+      console.error(`[stripe] session ${session.id} failed API verification for order ${orderId}`);
+      await alertFounder("⚠️ Stripe webhook failed verification", `Session ${session.id} / order ${orderId} — payment_status=${live.payment_status}. Not vended.`);
+      return NextResponse.json({ received: true, note: "verification failed" });
+    }
+    const { data: pre } = await db
+      .from("orders")
+      .select("stripe_session_id, amount_gbp_pence")
+      .eq("id", orderId)
+      .maybeSingle();
+    if (pre?.stripe_session_id && pre.stripe_session_id !== session.id) {
+      console.error(`[stripe] session ${session.id} does not match order ${orderId}`);
+      await alertFounder("⚠️ Stripe session/order mismatch", `Session ${session.id} was presented for order ${orderId}, which belongs to ${pre.stripe_session_id}. Not vended.`);
+      return NextResponse.json({ received: true, note: "session mismatch" });
+    }
+    if (pre && live.amount_total != null && Number(pre.amount_gbp_pence) !== live.amount_total) {
+      // Money is in but the amounts disagree — do not auto-vend; a human decides.
+      await alertFounder("⚠️ Stripe amount mismatch", `Order ${orderId}: paid ${live.amount_total}p, order expects ${pre.amount_gbp_pence}p. Not vended — review.`);
+      await db.from("orders").update({ status: "needs_review", error: `AMOUNT MISMATCH: paid ${live.amount_total}p vs ${pre.amount_gbp_pence}p` }).eq("id", orderId).eq("status", "pending_payment");
+      return NextResponse.json({ received: true, note: "amount mismatch" });
+    }
+  } catch (e: any) {
+    // Can't verify right now -> let Stripe retry the webhook (it will, on non-2xx).
+    console.error("[stripe] verification call failed", e?.message);
+    return NextResponse.json({ error: "verification unavailable" }, { status: 503 });
+  }
 
   // Claim the order atomically: only proceed if we flip pending_payment -> paid.
   const { data: order } = await db

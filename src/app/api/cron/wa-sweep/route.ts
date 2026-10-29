@@ -9,13 +9,13 @@ import { NextRequest } from "next/server";
 import { stripe } from "@/lib/stripe";
 import { db, resetConversation } from "@/lib/wa/db";
 import { sendText } from "@/lib/wa/client";
+import { cronAuthorized } from "@/lib/security";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest) {
-  const auth = req.headers.get("authorization");
-  if (process.env.CRON_SECRET && auth !== `Bearer ${process.env.CRON_SECRET}`) {
+  if (!cronAuthorized(req)) {
     return new Response("Unauthorized", { status: 401 });
   }
 

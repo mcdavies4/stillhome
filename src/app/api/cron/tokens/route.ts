@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { tryRecoverToken, expectsToken } from "@/lib/fulfilment";
 import { sendReconcileEmail } from "@/lib/reconcile";
+import { cronAuthorized } from "@/lib/security";
 
 // Daily backstop: recover tokens for fulfilled orders still missing one
 // (last 72h). Vercel Cron calls this with Authorization: Bearer CRON_SECRET.
@@ -10,8 +11,7 @@ import { sendReconcileEmail } from "@/lib/reconcile";
 // separate cron, because Vercel Hobby allows only two cron jobs and both slots
 // (this + the 7am FX guard) are already used.
 export async function GET(req: Request) {
-  const auth = req.headers.get("authorization");
-  if (process.env.CRON_SECRET && auth !== `Bearer ${process.env.CRON_SECRET}`) {
+  if (!cronAuthorized(req)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 

@@ -47,6 +47,11 @@ export async function POST(req: Request) {
         throw new ApiError(400, "invalid_request", `${f} is required.`);
       }
     }
+    for (const [f, max] of [["partner_ref", 100], ["biller_code", 64], ["item_code", 64], ["biller_name", 120], ["identifier", 64], ["identifier_label", 60]] as const) {
+      if (typeof body[f] !== "string" || body[f].length > max) {
+        throw new ApiError(400, "invalid_request", `${f} must be a string of at most ${max} characters.`);
+      }
+    }
     const amountNgn = Number(body.amount_ngn);
     if (!Number.isFinite(amountNgn) || amountNgn <= 0) {
       throw new ApiError(400, "invalid_request", "amount_ngn must be a positive number.");

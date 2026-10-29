@@ -10,7 +10,7 @@ export const runtime = "nodejs";
 
 export async function GET(req: Request) {
   try {
-    requireAdmin(req);
+    await requireAdmin(req);
     const db = supabaseAdmin();
 
     const { data: partners, error } = await db
@@ -43,7 +43,7 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   try {
-    requireAdmin(req);
+    await requireAdmin(req);
     const db = supabaseAdmin();
     const body = await req.json().catch(() => null);
     const { name, slug, contact_email } = body ?? {};

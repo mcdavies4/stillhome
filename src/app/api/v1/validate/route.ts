@@ -11,7 +11,11 @@ export async function POST(req: Request) {
     const auth = await requirePartner(req);
     const body = await req.json().catch(() => null);
     const { biller_code, item_code, identifier } = body ?? {};
-    if (!biller_code || !item_code || !identifier) {
+    if (
+      typeof biller_code !== "string" || typeof item_code !== "string" || typeof identifier !== "string" ||
+      !biller_code || !item_code || !identifier ||
+      biller_code.length > 64 || item_code.length > 64 || identifier.length > 64
+    ) {
       throw new ApiError(
         400,
         "invalid_request",
@@ -30,7 +34,7 @@ export async function POST(req: Request) {
     }
 
     const res = await fetch(
-      `https://api.flutterwave.com/v3/bill-items/${item_code}/validate?code=${biller_code}&customer=${encodeURIComponent(identifier)}`,
+      `https://api.flutterwave.com/v3/bill-items/${encodeURIComponent(item_code)}/validate?code=${encodeURIComponent(biller_code)}&customer=${encodeURIComponent(identifier)}`,
       { headers: { Authorization: `Bearer ${process.env.FLW_SECRET_KEY!}` } }
     );
     const json = await res.json().catch(() => ({}));

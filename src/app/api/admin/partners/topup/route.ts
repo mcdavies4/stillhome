@@ -9,13 +9,16 @@ export const runtime = "nodejs";
 
 export async function POST(req: Request) {
   try {
-    requireAdmin(req);
+    await requireAdmin(req);
     const body = await req.json().catch(() => null);
     const partnerId = body?.partner_id;
     const amountPence = Number(body?.amount_pence);
 
-    if (!partnerId || !Number.isInteger(amountPence) || amountPence === 0) {
+    if (!partnerId || typeof partnerId !== "string" || !Number.isInteger(amountPence) || amountPence === 0) {
       throw new ApiError(400, "invalid_request", "partner_id and a non-zero integer amount_pence are required.");
+    }
+    if (Math.abs(amountPence) > 10_000_000) {
+      throw new ApiError(400, "invalid_request", "amount_pence is out of range (max £100,000 per adjustment).");
     }
 
     const { data: wallet, error } = await supabaseAdmin().rpc("partner_topup", {

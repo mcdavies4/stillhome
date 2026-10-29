@@ -1,14 +1,18 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
+import { safeEqual } from "@/lib/security";
+import { rateLimit } from "@/lib/ratelimit";
 
 // Admin stats API. Auth: Authorization: Bearer <ADMIN_PASSWORD>.
 // Read-only aggregates for the founder dashboard.
 export const dynamic = "force-dynamic";
 
 export async function GET(req: Request) {
+  const { ok } = await rateLimit(req, "admin-auth", 30, 10);
+  if (!ok) return NextResponse.json({ error: "Too many attempts" }, { status: 429 });
   const secret = process.env.ADMIN_PASSWORD;
   const auth = req.headers.get("authorization");
-  if (!secret || auth !== `Bearer ${secret}`) {
+  if (!secret || !safeEqual(auth, `Bearer ${secret}`)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 

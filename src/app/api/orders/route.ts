@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { tryRecoverToken, expectsToken } from "@/lib/fulfilment";
+import { UUID_RE } from "@/lib/security";
 
 // Order status lookup by id (the success page polls this).
 // If the order is fulfilled but the electricity token hasn't landed yet,
@@ -9,7 +10,7 @@ import { tryRecoverToken, expectsToken } from "@/lib/fulfilment";
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const id = searchParams.get("id");
-  if (!id) return NextResponse.json({ error: "Missing id" }, { status: 400 });
+  if (!id || !UUID_RE.test(id)) return NextResponse.json({ error: "Missing id" }, { status: 400 });
 
   const db = supabaseAdmin();
   const { data, error } = await db

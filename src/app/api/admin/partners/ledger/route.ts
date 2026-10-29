@@ -8,7 +8,7 @@ export const runtime = "nodejs";
 
 export async function GET(req: Request) {
   try {
-    requireAdmin(req);
+    await requireAdmin(req);
     const url = new URL(req.url);
     const partnerId = url.searchParams.get("partner_id");
     if (!partnerId) throw new ApiError(400, "invalid_request", "partner_id is required.");

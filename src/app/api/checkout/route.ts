@@ -8,11 +8,13 @@ import { rateLimit } from "@/lib/ratelimit";
 import { velocityCheck } from "@/lib/velocity";
 import { alertFounder } from "@/lib/alerts";
 import { initializeTransaction, paystackConfigured } from "@/lib/paystack";
+import { cap, normaliseEmail, normalisePhone } from "@/lib/security";
+import { ngnServiceFee } from "@/lib/ngn-fee";
 
 // Creates the order row + a payment session:
 //   - default: Stripe Checkout in GBP (diaspora, any supported country)
 //   - payIn:"ngn" (Nigeria only): Paystack hosted checkout in naira
-//     (card / bank transfer / USSD). Fee = NG_LOCAL_FEE_NGN (default ₦100).
+//     (card / bank transfer / USSD). Fee = 2% of the amount, min ₦100, max ₦500 (see lib/ngn-fee.ts).
 // Re-validates the identifier server-side where the biller supports it —
 // airtime/data have no validation (the phone number IS the account).
 export async function POST(req: Request) {
@@ -25,14 +27,40 @@ export async function POST(req: Request) {
     "unknown";
 
   try {
-    const b = await req.json();
+    const raw = await req.json().catch(() => null);
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+      return NextResponse.json({ error: "Invalid request" }, { status: 400 });
+    }
+    // Normalise + length-cap every client-supplied field once, up front.
+    const email = normaliseEmail(raw.email);
+    if (!email) return NextResponse.json({ error: "Please enter a valid email address." }, { status: 400 });
+    let recipientWhatsapp: string | null = null;
+    if (raw.recipientWhatsapp) {
+      recipientWhatsapp = normalisePhone(raw.recipientWhatsapp);
+      if (!recipientWhatsapp) {
+        return NextResponse.json({ error: "That mobile number doesn't look right — use digits only, with country code if outside Nigeria." }, { status: 400 });
+      }
+    }
+    const b = {
+      email,
+      billerCode: cap(raw.billerCode, 64),
+      itemCode: cap(raw.itemCode, 64),
+      billerName: cap(raw.billerName, 120),
+      identifier: cap(raw.identifier, 64),
+      identifierLabel: cap(raw.identifierLabel, 60),
+      country: cap(raw.country, 2),
+      payIn: cap(raw.payIn, 3),
+      recipientWhatsapp,
+      userId: null as string | null, // never trust a client-supplied user id
+    };
     // amountLocal replaces amountNgn; accept both for backward-compat with any cached client.
-    const amountLocal = b.amountLocal ?? b.amountNgn;
-    const required = ["email", "billerCode", "itemCode", "billerName", "identifier", "identifierLabel"];
-    for (const k of required) {
+    const amountLocal = raw.amountLocal ?? raw.amountNgn;
+    for (const k of ["billerCode", "itemCode", "billerName", "identifier", "identifierLabel"] as const) {
       if (!b[k]) return NextResponse.json({ error: `Missing ${k}` }, { status: 400 });
     }
-    if (!amountLocal) return NextResponse.json({ error: "Missing amount" }, { status: 400 });
+    if (!amountLocal || !Number.isFinite(Number(amountLocal)) || Number(amountLocal) <= 0) {
+      return NextResponse.json({ error: "Missing amount" }, { status: 400 });
+    }
 
     // Country: validate against supported list, default NG (existing behaviour).
     const countryCode = isSupportedCountry((b.country ?? "").toUpperCase())
@@ -78,7 +106,7 @@ export async function POST(req: Request) {
           { status: 400 }
         );
       }
-      const feeNgn = Math.max(0, Math.round(Number(process.env.NG_LOCAL_FEE_NGN ?? "100")));
+      const feeNgn = ngnServiceFee(amountNgn);
       const totalNgn = amountNgn + feeNgn;
 
       // Velocity check works in pence; approximate with the NGN rate (reference only).
@@ -218,6 +246,14 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ url: session.url, orderId: order.id, total: gbp(quote.totalPence) });
   } catch (e: any) {
-    return NextResponse.json({ error: e.message ?? "Checkout failed" }, { status: 500 });
+    // Only pass through errors we raised on purpose (provider validation, amount range);
+    // never leak database / Stripe / Paystack internals to the browser.
+    console.error("[checkout] failed", e);
+    const msg0 = String(e?.message ?? "");
+    const safe =
+      (e?.name === "FlwError" && !/^Flutterwave HTTP/i.test(msg0)) ||
+      e?.name === "PaystackError" ||
+      /^Amount must be between/.test(msg0);
+    return NextResponse.json({ error: safe ? e.message : "Checkout failed — please try again." }, { status: safe ? 400 : 500 });
   }
 }
