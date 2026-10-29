@@ -18,6 +18,15 @@ type BillerItem = {
 // Naira (Nigeria-domestic) checkout stays hidden until Paystack is live:
 // set NEXT_PUBLIC_NGN_PAY_ENABLED=1 in Vercel to show it.
 const NGN_ENABLED = process.env.NEXT_PUBLIC_NGN_PAY_ENABLED === "1";
+// Launch switches (all default OFF — set to "1" in Vercel to open each one):
+//   NEXT_PUBLIC_UK_PAY_ENABLED  pay in £ by card (Stripe)
+//   NEXT_PUBLIC_GH_ENABLED      Ghana
+// While UK is off the site runs as a Nigeria-only, pay-in-naira product and
+// shows UK / Ghana as "coming soon".
+const UK_ENABLED = process.env.NEXT_PUBLIC_UK_PAY_ENABLED === "1";
+const GH_ENABLED = process.env.NEXT_PUBLIC_GH_ENABLED === "1";
+const ANY_PAY = NGN_ENABLED || UK_ENABLED;
+const DOMESTIC = !UK_ENABLED;
 const NGN_FEE = Number(process.env.NEXT_PUBLIC_NG_LOCAL_FEE_NGN ?? "100");
 
 const itemKey = (i: BillerItem) => `${i.biller_code}:${i.item_code}:${i.short_name ?? i.name}`;
@@ -40,7 +49,7 @@ const CATEGORIES = [
   {
     title: "Electricity",
     text: "Prepaid meter tokens, issued in seconds. The token is shown to you and sent to their phone.",
-    names: "IKEDC · EKEDC · AEDC · IBEDC · PHED · ECG (Ghana) and more",
+    names: GH_ENABLED ? "IKEDC · EKEDC · AEDC · IBEDC · PHED · ECG (Ghana) and more" : "IKEDC · EKEDC · AEDC · IBEDC · PHED and more",
     icon: <path d="M13 2L5 13.5h6L10 22l9-12h-6.2L13 2z" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />,
   },
   {
@@ -58,12 +67,12 @@ const CATEGORIES = [
   {
     title: "Data",
     text: "Data bundles and home broadband for the people you keep connected.",
-    names: "Mobile bundles · Surfline and Vodafone broadband (Ghana)",
+    names: GH_ENABLED ? "Mobile bundles · Surfline and Vodafone broadband (Ghana)" : "Mobile bundles and home broadband",
     icon: (<><path d="M3 9.5a14 14 0 0118 0M6 13a9.5 9.5 0 0112 0M9.3 16.4a5 5 0 015.4 0" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" /><circle cx="12" cy="19.5" r="1.4" fill="currentColor" /></>),
   },
 ];
 
-const FAQS = [
+const FAQS_DIASPORA = [
   { q: "Which countries does Nolgic support?", a: "Nigeria and Ghana today — electricity, TV subscriptions, airtime and data in both. We're building Nolgic as one tool for paying bills across Africa, and more countries are on the way. Pick the country at the top of the payment form." },
   { q: "How do I pay a NEPA / electricity bill in Nigeria from the UK?", a: "Pick the DisCo (EKEDC, IKEDC, EEDC and others), enter the meter number, and we show you the registered account name. Pay in pounds by card and the prepaid token is issued in seconds — we show it on screen, email it to you, and can send it to your family's phone." },
   { q: "Can I pay for DSTV or GOTV from abroad?", a: "Yes. Choose the package, enter the smartcard/IUC number, confirm the account holder's name we look up, and pay by card. The decoder is credited within seconds — no one in Nigeria needs to queue or do anything." },
@@ -76,12 +85,26 @@ const FAQS = [
   { q: "What does it cost?", a: "The price shown at checkout is everything — the product price plus a small service fee. No hidden exchange-rate surprises after the fact." },
 ];
 
+const FAQS_DOMESTIC = [
+  { q: "Which countries does Nolgic support?", a: "Nigeria today, paid in naira. Payments from the UK in pounds, and Ghana, are coming soon." },
+  { q: "How do I buy electricity (NEPA) with Nolgic?", a: "Pick your DisCo (EKEDC, IKEDC, EEDC and others), enter the meter number, and we show you the registered account name. Pay by card, bank transfer or USSD and the prepaid token is issued in seconds — we show it on screen, email it to you, and can send it to another phone." },
+  { q: "Can I pay for DSTV or GOTV?", a: "Yes. Choose the package, enter the smartcard/IUC number, confirm the account holder's name we look up, and pay. The decoder is credited within seconds." },
+  { q: "How do I buy MTN, Airtel or Glo airtime and data?", a: "Select the network, enter the phone number and the amount, and pay. The airtime or data lands on the phone instantly." },
+  { q: "Is Nolgic a money transfer service?", a: "No — you're buying a prepaid product (a token, subscription or top-up) at a price shown upfront. We deliver the product directly; we never move money to a person." },
+  { q: "What happens if delivery fails?", a: "You're refunded automatically and in full. You can never pay for something that wasn't delivered." },
+  { q: "What does it cost?", a: `The price shown at checkout is everything — the amount you're buying plus a small service fee of ₦${NGN_FEE.toLocaleString()}.` },
+];
+
+const FAQS = DOMESTIC ? FAQS_DOMESTIC : FAQS_DIASPORA;
+
 const STEPS = [
   { n: "1", title: "Pick the bill", text: "Electricity token, DSTV, GOTV, airtime or data — for any meter, decoder or phone number." },
   { n: "2", title: "See who you're paying", text: "We look the number up with the provider and show you the registered name. You confirm it's your people before any money moves." },
-  { n: "3", title: "Pay. Done.", text: NGN_ENABLED
-      ? "Card checkout in pounds, or pay in naira from inside Nigeria. Delivery lands in seconds, and the receipt goes to their phone — token included."
-      : "Card checkout in pounds. Delivery lands in seconds, and the receipt goes to their phone — token included." },
+  { n: "3", title: "Pay. Done.", text: DOMESTIC
+      ? "Pay by card, bank transfer or USSD. Delivery lands in seconds, and the receipt goes to their phone — token included."
+      : NGN_ENABLED
+        ? "Card checkout in pounds, or pay in naira from inside Nigeria. Delivery lands in seconds, and the receipt goes to their phone — token included."
+        : "Card checkout in pounds. Delivery lands in seconds, and the receipt goes to their phone — token included." },
 ];
 
 const eyebrow = "font-mono text-xs uppercase tracking-[0.25em] text-tungsten";
@@ -89,7 +112,7 @@ const h2 = "font-display font-extrabold text-3xl md:text-4xl leading-[1.08]";
 
 export default function Home() {
   const [country, setCountry] = useState<CountryCode>("NG");
-  const [payIn, setPayIn] = useState<"gbp" | "ngn">("gbp");
+  const [payIn, setPayIn] = useState<"gbp" | "ngn">(UK_ENABLED ? "gbp" : "ngn");
   const [items, setItems] = useState<BillerItem[]>([]);
   const [tab, setTab] = useState("electricity");
   const [item, setItem] = useState<BillerItem | null>(null);
@@ -169,6 +192,9 @@ export default function Home() {
     } catch (e: any) { setError(e.message); setBusy(null); }
   }
 
+  const heroSub = DOMESTIC
+    ? "Pay for electricity, DStv, GOtv, airtime and data from your phone, in naira. You see who you\u2019re paying before any money moves."
+    : null;
   const payLine = NGN_ENABLED
     ? "Pay in pounds from the UK, or in naira from inside Nigeria. You see who you\u2019re paying before any money moves."
     : "Pay in pounds, straight from your card. You see who you\u2019re paying before any money moves.";
@@ -182,13 +208,13 @@ export default function Home() {
       {/* ───────── HERO + PAY FORM ───────── */}
       <section className="max-w-5xl mx-auto px-5 pt-10 pb-20 grid lg:grid-cols-[1.05fr_0.95fr] gap-12 items-start">
         <div className="lg:pt-6">
-          <p className={eyebrow}>Nigeria · Ghana · More of Africa, soon</p>
+          <p className={eyebrow}>{DOMESTIC ? "Nigeria · UK and Ghana payments coming soon" : "Nigeria · Ghana · More of Africa, soon"}</p>
           <h1 className="font-display font-extrabold text-5xl md:text-6xl leading-[1.02] tracking-tight mt-5">
-            The bills back home,{" "}
+            {DOMESTIC ? "Light, TV, airtime and data," : "The bills back home,"}{" "}
             <span className="text-tungsten">paid in seconds.</span>
           </h1>
           <p className="text-haze mt-6 text-lg leading-relaxed max-w-xl">
-            Electricity, TV, airtime and data for Nigeria and Ghana. {payLine}
+            {heroSub ?? <>Electricity, TV, airtime and data for Nigeria and Ghana. {payLine}</>}
           </p>
           <div className="flex gap-3 mt-8 flex-wrap">
             <a href="#pay" className="px-6 py-3.5 rounded-xl bg-tungsten text-white dark:text-night font-display font-bold text-lg shadow-glow hover:brightness-110">Pay a bill now</a>
@@ -216,20 +242,35 @@ export default function Home() {
           <div className="bg-panel border-2 border-paper rounded-3xl p-5 sm:p-6 shadow-glow">
             <h2 className="sr-only">Pay a bill</h2>
 
-            {NGN_ENABLED && (
+            {!ANY_PAY && (
+              <div className="py-6 text-center">
+                <p className="font-mono text-xs text-tungsten uppercase tracking-[0.25em]">Opening soon</p>
+                <p className="font-display font-extrabold text-2xl mt-3">Payments open very shortly.</p>
+                <p className="text-haze text-sm mt-3 leading-relaxed">We&rsquo;re finishing the last checks. Message <a href="mailto:nolgichq@gmail.com?subject=Tell%20me%20when%20Nolgic%20opens" className="text-tungsten underline underline-offset-2">nolgichq@gmail.com</a> and we&rsquo;ll tell you the day it opens.</p>
+              </div>
+            )}
+{ANY_PAY && (<>
+
+            {ANY_PAY && (
               <div className="mb-5">
                 <p className="font-mono text-xs text-haze uppercase tracking-widest mb-3">Where are you paying from?</p>
                 <div className="grid grid-cols-2 gap-1.5 rounded-xl bg-night p-1.5 border border-line">
                   {([
-                    { k: "gbp", label: "UK or abroad · pay in £" },
-                    { k: "ngn", label: "Nigeria · pay in ₦" },
+                    { k: "gbp", label: "UK or abroad · £", on: UK_ENABLED },
+                    { k: "ngn", label: "Nigeria · ₦", on: NGN_ENABLED },
                   ] as const).map((o) => (
                     <button
                       key={o.k}
-                      onClick={() => { setPayIn(o.k); if (o.k === "ngn") { setCountry("NG"); setTab("electricity"); } }}
-                      className={`rounded-lg px-2 py-2.5 text-sm font-semibold ${payIn === o.k ? "bg-paper text-night" : "text-haze hover:text-paper"}`}
+                      type="button"
+                      disabled={!o.on}
+                      aria-disabled={!o.on}
+                      onClick={() => { if (!o.on) return; setPayIn(o.k); if (o.k === "ngn") { setCountry("NG"); setTab("electricity"); } }}
+                      className={`rounded-lg px-2 py-2.5 text-sm font-semibold leading-tight ${
+                        !o.on ? "text-haze/60 cursor-not-allowed" : payIn === o.k ? "bg-paper text-night" : "text-haze hover:text-paper"
+                      }`}
                     >
                       {o.label}
+                      {!o.on && <span className="block font-mono text-[10px] uppercase tracking-widest mt-0.5">Coming soon</span>}
                     </button>
                   ))}
                 </div>
@@ -240,15 +281,22 @@ export default function Home() {
               <div className="mb-5">
                 <p className="font-mono text-xs text-haze uppercase tracking-widest mb-3">Country</p>
                 <div className="flex gap-2 flex-wrap">
-                  {allCountries().map((c) => (
-                    <button
-                      key={c.code}
-                      onClick={() => { setCountry(c.code); setTab("electricity"); }}
-                      className={`${pill(country === c.code)} flex items-center gap-2`}
-                    >
-                      <span className="font-mono text-xs opacity-80">{c.code}</span> {c.name}
-                    </button>
-                  ))}
+                  {allCountries().map((c) => {
+                    const on = c.code === "GH" ? GH_ENABLED : true;
+                    return (
+                      <button
+                        key={c.code}
+                        type="button"
+                        disabled={!on}
+                        aria-disabled={!on}
+                        onClick={() => { if (!on) return; setCountry(c.code); setTab("electricity"); }}
+                        className={`${on ? pill(country === c.code) : "px-3.5 py-2 rounded-full text-sm border-2 border-line text-haze/60 cursor-not-allowed"} flex items-center gap-2`}
+                      >
+                        <span className="font-mono text-xs opacity-80">{c.code}</span> {c.name}
+                        {!on && <span className="font-mono text-[10px] uppercase tracking-widest">Coming soon</span>}
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
             )}
@@ -325,6 +373,7 @@ export default function Home() {
                 </p>
               </div>
             )}
+</>)}
           </div>
 
           {error && <div role="alert" className="mt-4 border border-bad/40 bg-bad/10 rounded-xl p-4 text-bad text-sm">{error}</div>}
@@ -370,7 +419,7 @@ export default function Home() {
       <section className="bg-paper text-night">
         <div className="max-w-5xl mx-auto px-5 py-20">
           <p className="font-mono text-xs uppercase tracking-[0.25em] opacity-70">Where it works</p>
-          <h2 className={`${h2} mt-3 mb-10 max-w-2xl`}>One tool for paying bills across Africa. Starting with two countries.</h2>
+          <h2 className={`${h2} mt-3 mb-10 max-w-2xl`}>{DOMESTIC ? "One tool for paying bills across Africa. Starting in Nigeria." : "One tool for paying bills across Africa. Starting with two countries."}</h2>
           <div className="grid md:grid-cols-3 gap-4">
             <div className="rounded-2xl border-2 border-night p-6">
               <div className="flex items-center gap-3">
@@ -378,28 +427,62 @@ export default function Home() {
                 <h3 className="font-display font-extrabold text-2xl">Nigeria</h3>
               </div>
               <p className="mt-4 text-[15px] leading-relaxed opacity-85">Electricity from every major DisCo, DStv, GOtv and StarTimes, plus airtime and data on every network.</p>
-              <p className="mt-3 text-sm font-bold">{NGN_ENABLED ? "Pay in £ from abroad, or in ₦ from inside Nigeria" : "Pay in £ from abroad"}</p>
+              <p className="mt-3 text-sm font-bold">
+                {NGN_ENABLED && UK_ENABLED ? "Pay in £ from abroad, or in ₦ from inside Nigeria"
+                  : NGN_ENABLED ? "Pay in ₦ by card, bank transfer or USSD"
+                  : UK_ENABLED ? "Pay in £ from abroad"
+                  : "Opening soon"}
+              </p>
             </div>
-            <div className="rounded-2xl border-2 border-night p-6">
-              <div className="flex items-center gap-3">
-                <span className="w-11 h-11 rounded-xl bg-tungsten text-white dark:text-night font-extrabold flex items-center justify-center text-sm">GH</span>
-                <h3 className="font-display font-extrabold text-2xl">Ghana</h3>
+            {GH_ENABLED ? (
+              <div className="rounded-2xl border-2 border-night p-6">
+                <div className="flex items-center gap-3">
+                  <span className="w-11 h-11 rounded-xl bg-tungsten text-white dark:text-night font-extrabold flex items-center justify-center text-sm">GH</span>
+                  <h3 className="font-display font-extrabold text-2xl">Ghana</h3>
+                </div>
+                <p className="mt-4 text-[15px] leading-relaxed opacity-85">ECG electricity, DStv and GOtv, MTN, Vodafone and Tigo airtime, plus Surfline and Vodafone broadband.</p>
+                <p className="mt-3 text-sm font-bold">Pay in £ from abroad</p>
               </div>
-              <p className="mt-4 text-[15px] leading-relaxed opacity-85">ECG electricity, DStv and GOtv, MTN, Vodafone and Tigo airtime, plus Surfline and Vodafone broadband.</p>
-              <p className="mt-3 text-sm font-bold">Pay in £ from abroad</p>
-            </div>
-            <div className="rounded-2xl border-2 border-dashed border-night/50 p-6">
-              <div className="flex items-center gap-3">
-                <span className="w-11 h-11 rounded-xl border-2 border-dashed border-night/50 font-extrabold flex items-center justify-center text-xl">+</span>
-                <h3 className="font-display font-extrabold text-2xl">More soon</h3>
+            ) : (
+              <div className="rounded-2xl border-2 border-dashed border-night/50 p-6">
+                <div className="flex items-center gap-3">
+                  <span className="w-11 h-11 rounded-xl border-2 border-dashed border-night/50 font-extrabold flex items-center justify-center text-sm">GH</span>
+                  <h3 className="font-display font-extrabold text-2xl">Ghana</h3>
+                </div>
+                <p className="mt-4 text-[15px] leading-relaxed opacity-85">Electricity, TV, airtime and data are built and on the way.</p>
+                <p className="mt-3 text-sm font-bold">Coming soon</p>
               </div>
-              <p className="mt-4 text-[15px] leading-relaxed opacity-85">Every new country is the same promise: see the name, pay, get delivery — or get your money back.</p>
-            </div>
+            )}
+            {UK_ENABLED ? (
+              <div className="rounded-2xl border-2 border-dashed border-night/50 p-6">
+                <div className="flex items-center gap-3">
+                  <span className="w-11 h-11 rounded-xl border-2 border-dashed border-night/50 font-extrabold flex items-center justify-center text-xl">+</span>
+                  <h3 className="font-display font-extrabold text-2xl">More soon</h3>
+                </div>
+                <p className="mt-4 text-[15px] leading-relaxed opacity-85">Every new country is the same promise: see the name, pay, get delivery — or get your money back.</p>
+              </div>
+            ) : (
+              <div className="rounded-2xl border-2 border-dashed border-night/50 p-6">
+                <div className="flex items-center gap-3">
+                  <span className="w-11 h-11 rounded-xl border-2 border-dashed border-night/50 font-extrabold flex items-center justify-center text-sm">UK</span>
+                  <h3 className="font-display font-extrabold text-2xl">Pay from the UK</h3>
+                </div>
+                <p className="mt-4 text-[15px] leading-relaxed opacity-85">Pay in pounds by card for family back home.</p>
+                <p className="mt-3 text-sm font-bold">Coming soon</p>
+              </div>
+            )}
           </div>
         </div>
       </section>
 
-      {/* ───────── STORY ───────── */}
+      {/* ───────── STORY / COMING SOON ───────── */}
+      {DOMESTIC ? (
+        <section className="max-w-2xl mx-auto px-5 pt-20 pb-6">
+          <p className={eyebrow}>Coming soon</p>
+          <h2 className={`${h2} mt-3 mb-6`}>Paying from the UK or Ghana?</h2>
+          <p className="text-haze text-lg leading-relaxed">Payments in pounds for family in Nigeria, and bills in Ghana, are on the way. Tell us you&rsquo;re waiting and we&rsquo;ll let you know the day they open: <a href="mailto:nolgichq@gmail.com?subject=Tell%20me%20when%20UK%20payments%20open" className="text-tungsten underline underline-offset-2">nolgichq@gmail.com</a>.</p>
+        </section>
+      ) : (
       <section className="max-w-2xl mx-auto px-5 pt-20 pb-6">
         <p className={eyebrow}>Why Nolgic exists</p>
         <h2 className={`${h2} mt-3 mb-6`}>Every Sunday call ends the same way.</h2>
@@ -409,6 +492,7 @@ export default function Home() {
           <p className="text-paper font-semibold">Designed in London — because we make the same Sunday calls.</p>
         </div>
       </section>
+      )}
 
       {/* ───────── FAQ ───────── */}
       <section id="faq" className="max-w-2xl mx-auto px-5 pt-14 pb-20 scroll-mt-20">

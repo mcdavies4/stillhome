@@ -40,6 +40,18 @@ export async function POST(req: Request) {
       : DEFAULT_COUNTRY;
     const country = getCountry(countryCode);
 
+    // ---- Launch gates ------------------------------------------------------
+    // UK/£ (Stripe) and Ghana are built but switched off until funded/ready.
+    // Open each with a Vercel env var; the code paths below stay intact.
+    //   NEXT_PUBLIC_UK_PAY_ENABLED=1   allow pay-in-£ (Stripe)
+    //   NEXT_PUBLIC_GH_ENABLED=1       allow Ghana
+    if (countryCode === "GH" && process.env.NEXT_PUBLIC_GH_ENABLED !== "1") {
+      return NextResponse.json({ error: "Ghana is coming soon." }, { status: 400 });
+    }
+    if (b.payIn !== "ngn" && process.env.NEXT_PUBLIC_UK_PAY_ENABLED !== "1") {
+      return NextResponse.json({ error: "Payments in pounds are coming soon. For now, please pay in naira." }, { status: 400 });
+    }
+
     const identifier = String(b.identifier).trim();
 
     let v: { name: string | null } = { name: null };
