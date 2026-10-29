@@ -26,10 +26,14 @@ async function flw<T>(path: string, init?: RequestInit): Promise<T> {
   try { body = JSON.parse(text); } catch { /* keep raw text */ }
   if (!res.ok || body?.status === "error") {
     console.error(`[flw] ${path} -> ${res.status}: ${text.slice(0, 500)}`);
-    throw new FlwError(
-      body?.message ?? `Flutterwave HTTP ${res.status}: ${text.slice(0, 200)}`,
-      text
-    );
+    // Lookups for unknown/unsupported accounts often come back 400 with a null
+    // message. Show customers something usable; the raw text stays in the logs
+    // and on FlwError.raw.
+    const friendly =
+      path.includes("/validate") && res.status === 400
+        ? "Couldn't verify that number for this plan — check it's correct, or try a different plan."
+        : `Flutterwave HTTP ${res.status}: ${text.slice(0, 200)}`;
+    throw new FlwError(body?.message ?? friendly, text);
   }
   return body as T;
 }
