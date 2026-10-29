@@ -7,8 +7,12 @@ import { getCountry, isSupportedCountry, DEFAULT_COUNTRY } from "@/lib/countries
 import { rateLimit } from "@/lib/ratelimit";
 import { velocityCheck } from "@/lib/velocity";
 import { alertFounder } from "@/lib/alerts";
+import { initializeTransaction, paystackConfigured } from "@/lib/paystack";
 
-// Creates the order row + Stripe Checkout session.
+// Creates the order row + a payment session:
+//   - default: Stripe Checkout in GBP (diaspora, any supported country)
+//   - payIn:"ngn" (Nigeria only): Paystack hosted checkout in naira
+//     (card / bank transfer / USSD). Fee = NG_LOCAL_FEE_NGN (default ₦100).
 // Re-validates the identifier server-side where the biller supports it —
 // airtime/data have no validation (the phone number IS the account).
 export async function POST(req: Request) {
@@ -45,6 +49,78 @@ export async function POST(req: Request) {
       // Airtime/data have no validation; only hard-fail for validatable billers
       const noValidate = /VTU|AIRTIME|DATA|BROADBAND|SURFLINE|POSTPAID PAYMENT/i.test(`${b.billerName} ${b.itemCode}`);
       if (!noValidate) throw err;
+    }
+
+    // ---- Naira path (Nigeria domestic, paid via Paystack) -----------------
+    if (b.payIn === "ngn") {
+      if (countryCode !== "NG") {
+        return NextResponse.json({ error: "Naira payment is only available for Nigeria." }, { status: 400 });
+      }
+      if (!paystackConfigured()) {
+        return NextResponse.json({ error: "Naira payments aren't available yet — please check back soon." }, { status: 503 });
+      }
+      const amountNgn = Math.round(Number(amountLocal));
+      if (!Number.isFinite(amountNgn) || amountNgn < country.minLocal || amountNgn > country.maxLocal) {
+        return NextResponse.json(
+          { error: `Amount must be between ${money(country.minLocal, "NG")} and ${money(country.maxLocal, "NG")}` },
+          { status: 400 }
+        );
+      }
+      const feeNgn = Math.max(0, Math.round(Number(process.env.NG_LOCAL_FEE_NGN ?? "100")));
+      const totalNgn = amountNgn + feeNgn;
+
+      // Velocity check works in pence; approximate with the NGN rate (reference only).
+      const approxPence = Math.round((totalNgn / Number(process.env.NGN_PER_GBP ?? country.fxDefault)) * 100);
+      const velN = await velocityCheck({ email: b.email, ip, amountGbpPence: approxPence });
+      if (velN.blocked) {
+        alertFounder(
+          "Order blocked by velocity check",
+          `Email: ${b.email}\nIP: ${ip}\nReason: ${velN.reason}\nAmount: ₦${totalNgn.toLocaleString()} · ${b.billerName} · NG (Paystack)`
+        );
+        return NextResponse.json(
+          { error: "For your security this order needs review. Please contact nolgichq@gmail.com if you believe this is a mistake." },
+          { status: 403 }
+        );
+      }
+
+      const dbN = supabaseAdmin();
+      const { data: orderN, error: errN } = await dbN
+        .from("orders")
+        .insert({
+          user_id: b.userId ?? null,
+          email: b.email,
+          ip,
+          country: "NG",
+          currency: "NGN",
+          payment_provider: "paystack",
+          biller_code: b.billerCode,
+          item_code: b.itemCode,
+          biller_name: b.billerName,
+          identifier,
+          identifier_label: b.identifierLabel,
+          customer_name: v.name,
+          recipient_whatsapp: b.recipientWhatsapp ?? null,
+          amount_ngn: amountNgn,
+          service_fee_local: feeNgn,
+          fx_ngn_per_gbp: Number(process.env.NGN_PER_GBP ?? country.fxDefault), // reference only
+          service_fee_pence: 0,
+          amount_gbp_pence: 0, // not a GBP order
+          status: "pending_payment",
+        })
+        .select("id")
+        .single();
+      if (errN) throw errN;
+
+      const appUrlN = process.env.NEXT_PUBLIC_APP_URL!;
+      const init = await initializeTransaction({
+        email: b.email,
+        amountNgn: totalNgn,
+        orderId: orderN.id,
+        callbackUrl: `${appUrlN}/order/${orderN.id}?paid=1`,
+      });
+      await dbN.from("orders").update({ paystack_reference: init.reference }).eq("id", orderN.id);
+
+      return NextResponse.json({ url: init.authorizationUrl, orderId: orderN.id, total: `₦${totalNgn.toLocaleString()}` });
     }
 
     const quote = quoteGbp(Number(amountLocal), countryCode);

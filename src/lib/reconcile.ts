@@ -17,6 +17,7 @@ export interface ReconResult {
   byStatus: Record<string, number>;
   collectedPence: number;
   vendedNgn: number;
+  paystackNgn: number;      // ₦ collected via Paystack on fulfilled orders (incl. fee)
   refundedPence: number;
   marginPence: number;
   flags: { level: "danger" | "warn"; msg: string }[];
@@ -64,19 +65,26 @@ export async function runReconcile(dateStr = yesterdayUTC(), deep = true): Promi
 
   const [{ data: orders }, charges] = await Promise.all([
     db.from("orders")
-      .select("id, status, source, biller_name, identifier, amount_ngn, amount_gbp_pence, flw_reference, currency, created_at")
+      .select("id, status, source, biller_name, identifier, amount_ngn, amount_gbp_pence, flw_reference, currency, created_at, payment_provider, service_fee_local")
       .gte("created_at", start.toISOString())
       .lte("created_at", end.toISOString()),
     stripeCharges(start, end),
   ]);
 
-  const rows = orders ?? [];
+  const allRows = orders ?? [];
+  // Paystack (₦) orders have no Stripe charge — keep them out of the Stripe three-way
+  // match and the £ margin; report them on their own line.
+  const rows = allRows.filter((o: any) => (o.payment_provider ?? "stripe") === "stripe");
+  const psRows = allRows.filter((o: any) => o.payment_provider === "paystack");
+  const psFulfilled = psRows.filter((o: any) => o.status === "fulfilled");
+  const paystackNgn = psFulfilled.reduce(
+    (a: number, o: any) => a + Number(o.amount_ngn ?? 0) + Number(o.service_fee_local ?? 0), 0);
   const byStatus: Record<string, number> = {};
   const flags: ReconResult["flags"] = [];
   let collectedPence = 0, vendedNgn = 0, refundedPence = 0;
 
   const fulfilled = rows.filter((o) => o.status === "fulfilled");
-  for (const o of rows) byStatus[o.status] = (byStatus[o.status] ?? 0) + 1;
+  for (const o of allRows) byStatus[o.status] = (byStatus[o.status] ?? 0) + 1;
   for (const o of fulfilled) {
     collectedPence += Number(o.amount_gbp_pence ?? 0);
     vendedNgn += Number(o.amount_ngn ?? 0);
@@ -103,6 +111,19 @@ export async function runReconcile(dateStr = yesterdayUTC(), deep = true): Promi
         flags.push({ level: "danger", msg: `order ${o.id}: FLW status "${v.status}" (expected success)` });
     }
   }
+  // Paystack orders: vend verification + stuck-state flags (no Stripe to match against).
+  if (deep) {
+    for (const o of psFulfilled) {
+      if (!o.flw_reference) { flags.push({ level: "warn", msg: `Paystack order ${o.id} fulfilled but has no flw_reference to verify` }); continue; }
+      const v = await flwVended(o.flw_reference);
+      if (!v.found) flags.push({ level: "danger", msg: `DANGER: Paystack order ${o.id} fulfilled but Flutterwave has no record of ${o.flw_reference}` });
+      else if (v.status && !v.status.includes("success") && !v.status.includes("completed"))
+        flags.push({ level: "danger", msg: `Paystack order ${o.id}: FLW status "${v.status}" (expected success)` });
+    }
+  }
+  for (const o of psRows.filter((o: any) => ["paid", "needs_review", "refund_failed"].includes(o.status)))
+    flags.push({ level: o.status === "refund_failed" ? "danger" : "warn", msg: `Paystack order ${o.id} stuck in ${o.status} (${o.biller_name} ${ngn(o.amount_ngn)}) — check Paystack + FLW` });
+
   for (const o of rows.filter((o) => o.status === "needs_review"))
     flags.push({ level: "warn", msg: `needs_review UNRESOLVED: order ${o.id} (${o.biller_name} ${ngn(o.amount_ngn)})` });
   for (const o of rows.filter((o) => o.status === "refund_failed"))
@@ -118,8 +139,8 @@ export async function runReconcile(dateStr = yesterdayUTC(), deep = true): Promi
   const marginPence = ngnCollected - Math.round((ngnVended / rate) * 100);
 
   return {
-    date: dateStr, orderCount: rows.length, byStatus,
-    collectedPence, vendedNgn, refundedPence, marginPence,
+    date: dateStr, orderCount: allRows.length, byStatus,
+    collectedPence, vendedNgn, paystackNgn, refundedPence, marginPence,
     flags, ok: flags.length === 0,
   };
 }
@@ -139,6 +160,7 @@ export function reconEmailHtml(r: ReconResult): string {
       <tr><td style="padding:6px 0;color:#666">Orders</td><td style="text-align:right">${r.orderCount} <span style="color:#999">(${statusLine})</span></td></tr>
       <tr><td style="padding:6px 0;color:#666">Collected (fulfilled)</td><td style="text-align:right;font-weight:600;color:#0a7d34">${gbp(r.collectedPence)}</td></tr>
       <tr><td style="padding:6px 0;color:#666">Vended</td><td style="text-align:right">${ngn(r.vendedNgn)}</td></tr>
+      <tr><td style="padding:6px 0;color:#666">Paystack (₦, fulfilled)</td><td style="text-align:right">${ngn(r.paystackNgn)}</td></tr>
       <tr><td style="padding:6px 0;color:#666">Refunded (Stripe)</td><td style="text-align:right">${gbp(r.refundedPence)}</td></tr>
       <tr><td style="padding:6px 0;color:#666">Rough gross margin</td><td style="text-align:right">~${gbp(r.marginPence)}</td></tr>
     </table>

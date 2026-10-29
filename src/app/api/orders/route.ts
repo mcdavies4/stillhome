@@ -14,7 +14,7 @@ export async function GET(req: Request) {
   const db = supabaseAdmin();
   const { data, error } = await db
     .from("orders")
-    .select("id,status,biller_name,identifier,identifier_label,customer_name,email,recipient_whatsapp,amount_ngn,amount_gbp_pence,flw_token,flw_reference,created_at")
+    .select("id,status,biller_name,identifier,identifier_label,customer_name,email,recipient_whatsapp,amount_ngn,amount_gbp_pence,flw_token,flw_reference,created_at,country,currency,payment_provider,service_fee_local")
     .eq("id", id)
     .single();
 

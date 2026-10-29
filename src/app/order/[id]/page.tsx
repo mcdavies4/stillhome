@@ -13,13 +13,19 @@ type Order = {
   amount_ngn: number;
   amount_gbp_pence: number;
   flw_token: string | null;
+  country?: string | null;
+  currency?: string | null;
+  payment_provider?: string | null;
+  service_fee_local?: number | null;
 };
 
 const COPY: Record<string, { title: string; body: string; tone: string }> = {
-  pending_payment: { title: "Waiting for payment…", body: "Complete the Stripe checkout to continue.", tone: "text-haze" },
+  pending_payment: { title: "Waiting for payment…", body: "Complete your payment to continue.", tone: "text-haze" },
   paid: { title: "Delivering now…", body: "Payment received — vending with the provider. This usually takes seconds.", tone: "text-tungsten" },
   fulfilled: { title: "Delivered. They’re covered ✅", body: "The payment landed. Your email receipt is on its way — and if you added a WhatsApp number, so is theirs.", tone: "text-ok" },
   failed_refunded: { title: "Delivery failed — you’ve been refunded", body: "The provider rejected the payment, so we refunded your card in full automatically. Check the details and try again.", tone: "text-bad" },
+  needs_review: { title: "Payment received — confirming delivery", body: "The provider is slow to confirm. We\u2019re checking it now and you\u2019ll get your delivery or a full refund shortly — no action needed.", tone: "text-tungsten" },
+  expired: { title: "This order expired", body: "No payment was taken. You can start a new payment any time.", tone: "text-haze" },
   refund_failed: { title: "Something went wrong", body: "Delivery failed and the automatic refund needs attention. Contact support with this order ID — we’ll sort it immediately.", tone: "text-bad" },
 };
 
@@ -57,6 +63,12 @@ export default function OrderPage() {
   if (!order) return <main className="max-w-xl mx-auto px-5 pt-20 text-haze">Loading order…</main>;
 
   const c = COPY[order.status] ?? COPY.paid;
+  // Naira (Paystack) orders were charged in ₦ (amount + fee); everything else in £.
+  const sym = order.currency === "GHS" ? "₵" : "₦";
+  const chargedText =
+    order.payment_provider === "paystack"
+      ? `₦${(Number(order.amount_ngn) + Number(order.service_fee_local ?? 0)).toLocaleString("en-NG")}`
+      : `£${(order.amount_gbp_pence / 100).toFixed(2)}`;
   const tokenPending = order.status === "fulfilled" && !order.flw_token && expectsToken(order);
 
   return (
@@ -70,8 +82,8 @@ export default function OrderPage() {
         <Row k="Service" v={order.biller_name} />
         <Row k={order.identifier_label} v={order.identifier} />
         {order.customer_name && <Row k="Account" v={order.customer_name} />}
-        <Row k="Amount" v={`₦${Number(order.amount_ngn).toLocaleString("en-NG")}`} />
-        <Row k="Charged" v={`£${(order.amount_gbp_pence / 100).toFixed(2)}`} />
+        <Row k="Amount" v={`${sym}${Number(order.amount_ngn).toLocaleString("en-NG")}`} />
+        <Row k="Charged" v={chargedText} />
         <Row k="Order" v={order.id.slice(0, 8)} />
       </div>
 

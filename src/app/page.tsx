@@ -15,6 +15,11 @@ type BillerItem = {
   label_name: string;
 };
 
+// Naira (Nigeria-domestic) checkout is hidden until Paystack is live:
+// set NEXT_PUBLIC_NGN_PAY_ENABLED=1 in Vercel to show it.
+const NGN_ENABLED = process.env.NEXT_PUBLIC_NGN_PAY_ENABLED === "1";
+const NGN_FEE = Number(process.env.NEXT_PUBLIC_NG_LOCAL_FEE_NGN ?? "100");
+
 const itemKey = (i: BillerItem) => `${i.biller_code}:${i.item_code}:${i.short_name ?? i.name}`;
 
 // Country-agnostic category matchers (work for NG discos AND GH's ECG etc.)
@@ -37,6 +42,9 @@ const FAQS = [
   { q: "How do I pay a NEPA / electricity bill in Nigeria from the UK?", a: "Pick the DisCo (EKEDC, IKEDC, EEDC and others), enter the meter number, and we show you the registered account name. Pay in pounds by card and the prepaid token is issued in seconds — we show it on screen, email it to you, and can WhatsApp it to your family." },
   { q: "Can I pay for DSTV or GOTV from abroad?", a: "Yes. Choose the package, enter the smartcard/IUC number, confirm the account holder's name we look up, and pay by card. The decoder is credited within seconds — no one in Nigeria needs to queue or do anything." },
   { q: "How do I buy MTN, Airtel or Glo airtime from the UK?", a: "Select the network, enter the phone number and amount, and pay in pounds. The airtime lands on the phone instantly. Data bundles work the same way." },
+  ...(NGN_ENABLED ? [
+  { q: "Can I pay from inside Nigeria, in naira?", a: "Yes. Choose \"Nigeria — pay in ₦\" at the top of the payment form and pay by card, bank transfer or USSD. The token or top-up is delivered in seconds, with the same name-check and automatic refund if delivery fails." },
+  ] : []),
   { q: "Is Nolgic a money transfer service?", a: "No — you're buying a prepaid product (a token, subscription or top-up) at a pound price shown upfront. We deliver the product directly; we never move money to a person." },
   { q: "What happens if delivery fails?", a: "Your card is refunded automatically and in full. You can never pay for something that wasn't delivered." },
   { q: "What does it cost?", a: "The pound price shown at checkout is everything — product price plus a small service fee. No hidden exchange-rate surprises after the fact." },
@@ -50,6 +58,7 @@ const STEPS = [
 
 export default function Home() {
   const [country, setCountry] = useState<CountryCode>("NG");
+  const [payIn, setPayIn] = useState<"gbp" | "ngn">("gbp");
   const [items, setItems] = useState<BillerItem[]>([]);
   const [tab, setTab] = useState("electricity");
   const [item, setItem] = useState<BillerItem | null>(null);
@@ -62,6 +71,7 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null);
 
   const cfg = getCountry(country);
+  const inNgn = NGN_ENABLED && payIn === "ngn" && country === "NG";
   const fmtLocal = (n: number) => `${cfg.currencySymbol}${Number(n).toLocaleString()}`;
 
   // Reload billers whenever the country changes; reset the in-progress order.
@@ -81,6 +91,8 @@ export default function Home() {
   const fixedAmount = item && item.amount > 0;
   // FLW returns some countries' fixed prices in minor units (GH: pesewas).
   const fixedLocal = item && item.amount > 0 ? item.amount / cfg.fixedAmountDivisor : 0;
+  const billAmount = fixedAmount ? fixedLocal : Number(amountLocal || 0);
+  const ngnTotal = billAmount + NGN_FEE;
   const isNoValidate = (i: BillerItem | null) =>
     !!i && (i.is_airtime || /VTU|AIRTIME|DATA|BROADBAND|SURFLINE|POSTPAID PAYMENT/i.test(i.biller_name + " " + i.name));
 
@@ -109,6 +121,7 @@ export default function Home() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           country,
+          payIn: inNgn ? "ngn" : "gbp",
           email,
           billerCode: item.biller_code,
           itemCode: item.item_code,
@@ -203,7 +216,31 @@ export default function Home() {
         <p className="font-mono text-xs text-haze uppercase tracking-[0.3em] mb-3 text-center">Start here</p>
         <h2 className="font-display font-extrabold text-3xl mb-8 text-center">Who are we paying for today — and where?</h2>
 
-        {/* Step 0 — country */}
+        {/* Step 00 — where are you paying from? (shown once naira checkout is live) */}
+        {NGN_ENABLED && (
+          <div className="bg-panel border border-line rounded-2xl p-5 mb-4">
+            <p className="font-mono text-xs text-haze uppercase tracking-widest mb-3">Where are you paying from?</p>
+            <div className="flex gap-2 flex-wrap">
+              {([
+                { k: "gbp", label: "🇬🇧 UK / abroad — pay in £" },
+                { k: "ngn", label: "🇳🇬 Nigeria — pay in ₦" },
+              ] as const).map((o) => (
+                <button
+                  key={o.k}
+                  onClick={() => { setPayIn(o.k); if (o.k === "ngn") { setCountry("NG"); setTab("electricity"); } }}
+                  className={`px-4 py-2 rounded-full text-sm border ${
+                    payIn === o.k ? "bg-tungsten text-night border-tungsten font-semibold" : "border-line text-haze hover:border-tungsten/50"
+                  }`}
+                >
+                  {o.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Step 0 — country (hidden in naira mode: Nigeria only) */}
+        {!inNgn && (
         <div className="bg-panel border border-line rounded-2xl p-5 mb-4">
           <p className="font-mono text-xs text-haze uppercase tracking-widest mb-3">Country</p>
           <div className="flex gap-2 flex-wrap">
@@ -222,6 +259,7 @@ export default function Home() {
             ))}
           </div>
         </div>
+        )}
 
         <div className="bg-panel border border-line rounded-2xl p-5 mb-4">
           <p className="font-mono text-xs text-haze uppercase tracking-widest mb-3">1 · What are you paying?</p>
@@ -271,18 +309,29 @@ export default function Home() {
 
         {validated && (
           <div className="bg-panel border border-line rounded-2xl p-5">
-            <p className="font-mono text-xs text-haze uppercase tracking-widest mb-3">3 · Pay in pounds</p>
+            <p className="font-mono text-xs text-haze uppercase tracking-widest mb-3">3 · Pay in {inNgn ? "naira" : "pounds"}</p>
             <label>Your email (for your receipt)</label>
             <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" inputMode="email" />
             <div className="mt-3">
               <label>Their WhatsApp (optional — we send them the receipt / token)</label>
               <input value={whatsapp} onChange={(e) => setWhatsapp(e.target.value)} placeholder={country === "GH" ? "+233..." : "+234..."} inputMode="tel" />
             </div>
+            {inNgn && billAmount > 0 && (
+              <div className="mt-4 rounded-xl border border-line p-4 text-sm">
+                <div className="flex justify-between text-haze"><span>{item?.name}</span><span>{fmtLocal(billAmount)}</span></div>
+                <div className="flex justify-between text-haze mt-1"><span>Service fee</span><span>{fmtLocal(NGN_FEE)}</span></div>
+                <div className="flex justify-between font-semibold mt-2 pt-2 border-t border-line"><span>Total</span><span>{fmtLocal(ngnTotal)}</span></div>
+              </div>
+            )}
             <button onClick={pay} disabled={busy !== null || !email || (!fixedAmount && !amountLocal)}
               className="mt-5 w-full py-3.5 rounded-xl bg-tungsten text-night font-display font-bold text-lg shadow-glow hover:brightness-110 disabled:opacity-40">
-              {busy === "pay" ? "Opening secure checkout…" : "Continue to payment"}
+              {busy === "pay" ? "Opening secure checkout…" : inNgn && billAmount > 0 ? `Pay ${fmtLocal(ngnTotal)}` : "Continue to payment"}
             </button>
-            <p className="text-haze text-xs mt-3 text-center">Card payment handled by Stripe. If delivery fails, you&rsquo;re refunded automatically — you can never lose money.</p>
+            <p className="text-haze text-xs mt-3 text-center">
+              {inNgn
+                ? "Pay by card, bank transfer or USSD — secured by Paystack. If delivery fails, you\u2019re refunded automatically."
+                : "Card payment handled by Stripe. If delivery fails, you\u2019re refunded automatically — you can never lose money."}
+            </p>
           </div>
         )}
 
