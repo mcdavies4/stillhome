@@ -65,6 +65,33 @@ export async function validateCustomer(
     : flw.validateCustomer(itemCode, billerCode, identifier);
 }
 
+// ───────────────────────── purchase rules ─────────────────────────
+
+export type PurchaseCheck = { ok: true } | { ok: false; error: string };
+
+/**
+ * Re-checks, on the server and BEFORE any payment is taken, that this product exists, that fixed-price
+ * plans are bought at their catalogue price, and that variable amounts respect the provider's min/max.
+ * (VTpass ignores the amount on data/TV plans and charges the plan price, so the browser must never be trusted.)
+ * Flutterwave keeps its existing behaviour (it validates amounts itself).
+ */
+export async function checkPurchase(billerCode: string, itemCode: string, amountLocal: number): Promise<PurchaseCheck> {
+  if (activeProvider() !== "vtpass") return { ok: true };
+  const { item, min, max } = await vtp.vtLookupItem(billerCode, itemCode);
+  if (!item) return { ok: false, error: "That plan isn't available right now — please pick it again." };
+  const amount = Math.round(Number(amountLocal));
+  if (item.amount > 0) {
+    if (amount !== Math.round(item.amount)) {
+      return { ok: false, error: "That plan's price has changed — please reload the page and try again." };
+    }
+    return { ok: true };
+  }
+  const fmt = (n: number) => `₦${n.toLocaleString("en-NG")}`;
+  if (min && amount < min) return { ok: false, error: `The minimum for this provider is ${fmt(min)}.` };
+  if (max && amount > max) return { ok: false, error: `The maximum for this provider is ${fmt(max)}.` };
+  return { ok: true };
+}
+
 // ───────────────────────── vend ─────────────────────────
 
 export async function createBillPayment(params: {

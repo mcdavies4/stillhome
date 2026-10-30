@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { stripe } from "@/lib/stripe";
 import { supabaseAdmin } from "@/lib/supabase";
-import { validateCustomer } from "@/lib/bills";
+import { validateCustomer, checkPurchase } from "@/lib/bills";
 import { quoteGbp, gbp, money } from "@/lib/fx";
 import { getCountry, isSupportedCountry, DEFAULT_COUNTRY } from "@/lib/countries";
 import { rateLimit } from "@/lib/ratelimit";
@@ -81,6 +81,10 @@ export async function POST(req: Request) {
     }
 
     const identifier = String(b.identifier).trim();
+
+    // Provider rules checked server-side before any money moves (plan exists, fixed price, min/max).
+    const purchase = await checkPurchase(b.billerCode, b.itemCode, Number(amountLocal));
+    if (!purchase.ok) return NextResponse.json({ error: purchase.error }, { status: 400 });
 
     let v: { name: string | null } = { name: null };
     try {

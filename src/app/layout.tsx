@@ -64,27 +64,39 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en" suppressHydrationWarning>
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeInit }} />
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+        <link
+          rel="stylesheet"
+          href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=Instrument+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500&display=swap"
+        />
       </head>
       <body>
-        <nav className="sticky top-0 z-50 bg-night/85 backdrop-blur border-b border-line">
-          <div className="max-w-5xl mx-auto px-5 h-16 flex items-center justify-between">
+        <a
+          href="#content"
+          className="sr-only focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:z-[60] focus:px-4 focus:py-2 focus:rounded-lg focus:bg-cta focus:text-oncta font-semibold"
+        >
+          Skip to content
+        </a>
+        <nav className="sticky top-0 z-50 bg-night/85 backdrop-blur-md border-b border-line">
+          <div className="max-w-6xl mx-auto px-5 h-16 flex items-center justify-between">
             <a href="/" className="flex items-center gap-2.5" aria-label="Nolgic home">
               <Logo />
             </a>
-            <div className="flex items-center gap-2 sm:gap-5 text-sm">
-              <a href="/#how" className="text-haze hover:text-paper hidden sm:block">
+            <div className="flex items-center gap-1 sm:gap-2 text-sm">
+              <a href="/#how" className="hidden sm:block px-3 py-2 rounded-lg text-haze hover:text-paper">
                 How it works
               </a>
-              <a href="/#faq" className="text-haze hover:text-paper hidden sm:block">
+              <a href="/#faq" className="hidden sm:block px-3 py-2 rounded-lg text-haze hover:text-paper">
                 FAQ
               </a>
-              <a href="/legal" className="text-haze hover:text-paper hidden sm:block">
+              <a href="/legal" className="hidden sm:block px-3 py-2 rounded-lg text-haze hover:text-paper">
                 Terms
               </a>
               <ThemeToggle />
               <a
                 href="/#pay"
-                className="px-4 py-2 rounded-lg bg-tungsten text-white dark:text-night font-display font-bold hover:brightness-110"
+                className="ml-1 px-4 h-10 inline-flex items-center rounded-xl bg-cta text-oncta font-display font-bold hover:brightness-105 active:brightness-95"
               >
                 Pay a bill
               </a>

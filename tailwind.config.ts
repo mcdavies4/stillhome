@@ -8,6 +8,9 @@ const config: Config = {
       colors: {
         night: "rgb(var(--night) / <alpha-value>)",
         panel: "rgb(var(--panel) / <alpha-value>)",
+        sunk: "rgb(var(--sunk) / <alpha-value>)",
+        cta: "rgb(var(--cta) / <alpha-value>)",
+        oncta: "rgb(var(--oncta) / <alpha-value>)",
         line: "rgb(var(--line) / <alpha-value>)",
         tungsten: "rgb(var(--tungsten) / <alpha-value>)",
         ember: "rgb(var(--ember) / <alpha-value>)",
@@ -22,7 +25,8 @@ const config: Config = {
         mono: ["'IBM Plex Mono'", "monospace"]
       },
       boxShadow: {
-        glow: "0 0 40px rgba(255,182,39,0.25), 0 0 120px rgba(255,122,26,0.12)"
+        glow: "0 0 40px rgba(255,182,39,0.25), 0 0 120px rgba(255,122,26,0.12)",
+        card: "0 1px 2px rgb(var(--paper) / 0.05), 0 12px 32px -12px rgb(var(--paper) / 0.18)"
       }
     }
   },

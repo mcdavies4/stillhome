@@ -1,37 +1,51 @@
-@import url('https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@400;600;800&family=Instrument+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap');
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
+/* Fonts are loaded with <link> tags in layout.tsx (faster than a CSS @import). */
+
 /* ── Theme tokens (RGB triplets for Tailwind alpha support) ── */
 :root {
-  /* Light: warm daylight */
-  --night: 250 249 246;     /* page background */
+  /* Light: clean daylight. Ink navy on near-white; amber is the one accent. */
+  --night: 246 247 250;     /* page background */
   --panel: 255 255 255;     /* cards */
-  --line: 229 225 216;      /* borders */
-  --tungsten: 199 120 0;    /* deep amber — readable on white */
+  --sunk: 238 240 246;      /* recessed areas (receipt stub, hover fills) */
+  --line: 224 227 237;      /* borders */
+  --tungsten: 160 92 0;     /* amber for TEXT and icons — 5:1 on white */
+  --cta: 255 182 39;        /* amber for buttons (always paired with --oncta) */
+  --oncta: 26 31 54;
   --ember: 234 88 12;
-  --haze: 91 97 120;        /* secondary text */
-  --paper: 26 31 54;        /* primary text (ink) */
-  --ok: 15 157 110;
-  --bad: 220 38 38;
+  --haze: 88 95 120;        /* secondary text */
+  --paper: 18 23 46;        /* primary text (ink) */
+  --ok: 8 124 88;
+  --bad: 197 30 30;
 }
 .dark {
   /* Dark: the original NEPA night */
   --night: 11 16 38;
   --panel: 20 26 56;
-  --line: 35 43 82;
+  --sunk: 15 21 47;
+  --line: 38 47 88;
   --tungsten: 255 182 39;
+  --cta: 255 182 39;
+  --oncta: 11 16 38;
   --ember: 255 122 26;
   --haze: 154 163 199;
   --paper: 245 242 233;
   --ok: 61 220 151;
-  --bad: 255 93 93;
+  --bad: 255 107 107;
 }
 
-body { @apply bg-night text-paper font-body antialiased; }
+html { -webkit-text-size-adjust: 100%; }
+body { @apply bg-night text-paper font-body antialiased; font-feature-settings: "ss01", "kern"; }
 
-/* Signature: the filament flicker — power coming back on */
+/* Visible keyboard focus everywhere */
+:focus-visible { outline: 2px solid rgb(var(--tungsten)); outline-offset: 2px; border-radius: 6px; }
+
+/* Numbers that line up in receipts and totals */
+.num { font-variant-numeric: tabular-nums; }
+
+/* Signature: the filament flicker — power coming back on (used once, on the delivered token) */
 @keyframes upnepa-flicker {
   0% { opacity: 0.1; } 8% { opacity: 0.9; } 12% { opacity: 0.2; }
   20% { opacity: 1; } 24% { opacity: 0.4; } 34% { opacity: 1; }
@@ -49,9 +63,37 @@ body { @apply bg-night text-paper font-body antialiased; }
 .msg-2 { animation-delay: 2.3s; }
 .msg-3 { animation-delay: 2.9s; }
 
+/* Something changed in the form: the receipt stub slides open */
+@keyframes stub-in {
+  from { opacity: 0; transform: translateY(-6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.stub-in { animation: stub-in 0.28s ease-out both; }
+
+@keyframes spin { to { transform: rotate(360deg); } }
+.spin { animation: spin 0.9s linear infinite; }
+
 @media (prefers-reduced-motion: reduce) {
-  .flicker, .msg { animation: none; opacity: 1; }
+  .flicker, .msg, .stub-in { animation: none; opacity: 1; }
+  .spin { animation-duration: 3s; }
+  html { scroll-behavior: auto !important; }
 }
 
-input, select { @apply bg-panel border border-line rounded-lg px-3 py-2.5 w-full text-paper placeholder:text-haze/50 focus:outline-none focus:border-tungsten/70; }
-label { @apply block text-xs uppercase tracking-widest text-haze mb-1.5 font-mono; }
+/* ── Form controls ── */
+input, select {
+  @apply w-full h-12 rounded-xl border border-line bg-panel px-3.5 text-base text-paper placeholder:text-haze/60
+         transition-colors focus:outline-none focus:border-tungsten focus:ring-4 focus:ring-tungsten/15;
+}
+select { @apply pr-10 appearance-none bg-no-repeat; background-position: right 0.9rem center; background-size: 1rem;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%238a90a8' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E"); }
+input:disabled, select:disabled { @apply opacity-50; }
+label { @apply block text-sm font-medium text-paper mb-1.5; }
+
+/* ── Receipt stub: the pay card tears along a dashed line ── */
+.tear { position: relative; border-top: 2px dashed rgb(var(--line)); }
+.tear::before, .tear::after {
+  content: ""; position: absolute; top: -11px; width: 20px; height: 20px; border-radius: 9999px;
+  background: rgb(var(--night)); border: 1px solid rgb(var(--line));
+}
+.tear::before { left: -11px; clip-path: inset(0 0 0 50%); }
+.tear::after { right: -11px; clip-path: inset(0 50% 0 0); }

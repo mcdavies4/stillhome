@@ -198,6 +198,16 @@ function mk(id: number, p: Partial<BillerItem> & Pick<BillerItem, "biller_code" 
   } as BillerItem;
 }
 
+// Per-service purchase limits as published by VTpass (/services). Filled while the catalogue is built.
+let limits: Record<string, { min: number; max: number }> = {};
+function noteLimits(svcs: VtService[]) {
+  for (const s of svcs) {
+    const min = Number(s.minimium_amount); // (sic) VTpass spells it this way
+    const max = Number(s.maximum_amount);
+    limits[s.serviceID] = { min: Number.isFinite(min) && min > 0 ? min : 0, max: Number.isFinite(max) && max > 0 ? max : 0 };
+  }
+}
+
 let cache: { at: number; items: BillerItem[] } | null = null;
 let inflight: Promise<BillerItem[]> | null = null;
 const CACHE_MS = 60 * 60 * 1000;
@@ -211,6 +221,7 @@ async function buildCatalogue(): Promise<BillerItem[]> {
   // Airtime — one entry per network (VTpass needs the network chosen up front).
   try {
     const svcs = await vtServices("airtime");
+    noteLimits(svcs);
     for (const s of svcs) {
       const brand = AIRTIME_BRANDS[s.serviceID];
       if (!brand) continue; // skips international airtime
@@ -226,6 +237,7 @@ async function buildCatalogue(): Promise<BillerItem[]> {
   // Electricity — every DISCO, prepaid + postpaid.
   try {
     const svcs = await vtServices("electricity-bill");
+    noteLimits(svcs);
     for (const s of svcs) {
       if (!isElectric(s.serviceID)) continue;
       const biller_name = /electric/i.test(s.name) ? s.name : `${s.name} Electricity`;
@@ -256,6 +268,7 @@ async function buildCatalogue(): Promise<BillerItem[]> {
   for (const cat of planCats) {
     try {
       const svcs = await vtServices(cat.identifier);
+      noteLimits(svcs);
       const lists: { s: VtService; vars: VtVariation[] }[] = [];
       for (let i = 0; i < svcs.length; i += 5) {
         const chunk = svcs.slice(i, i + 5);
@@ -297,6 +310,17 @@ export async function vtGetBillCategories(): Promise<BillerItem[]> {
       .finally(() => { inflight = null; });
   }
   return inflight;
+}
+
+/**
+ * Server-side truth for a purchase: the catalogue entry the customer picked and VTpass's min/max for that service.
+ * Used by checkout so the browser can never choose its own price or an unknown product.
+ */
+export async function vtLookupItem(billerCode: string, itemCode: string): Promise<{ item: BillerItem | null; min: number; max: number }> {
+  const items = await vtGetBillCategories();
+  const item = items.find((i) => i.biller_code === billerCode && i.item_code === itemCode) ?? null;
+  const l = limits[billerCode] ?? { min: 0, max: 0 };
+  return { item, min: l.min, max: l.max };
 }
 
 // ───────────────────────── lookup ─────────────────────────
