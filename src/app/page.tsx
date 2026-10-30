@@ -122,7 +122,7 @@ const LABELS: Record<string, { provider: string; plan: string }> = {
   data: { provider: "Network or provider", plan: "Data plan" },
 };
 
-const QUICK_AMOUNTS = [1000, 2000, 5000, 10000];
+const QUICK_AMOUNTS = [200, 500, 1000, 2000, 5000];
 
 export default function Home() {
   const [country, setCountry] = useState<CountryCode>("NG");
@@ -183,7 +183,8 @@ export default function Home() {
     !!i && (i.is_airtime || /VTU|AIRTIME|DATA|BROADBAND|SURFLINE|POSTPAID PAYMENT/i.test(i.biller_name + " " + i.name));
 
   // Naira checkout limits (the server enforces the same ones) — say so before the last step.
-  const belowMin = inNgn && billAmount > 0 && billAmount < cfg.minLocal;
+  const minNgn = cfg.minDomestic ?? cfg.minLocal;
+  const belowMin = inNgn && billAmount > 0 && billAmount < minNgn;
   const aboveMax = inNgn && billAmount > cfg.maxLocal;
 
   const stage = !item ? 0 : !validated ? 1 : 2;
@@ -457,7 +458,7 @@ export default function Home() {
                         <input id="amount" value={amountLocal} onChange={(e) => setAmountLocal(e.target.value.replace(/[^\d]/g, ""))} placeholder="5000" inputMode="numeric" className="num" />
                         {inNgn && (
                           <div className="flex gap-2 flex-wrap mt-2">
-                            {QUICK_AMOUNTS.filter((a) => a >= cfg.minLocal).map((a) => (
+                            {QUICK_AMOUNTS.filter((a) => a >= minNgn).map((a) => (
                               <button key={a} type="button" onClick={() => setAmountLocal(String(a))}
                                 className={`px-3 h-8 rounded-full border text-sm num ${Number(amountLocal) === a ? "border-tungsten bg-cta/15 font-semibold" : "border-line text-haze hover:text-paper hover:border-paper/30"}`}>
                                 {fmtLocal(a)}
@@ -471,7 +472,7 @@ export default function Home() {
                       <p className="text-sm text-haze mt-2.5">Price for this plan: <span className="text-paper font-semibold num">{fmtLocal(fixedLocal)}</span></p>
                     )}
                     {belowMin && (
-                      <p className="text-sm text-bad mt-2.5" role="status">Naira payments start at {fmtLocal(cfg.minLocal)}. Choose a larger amount or plan.</p>
+                      <p className="text-sm text-bad mt-2.5" role="status">Naira payments start at {fmtLocal(minNgn)}. Choose a larger amount or plan.</p>
                     )}
                     {aboveMax && (
                       <p className="text-sm text-bad mt-2.5" role="status">The most you can pay in one go is {fmtLocal(cfg.maxLocal)}.</p>

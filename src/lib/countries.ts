@@ -14,7 +14,8 @@ export interface CountryConfig {
   // Env var name holding "<local currency> per GBP" (set BELOW mid-market; gap = margin)
   fxEnvVar: string;
   fxDefault: number;         // fallback if env missing (keep realistic-ish)
-  minLocal: number;          // min order in local currency
+  minLocal: number;          // min order in local currency (pay-in-£ flow)
+  minDomestic?: number;      // min order when paying in local currency (Nigeria naira checkout); falls back to minLocal
   maxLocal: number;          // max order in local currency
   // FLW returns some countries' fixed item amounts in minor units
   // (GH: pesewas — 115000 = ₵1,150). Divide catalogue `amount` by this
@@ -34,6 +35,7 @@ export const COUNTRIES: Record<CountryCode, CountryConfig> = {
     fxEnvVar: "NGN_PER_GBP",
     fxDefault: 2050,
     minLocal: 1000,
+    minDomestic: 100,          // naira buyers can top up ₦100 airtime; the £ flow keeps its ₦1,000 floor
     maxLocal: 500000,
     fixedAmountDivisor: 1,
     identifierExamples: { electricity: "04123456789", tv: "1034567890", phone: "08031234567" },

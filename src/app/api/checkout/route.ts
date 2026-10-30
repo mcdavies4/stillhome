@@ -104,9 +104,9 @@ export async function POST(req: Request) {
         return NextResponse.json({ error: "Naira payments aren't available yet — please check back soon." }, { status: 503 });
       }
       const amountNgn = Math.round(Number(amountLocal));
-      if (!Number.isFinite(amountNgn) || amountNgn < country.minLocal || amountNgn > country.maxLocal) {
+      if (!Number.isFinite(amountNgn) || amountNgn < (country.minDomestic ?? country.minLocal) || amountNgn > country.maxLocal) {
         return NextResponse.json(
-          { error: `Amount must be between ${money(country.minLocal, "NG")} and ${money(country.maxLocal, "NG")}` },
+          { error: `Amount must be between ${money(country.minDomestic ?? country.minLocal, "NG")} and ${money(country.maxLocal, "NG")}` },
           { status: 400 }
         );
       }
