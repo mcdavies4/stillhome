@@ -124,7 +124,11 @@ export async function fulfilClaimedOrder(order: ClaimedOrder, hooks: FulfilHooks
     console.error(`[fulfil] order ${order.id} failed:`, errMsg);
 
     if (vendAttempted) {
-      const outcome = await requeryOutcome(reference);
+      let outcome = await requeryOutcome(reference);
+      // The provider flatly rejected the purchase request (4xx / "product not enabled" / "wallet empty"):
+      // nothing was bought. If the status lookup is merely inconclusive, that is enough to refund.
+      // A confirmed delivery from the lookup still wins (handled below), and timeouts/5xx never set this flag.
+      if (outcome === "ambiguous" && (e as any)?.notVended === true) outcome = "failed";
       if (outcome === "success") {
         let token: string | null = null;
         try {

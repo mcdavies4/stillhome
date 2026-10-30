@@ -16,6 +16,12 @@ export function flwExtraHeaders(): Record<string, string> {
 
 export class FlwError extends Error {
   raw: unknown;
+  /**
+   * True only when the provider definitively rejected a purchase request before doing anything
+   * (e.g. an HTTP 4xx on the vend call, "product not enabled", "wallet empty"). The order pipeline
+   * may then refund even if the status lookup is inconclusive. Never set for timeouts or 5xx.
+   */
+  notVended = false;
   constructor(message: string, raw?: unknown) {
     super(message);
     this.name = "FlwError";
@@ -45,7 +51,11 @@ async function flw<T>(path: string, init?: RequestInit): Promise<T> {
       path.includes("/validate") && res.status === 400
         ? "Couldn't verify that number for this plan — check it's correct, or try a different plan."
         : `Flutterwave HTTP ${res.status}: ${text.slice(0, 200)}`;
-    throw new FlwError(body?.message ?? friendly, text);
+    const err = new FlwError(body?.message ?? friendly, text);
+    if ((init?.method ?? "GET") === "POST" && /\/payment$/.test(path) && [400, 401, 403, 404, 422, 429].includes(res.status)) {
+      err.notVended = true;
+    }
+    throw err;
   }
   return body as T;
 }

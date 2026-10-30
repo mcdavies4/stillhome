@@ -39,6 +39,13 @@ export function vtpassConfigured(): boolean {
   );
 }
 
+/** A vend error where VTpass definitively did NOT process the purchase (safe to refund). */
+function notVended(message: string, raw?: unknown): FlwError {
+  const e = new FlwError(message, raw);
+  e.notVended = true;
+  return e;
+}
+
 const TRY_AGAIN = "This service is temporarily unavailable — please try again in a few minutes.";
 
 // ───────────────────────── http ─────────────────────────
@@ -369,7 +376,7 @@ export async function vtPay(params: {
     (airtime ? toLocalPhone(identifier) : null) ??
     toLocalPhone(process.env.VTPASS_DEFAULT_PHONE);
   if (!phone) {
-    throw new FlwError("No valid phone number for the VTpass vend — set VTPASS_DEFAULT_PHONE");
+    throw notVended("No valid phone number for the VTpass vend — set VTPASS_DEFAULT_PHONE");
   }
 
   const body: Record<string, unknown> = { request_id: reference, serviceID: billerCode, phone };
@@ -405,15 +412,15 @@ export async function vtPay(params: {
       };
     }
     if (status === "failed" || status === "reversed" || status === "refunded" || status === "cancelled") {
-      throw new FlwError(`VTpass vend ${status}`, b);
+      throw notVended(`VTpass vend ${status}`, b);
     }
     // initiated / pending / processing / empty: not final — the pipeline requeries before deciding.
     throw new FlwError(`VTpass vend not final yet (${status || "no status"})`, b);
   }
   if (PENDING_CODES.has(code)) throw new FlwError(`VTpass vend unconfirmed (code ${code})`, b);
-  if (CONFIG_CODES[code]) throw new FlwError(`${CONFIG_CODES[code]} (code ${code})`, b);
+  if (CONFIG_CODES[code]) throw notVended(`${CONFIG_CODES[code]} (code ${code})`, b);
   const desc = String(b?.response_description ?? b?.content?.error ?? "").slice(0, 120);
-  throw new FlwError(`VTpass vend failed (code ${code || "?"}${desc ? `: ${desc}` : ""})`, b);
+  throw notVended(`VTpass vend failed (code ${code || "?"}${desc ? `: ${desc}` : ""})`, b);
 }
 
 // ───────────────────────── status + wallet ─────────────────────────
