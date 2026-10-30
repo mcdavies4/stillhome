@@ -1,7 +1,18 @@
 // Flutterwave Bills API client (v3, current endpoints). Multi-country aware.
 // Existing NG callers keep working: every country arg defaults to "NG".
 
-const FLW_BASE = "https://api.flutterwave.com/v3";
+const FLW_DEFAULT_BASE = "https://api.flutterwave.com/v3";
+
+// Optional fixed-IP relay (see /relay). With FLW_BASE=https://relay.example.com/flutterwave and
+// RELAY_KEY set, Flutterwave calls leave from the relay's whitelisted IP. Unset = direct, as before.
+export function flwBase(): string {
+  return (process.env.FLW_BASE ?? "").trim().replace(/\/+$/, "") || FLW_DEFAULT_BASE;
+}
+/** Extra headers needed only when FLW_BASE points at the relay (never sent to Flutterwave directly). */
+export function flwExtraHeaders(): Record<string, string> {
+  const key = (process.env.RELAY_KEY ?? "").trim();
+  return (process.env.FLW_BASE ?? "").trim() && key ? { "x-relay-key": key } : {};
+}
 
 export class FlwError extends Error {
   raw: unknown;
@@ -13,11 +24,12 @@ export class FlwError extends Error {
 }
 
 async function flw<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${FLW_BASE}${path}`, {
+  const res = await fetch(`${flwBase()}${path}`, {
     ...init,
     headers: {
       Authorization: `Bearer ${(process.env.FLW_SECRET_KEY ?? "").trim()}`,
       "Content-Type": "application/json",
+      ...flwExtraHeaders(),
       ...(init?.headers ?? {}),
     },
   });

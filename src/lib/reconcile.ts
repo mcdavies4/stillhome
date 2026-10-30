@@ -8,6 +8,7 @@
 
 import Stripe from "stripe";
 import { supabaseAdmin } from "@/lib/supabase";
+import { checkBillStatus } from "@/lib/bills";
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);
 
@@ -43,16 +44,11 @@ async function stripeCharges(start: Date, end: Date) {
   return out;
 }
 
+// Checks the vend with whichever bills provider made it (Flutterwave "NOLGIC-…" or VTpass).
 async function flwVended(reference: string): Promise<{ found: boolean; status: string | null }> {
   try {
-    const res = await fetch(`https://api.flutterwave.com/v3/bills/${encodeURIComponent(reference)}`, {
-      headers: { Authorization: `Bearer ${process.env.FLW_SECRET_KEY}` },
-    });
-    const data = (await res.json()) as { status?: string; data?: { status?: string } };
-    if (data?.status === "success" && data?.data) {
-      return { found: true, status: String(data.data.status ?? "").toLowerCase() };
-    }
-    return { found: false, status: null };
+    const s = await checkBillStatus(reference);
+    return s.found ? { found: true, status: s.state } : { found: false, status: null };
   } catch {
     return { found: false, status: null };
   }
@@ -106,9 +102,9 @@ export async function runReconcile(dateStr = yesterdayUTC(), deep = true): Promi
     for (const o of fulfilled) {
       if (!o.flw_reference) { flags.push({ level: "warn", msg: `Fulfilled order ${o.id} has no flw_reference to verify` }); continue; }
       const v = await flwVended(o.flw_reference);
-      if (!v.found) flags.push({ level: "danger", msg: `DANGER: order ${o.id} fulfilled but Flutterwave has no record of ${o.flw_reference}` });
+      if (!v.found) flags.push({ level: "danger", msg: `DANGER: order ${o.id} fulfilled but the bills provider has no record of ${o.flw_reference}` });
       else if (v.status && !v.status.includes("success") && !v.status.includes("completed"))
-        flags.push({ level: "danger", msg: `order ${o.id}: FLW status "${v.status}" (expected success)` });
+        flags.push({ level: "danger", msg: `order ${o.id}: provider status "${v.status}" (expected success)` });
     }
   }
   // Paystack orders: vend verification + stuck-state flags (no Stripe to match against).
@@ -116,13 +112,13 @@ export async function runReconcile(dateStr = yesterdayUTC(), deep = true): Promi
     for (const o of psFulfilled) {
       if (!o.flw_reference) { flags.push({ level: "warn", msg: `Paystack order ${o.id} fulfilled but has no flw_reference to verify` }); continue; }
       const v = await flwVended(o.flw_reference);
-      if (!v.found) flags.push({ level: "danger", msg: `DANGER: Paystack order ${o.id} fulfilled but Flutterwave has no record of ${o.flw_reference}` });
+      if (!v.found) flags.push({ level: "danger", msg: `DANGER: Paystack order ${o.id} fulfilled but the bills provider has no record of ${o.flw_reference}` });
       else if (v.status && !v.status.includes("success") && !v.status.includes("completed"))
-        flags.push({ level: "danger", msg: `Paystack order ${o.id}: FLW status "${v.status}" (expected success)` });
+        flags.push({ level: "danger", msg: `Paystack order ${o.id}: provider status "${v.status}" (expected success)` });
     }
   }
   for (const o of psRows.filter((o: any) => ["paid", "needs_review", "refund_failed"].includes(o.status)))
-    flags.push({ level: o.status === "refund_failed" ? "danger" : "warn", msg: `Paystack order ${o.id} stuck in ${o.status} (${o.biller_name} ${ngn(o.amount_ngn)}) — check Paystack + FLW` });
+    flags.push({ level: o.status === "refund_failed" ? "danger" : "warn", msg: `Paystack order ${o.id} stuck in ${o.status} (${o.biller_name} ${ngn(o.amount_ngn)}) — check Paystack + the bills provider` });
 
   for (const o of rows.filter((o) => o.status === "needs_review"))
     flags.push({ level: "warn", msg: `needs_review UNRESOLVED: order ${o.id} (${o.biller_name} ${ngn(o.amount_ngn)})` });
@@ -148,7 +144,7 @@ export async function runReconcile(dateStr = yesterdayUTC(), deep = true): Promi
 export function reconEmailHtml(r: ReconResult): string {
   const statusLine = Object.entries(r.byStatus).map(([k, v]) => `${k}: ${v}`).join(" · ") || "no orders";
   const flagsHtml = r.ok
-    ? `<p style="color:#0a7d34;font-size:16px;font-weight:600">✓ All matched — Stripe, orders and Flutterwave agree.</p>`
+    ? `<p style="color:#0a7d34;font-size:16px;font-weight:600">✓ All matched — Stripe, orders and the bills provider agree.</p>`
     : `<p style="color:#b40000;font-weight:600">${r.flags.length} thing(s) to look at:</p><ul>` +
       r.flags.map((f) => `<li style="color:${f.level === "danger" ? "#b40000" : "#8a6d00"};margin-bottom:6px">${f.level === "danger" ? "⚠ " : ""}${f.msg}</li>`).join("") +
       `</ul>`;

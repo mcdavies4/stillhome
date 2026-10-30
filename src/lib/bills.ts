@@ -1,0 +1,130 @@
+// src/lib/bills.ts
+// One door for "the bills provider" (catalogue, lookup, vend, status, wallet).
+// BILLS_PROVIDER=vtpass switches Nolgic to VTpass; anything else (or unset)
+// keeps Flutterwave, so deploying this file changes nothing until you flip it.
+//
+// Order references identify their provider by shape, so status checks, the
+// admin re-check and the daily reconcile keep working for old orders after a
+// switch:  "NOLGIC-<uuid>" = Flutterwave,  "<12 digits><uuid>" = VTpass.
+
+import * as flw from "@/lib/flutterwave";
+import * as vtp from "@/lib/vtpass";
+
+export { FlwError } from "@/lib/flutterwave";
+export type { BillerItem, ValidateResult, BillPaymentResult } from "@/lib/flutterwave";
+
+export type BillsProviderName = "flutterwave" | "vtpass";
+
+export function activeProvider(): BillsProviderName {
+  return (process.env.BILLS_PROVIDER ?? "").trim().toLowerCase() === "vtpass" ? "vtpass" : "flutterwave";
+}
+
+export const providerLabel = (p: BillsProviderName = activeProvider()) => (p === "vtpass" ? "VTpass" : "Flutterwave");
+
+export function providerForReference(ref: string): BillsProviderName {
+  return vtp.isVtRequestId(ref) ? "vtpass" : "flutterwave";
+}
+
+/** True when vends are not real (Flutterwave TEST key, or VTpass sandbox). */
+export function billsTestMode(): boolean {
+  return activeProvider() === "vtpass"
+    ? vtp.vtpassIsSandbox()
+    : (process.env.FLW_SECRET_KEY ?? "").startsWith("FLWSECK_TEST");
+}
+
+export function billsConfigured(): boolean {
+  return activeProvider() === "vtpass" ? vtp.vtpassConfigured() : !!(process.env.FLW_SECRET_KEY ?? "").trim();
+}
+
+/**
+ * Reference for this order's vend. An existing reference is reused (so a replayed
+ * webhook can never create a second vend) as long as it belongs to the active provider.
+ */
+export function makeReference(orderId: string, existing?: unknown): string {
+  const want = activeProvider();
+  if (typeof existing === "string" && existing && providerForReference(existing) === want) return existing;
+  return want === "vtpass" ? vtp.vtRequestId(orderId) : `NOLGIC-${orderId}`;
+}
+
+// ───────────────────────── catalogue + lookup ─────────────────────────
+
+export async function getBillCategories(country: string = "NG"): Promise<flw.BillerItem[]> {
+  if (activeProvider() === "vtpass") {
+    return country.toUpperCase() === "NG" ? vtp.vtGetBillCategories() : [];
+  }
+  return flw.getBillCategories(country);
+}
+
+export async function validateCustomer(
+  itemCode: string,
+  billerCode: string,
+  identifier: string
+): Promise<flw.ValidateResult> {
+  return activeProvider() === "vtpass"
+    ? vtp.vtValidate(itemCode, billerCode, identifier)
+    : flw.validateCustomer(itemCode, billerCode, identifier);
+}
+
+// ───────────────────────── vend ─────────────────────────
+
+export async function createBillPayment(params: {
+  country?: string;
+  identifier: string;
+  amountLocal: number;
+  billerName: string;
+  itemCode: string;
+  billerCode: string;
+  reference: string;
+  /** Recipient mobile — VTpass requires one on every vend; Flutterwave ignores it. */
+  phone?: string | null;
+}): Promise<flw.BillPaymentResult> {
+  return activeProvider() === "vtpass" ? vtp.vtPay(params) : flw.createBillPayment(params);
+}
+
+// ───────────────────────── status ─────────────────────────
+
+export type BillState = "success" | "failed" | "pending" | "not_found";
+export interface BillStatus {
+  provider: BillsProviderName;
+  found: boolean;
+  state: BillState;
+  token: string | null;
+  detail: string;
+}
+
+/**
+ * Provider-neutral status of a vend, looked up on whichever provider made the reference.
+ * Throws only when the provider can't be reached/understood (callers treat that as "unknown").
+ */
+export async function checkBillStatus(reference: string): Promise<BillStatus> {
+  const provider = providerForReference(reference);
+  if (provider === "vtpass") {
+    const s = await vtp.vtStatus(reference);
+    return { provider, found: s.found, state: s.state, token: s.token, detail: s.detail };
+  }
+  try {
+    const r = await flw.getBillStatus(reference);
+    const d = (r.data ?? {}) as Record<string, unknown>;
+    const st = String(d.status ?? "").toLowerCase();
+    const state: BillState =
+      st.includes("success") || st.includes("completed") ? "success" : st.includes("fail") ? "failed" : "pending";
+    const token = (d.extra as string | undefined) ?? (d.token as string | undefined) ?? null;
+    return { provider, found: true, state, token: state === "success" ? token : null, detail: st || "unknown" };
+  } catch (e) {
+    const msg = e instanceof flw.FlwError ? e.message.toLowerCase() : "";
+    if (msg.includes("not found") || msg.includes("no transaction") || msg.includes("404")) {
+      return { provider, found: false, state: "not_found", token: null, detail: "not found" };
+    }
+    throw e;
+  }
+}
+
+// ───────────────────────── wallet ─────────────────────────
+
+export async function getBalance(currency: string = "NGN"): Promise<number> {
+  if (activeProvider() === "vtpass") {
+    if (currency.toUpperCase() !== "NGN") throw new flw.FlwError("VTpass wallet is NGN only");
+    return vtp.vtBalance();
+  }
+  return flw.getBalance(currency);
+}

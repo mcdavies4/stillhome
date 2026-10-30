@@ -3,6 +3,7 @@
 // Returns the customer name FLW reports for that meter / IUC / phone.
 
 import { requirePartner, jsonError, ApiError } from "@/lib/partners";
+import { flwBase, flwExtraHeaders } from "@/lib/flutterwave";
 
 export const runtime = "nodejs";
 
@@ -34,8 +35,8 @@ export async function POST(req: Request) {
     }
 
     const res = await fetch(
-      `https://api.flutterwave.com/v3/bill-items/${encodeURIComponent(item_code)}/validate?code=${encodeURIComponent(biller_code)}&customer=${encodeURIComponent(identifier)}`,
-      { headers: { Authorization: `Bearer ${process.env.FLW_SECRET_KEY!}` } }
+      `${flwBase()}/bill-items/${encodeURIComponent(item_code)}/validate?code=${encodeURIComponent(biller_code)}&customer=${encodeURIComponent(identifier)}`,
+      { headers: { Authorization: `Bearer ${process.env.FLW_SECRET_KEY!}`, ...flwExtraHeaders() } }
     );
     const json = await res.json().catch(() => ({}));
 

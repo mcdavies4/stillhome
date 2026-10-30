@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { validateCustomer, FlwError } from "@/lib/flutterwave";
+import { validateCustomer, FlwError } from "@/lib/bills";
 import { rateLimit } from "@/lib/ratelimit";
 
 export async function POST(req: Request) {
@@ -26,7 +26,7 @@ export async function POST(req: Request) {
   } catch (e) {
     // Never forward raw provider errors ("Flutterwave HTTP 500: {...}") to the browser.
     const raw = e instanceof FlwError ? e.message : "";
-    const msg = raw && !/^Flutterwave HTTP/i.test(raw) ? raw : "Could not validate this number";
+    const msg = raw && !/^(Flutterwave|VTpass) /i.test(raw) ? raw : "Could not validate this number";
     return NextResponse.json({ ok: false, error: msg }, { status: 422 });
   }
 }

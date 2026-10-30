@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { stripe } from "@/lib/stripe";
 import { supabaseAdmin } from "@/lib/supabase";
-import { validateCustomer } from "@/lib/flutterwave";
+import { validateCustomer } from "@/lib/bills";
 import { quoteGbp, gbp, money } from "@/lib/fx";
 import { getCountry, isSupportedCountry, DEFAULT_COUNTRY } from "@/lib/countries";
 import { rateLimit } from "@/lib/ratelimit";
@@ -251,7 +251,7 @@ export async function POST(req: Request) {
     console.error("[checkout] failed", e);
     const msg0 = String(e?.message ?? "");
     const safe =
-      (e?.name === "FlwError" && !/^Flutterwave HTTP/i.test(msg0)) ||
+      (e?.name === "FlwError" && !/^(Flutterwave|VTpass) /i.test(msg0)) ||
       e?.name === "PaystackError" ||
       /^Amount must be between/.test(msg0);
     return NextResponse.json({ error: safe ? e.message : "Checkout failed — please try again." }, { status: safe ? 400 : 500 });

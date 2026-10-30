@@ -4,6 +4,7 @@
 
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
 import { createHash, createHmac, randomBytes } from "node:crypto";
+import { flwBase, flwExtraHeaders } from "@/lib/flutterwave";
 
 // ------------------------------------------------------------------
 // Supabase (service role — bypasses RLS; never expose to the browser)
@@ -177,12 +178,13 @@ export async function flwVend(params: {
   const secret = process.env.FLW_SECRET_KEY!;
   try {
     const res = await fetch(
-      `https://api.flutterwave.com/v3/billers/${encodeURIComponent(params.billerCode)}/items/${encodeURIComponent(params.itemCode)}/payment`,
+      `${flwBase()}/billers/${encodeURIComponent(params.billerCode)}/items/${encodeURIComponent(params.itemCode)}/payment`,
       {
         method: "POST",
         headers: {
           Authorization: `Bearer ${secret}`,
           "Content-Type": "application/json",
+          ...flwExtraHeaders(),
         },
         body: JSON.stringify({
           country: "NG",

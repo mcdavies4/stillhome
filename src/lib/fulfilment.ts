@@ -1,16 +1,15 @@
-import { getBillStatus } from "@/lib/flutterwave";
+import { checkBillStatus } from "@/lib/bills";
 import { sendReceipt } from "@/lib/whatsapp";
 import { sendReceiptEmail } from "@/lib/email";
 
-// Re-query FLW for a fulfilled order that's missing its token.
+// Re-query the bills provider for a fulfilled order that's missing its token.
 // If found: persist it and notify payer (email) + recipient (WhatsApp).
 // Returns the token or null. Never throws.
 export async function tryRecoverToken(db: any, order: any): Promise<string | null> {
   if (!order?.flw_reference || order.flw_token) return order?.flw_token ?? null;
   try {
-    const status = await getBillStatus(order.flw_reference);
-    const token =
-      (status.data as any)?.extra ?? (status.data as any)?.token ?? null;
+    const status = await checkBillStatus(order.flw_reference);
+    const token = status.state === "success" ? status.token : null;
     if (!token) return null;
 
     await db.from("orders").update({ flw_token: token }).eq("id", order.id);

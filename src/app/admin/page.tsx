@@ -25,6 +25,7 @@ type Stats = {
   recentFailures: Brief[];
   wallets: { currency: string; balance: number | null; low: number; ok: boolean; error: string | null }[];
   health: {
+    bills_provider: string; bills: string; vtpass_phone: boolean;
     flutterwave: string; paystack: string; stripe: string; resend: string;
     cron_secret: boolean; admin_secret: boolean; app_url: string | null;
     ngn_pay_enabled: boolean; uk_pay_enabled: boolean; gh_enabled: boolean;
@@ -37,7 +38,7 @@ type OrderRow = Brief & {
   paystack_reference: string | null; source: string | null; has_token: boolean;
 };
 type CheckResult = {
-  advice: string; applied: boolean; reference: string;
+  advice: string; applied: boolean; reference: string; provider?: string;
   flutterwave: { found: boolean; status: string | null; token_available: boolean; error: string | null };
   paystack: { checked: boolean; status?: string; amountNgn?: number; error?: string };
   error?: string;
@@ -198,7 +199,7 @@ function Overview({ stats, api, reload }: { stats: Stats; api: Api; reload: () =
           </div>
         ))}
       </section>
-      <p className="text-haze text-xs -mt-5 mb-8">“Est. net” = service fees minus an estimate of Paystack’s charges (1.5% + ₦100, capped ₦2,000). It excludes any Flutterwave commission.</p>
+      <p className="text-haze text-xs -mt-5 mb-8">“Est. net” = service fees minus an estimate of Paystack’s charges (1.5% + ₦100, capped ₦2,000). It excludes any bills-provider commission.</p>
 
       <section className="mb-8">
         <p className={eyebrow}>Needs attention {stats.attention.length ? `(${stats.attention.length})` : ""}</p>
@@ -272,7 +273,7 @@ function AttentionCard({ o, api, reload, compact = false }: { o: Brief; api: Api
   const [busy, setBusy] = useState(false);
 
   async function check(apply = false) {
-    if (apply && !confirm("Flutterwave confirms this vend succeeded. Mark the order as delivered?")) return;
+    if (apply && !confirm("The bills provider confirms this vend succeeded. Mark the order as delivered?")) return;
     setBusy(true);
     try {
       const r = await api("/api/admin/check", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ orderId: o.id, apply }) });
@@ -298,7 +299,7 @@ function AttentionCard({ o, api, reload, compact = false }: { o: Brief; api: Api
       )}
       <div className={`flex flex-wrap gap-2 ${compact ? "" : "mt-3"}`}>
         <button disabled={busy} onClick={() => check(false)} className="px-3 py-1.5 rounded-lg border border-line text-xs font-semibold hover:border-tungsten">
-          {busy ? "Checking…" : "Check with Flutterwave"}
+          {busy ? "Checking…" : "Check with provider"}
         </button>
         {canApply && (
           <button disabled={busy} onClick={() => check(true)} className="px-3 py-1.5 rounded-lg bg-tungsten text-white dark:text-night text-xs font-bold">
@@ -309,7 +310,7 @@ function AttentionCard({ o, api, reload, compact = false }: { o: Brief; api: Api
       {res && (
         <div className="mt-3 rounded-xl bg-night border border-line p-3 text-xs space-y-1">
           {res.error && <p className="text-bad">{res.error}</p>}
-          <p><span className="text-haze">Flutterwave:</span> {res.flutterwave.found ? `${res.flutterwave.status ?? "unknown"}${res.flutterwave.token_available ? " · token available" : ""}` : `no record${res.flutterwave.error ? ` (${res.flutterwave.error})` : ""}`}</p>
+          <p><span className="text-haze">{res.provider === "vtpass" ? "VTpass" : "Flutterwave"}:</span> {res.flutterwave.found ? `${res.flutterwave.status ?? "unknown"}${res.flutterwave.token_available ? " · token available" : ""}` : `no record${res.flutterwave.error ? ` (${res.flutterwave.error})` : ""}`}</p>
           {res.paystack.checked && <p><span className="text-haze">Paystack:</span> {res.paystack.error ?? `${res.paystack.status} · ${ngn(res.paystack.amountNgn)}`}</p>}
           <p className="font-semibold">{res.applied ? "Marked as delivered ✓" : res.advice}</p>
         </div>
@@ -399,7 +400,7 @@ function OrderDetail({ o, api, reload }: { o: OrderRow; api: Api; reload: () => 
       {Number(o.service_fee_local ?? 0) > 0 && <Row k="Service fee" v={ngn(o.service_fee_local)} />}
       <Row k="Provider" v={o.payment_provider ?? "stripe"} />
       <Row k="Paystack ref" v={o.paystack_reference} />
-      <Row k="Flutterwave ref" v={o.flw_reference} />
+      <Row k="Bills provider ref" v={o.flw_reference} />
       <Row k="Token issued" v={o.has_token ? "yes" : null} />
       <Row k="Source" v={o.source} />
       {o.error && <p className="text-bad break-words">{o.error}</p>}
@@ -417,7 +418,8 @@ function Health({ stats }: { stats: Stats }) {
     { label: "Cron secret", ok: h.cron_secret, detail: h.cron_secret ? "Set" : "Missing — daily token recovery, FX guard and reconcile email will be refused", fix: "Set CRON_SECRET in Vercel, redeploy" },
     { label: "Admin password", ok: true, detail: "You’re signed in with it" },
     { label: "Partner admin secret", ok: h.admin_secret, detail: h.admin_secret ? "Set" : "Missing — partner admin APIs are locked", fix: "Set ADMIN_SECRET (only needed for /admin/partners)" },
-    { label: "Flutterwave key", ok: h.flutterwave === "live", detail: h.flutterwave === "live" ? "Live" : h.flutterwave === "test" ? "TEST key — vends are not real" : "Missing", fix: "FLW_SECRET_KEY" },
+    { label: `Bills provider: ${h.bills_provider === "vtpass" ? "VTpass" : "Flutterwave"}`, ok: h.bills === "live", detail: h.bills === "live" ? "Live" : h.bills === "test" ? (h.bills_provider === "vtpass" ? "SANDBOX — vends are not real" : "TEST key — vends are not real") : "Keys missing", fix: h.bills_provider === "vtpass" ? "VTPASS_API_KEY, VTPASS_PUBLIC_KEY, VTPASS_SECRET_KEY, VTPASS_ENV=live" : "FLW_SECRET_KEY" },
+    ...(h.bills_provider === "vtpass" ? [{ label: "VTpass default phone", ok: h.vtpass_phone, detail: h.vtpass_phone ? "Set" : "Missing — electricity and TV vends need a phone number", fix: "VTPASS_DEFAULT_PHONE (an 11-digit Nigerian mobile you own)" }] : []),
     { label: "Paystack key", ok: h.paystack === "live", detail: h.paystack === "live" ? "Live" : h.paystack === "test" ? "TEST key — customers can’t pay real money yet" : "Missing — naira checkout returns 503", fix: "PAYSTACK_SECRET_KEY" },
     { label: "Email receipts (Resend)", ok: h.resend === "set", detail: h.resend === "set" ? "Set" : "Missing — no receipts or alerts", fix: "RESEND_API_KEY" },
     { label: "Stripe (£)", ok: h.stripe === "set" || !h.uk_pay_enabled, detail: h.stripe === "set" ? "Key set" : "Not set (fine while UK is switched off)" },
@@ -458,7 +460,7 @@ function Health({ stats }: { stats: Stats }) {
 
       <p className={`${eyebrow} mt-8`}>Dashboards</p>
       <div className="flex flex-wrap gap-2 text-sm">
-        {[["Paystack", "https://dashboard.paystack.com"], ["Flutterwave", "https://app.flutterwave.com"], ["Stripe", "https://dashboard.stripe.com"], ["Vercel", "https://vercel.com/dashboard"], ["Supabase", "https://supabase.com/dashboard"]].map(([n, u]) => (
+        {[["Paystack", "https://dashboard.paystack.com"], ["Flutterwave", "https://app.flutterwave.com"], ["VTpass", "https://vtpass.com"], ["Stripe", "https://dashboard.stripe.com"], ["Vercel", "https://vercel.com/dashboard"], ["Supabase", "https://supabase.com/dashboard"]].map(([n, u]) => (
           <a key={n} href={u} target="_blank" rel="noopener noreferrer" className="px-3 py-1.5 rounded-lg border border-line hover:border-tungsten">{n} ↗</a>
         ))}
       </div>

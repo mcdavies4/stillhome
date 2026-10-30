@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getBillCategories } from "@/lib/flutterwave";
+import { getBillCategories } from "@/lib/bills";
 import { isSupportedCountry, DEFAULT_COUNTRY } from "@/lib/countries";
 
 export const revalidate = 3600; // catalogue changes rarely

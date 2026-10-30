@@ -5,14 +5,14 @@
 //
 // Flow: wallet check -> vend (idempotent reference = NOLGIC-<order id>) ->
 //   success   : store token, receipt email + WhatsApp, status=fulfilled
-//   failure   : requery FLW before refunding:
+//   failure   : requery the bills provider before refunding:
 //                 success   -> treat as fulfilled
 //                 ambiguous -> needs_review, alert founder, NO refund
 //                 failed    -> refund the customer, status=failed_refunded
 //                 (refund itself fails -> refund_failed + alert)
 
 import { supabaseAdmin } from "@/lib/supabase";
-import { createBillPayment, getBillStatus, getBalance, FlwError } from "@/lib/flutterwave";
+import { createBillPayment, checkBillStatus, getBalance, FlwError, makeReference, billsTestMode, providerLabel, activeProvider } from "@/lib/bills";
 import { getCountry } from "@/lib/countries";
 import { alertFounder } from "@/lib/alerts";
 import { sendReceipt } from "@/lib/whatsapp";
@@ -58,7 +58,8 @@ export async function fulfilClaimedOrder(order: ClaimedOrder, hooks: FulfilHooks
   const currency: string = order.currency ?? country.currency;
   const sym = country.currencySymbol;
   const amountLocal = Number(order.amount_ngn);
-  const reference = `NOLGIC-${order.id}`;
+  // Provider-specific, and stable across replays (reuses a reference already stored on the order).
+  const reference = makeReference(order.id, order.flw_reference);
   let vendAttempted = false;
 
   const deliver = async (token: string | null) => {
@@ -73,7 +74,7 @@ export async function fulfilClaimedOrder(order: ClaimedOrder, hooks: FulfilHooks
 
   try {
     // Fail fast if the float for THIS currency can't cover the vend — live only.
-    const isTestMode = (process.env.FLW_SECRET_KEY ?? "").startsWith("FLWSECK_TEST");
+    const isTestMode = billsTestMode() && activeProvider() === "flutterwave"; // VTpass sandbox has a real (fake-money) balance
     const balance = isTestMode
       ? Number.MAX_SAFE_INTEGER
       : await getBalance(currency).catch(() => Number.MAX_SAFE_INTEGER);
@@ -102,13 +103,14 @@ export async function fulfilClaimedOrder(order: ClaimedOrder, hooks: FulfilHooks
       itemCode: order.item_code,
       billerCode: order.biller_code,
       reference,
+      phone: order.recipient_whatsapp ?? null,
     });
 
     let token: string | null = (result as any)?.extra ?? null;
     if (!token) {
       try {
-        const status = await getBillStatus(reference);
-        token = (status.data as any)?.extra ?? (status.data as any)?.token ?? null;
+        const status = await checkBillStatus(reference);
+        token = status.token;
       } catch {
         /* lazy recovery via /api/orders + daily cron will pick it up */
       }
@@ -126,8 +128,8 @@ export async function fulfilClaimedOrder(order: ClaimedOrder, hooks: FulfilHooks
       if (outcome === "success") {
         let token: string | null = null;
         try {
-          const status = await getBillStatus(reference);
-          token = (status.data as any)?.extra ?? (status.data as any)?.token ?? null;
+          const status = await checkBillStatus(reference);
+          token = status.token;
         } catch {}
         await db.from("orders").update({ status: "fulfilled", flw_token: token, error: null }).eq("id", order.id);
         await deliver(token);
@@ -137,7 +139,7 @@ export async function fulfilClaimedOrder(order: ClaimedOrder, hooks: FulfilHooks
         await db.from("orders").update({ status: "needs_review", error: `AMBIGUOUS: ${errMsg}` }).eq("id", order.id);
         await alertFounder(
           "🔍 Order needs review — do NOT ignore",
-          `Order ${order.id} (${order.biller_name} ${sym}${amountLocal.toLocaleString()} ${currency})\nVend outcome unknown after error: ${errMsg}\nCheck FLW dashboard for reference ${reference}: refund (${hooks.paymentLabel}) if NOT delivered.`
+          `Order ${order.id} (${order.biller_name} ${sym}${amountLocal.toLocaleString()} ${currency})\nVend outcome unknown after error: ${errMsg}\nCheck the ${providerLabel()} dashboard for reference ${reference}: refund (${hooks.paymentLabel}) if NOT delivered.`
         );
         await waOnNeedsReview(order as any);
         return { outcome: "needs_review" };
@@ -171,16 +173,11 @@ export async function fulfilClaimedOrder(order: ClaimedOrder, hooks: FulfilHooks
 
 async function requeryOutcome(reference: string): Promise<"success" | "failed" | "ambiguous"> {
   try {
-    const status = await getBillStatus(reference);
-    const s = String((status.data as any)?.status ?? "").toLowerCase();
-    if (s.includes("success")) return "success";
-    if (s.includes("fail")) return "failed";
-    return "ambiguous";
-  } catch (e) {
-    const msg = e instanceof FlwError ? e.message.toLowerCase() : "";
-    if (msg.includes("not found") || msg.includes("no transaction") || msg.includes("404")) {
-      return "failed";
-    }
+    const status = await checkBillStatus(reference);
+    if (status.state === "success") return "success";
+    if (status.state === "failed" || status.state === "not_found") return "failed";
+    return "ambiguous"; // still pending / unclear: never refund on a guess
+  } catch {
     return "ambiguous";
   }
 }

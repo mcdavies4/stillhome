@@ -4,7 +4,7 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { adminGate } from "@/lib/admin-auth";
-import { getBalance } from "@/lib/flutterwave";
+import { getBalance, activeProvider, billsConfigured, billsTestMode } from "@/lib/bills";
 import { paystackIsTestMode } from "@/lib/paystack";
 
 export const dynamic = "force-dynamic";
@@ -138,7 +138,12 @@ export async function GET(req: Request) {
 
     // Config health — booleans only, never values.
     const flwKey = process.env.FLW_SECRET_KEY ?? "";
+    const provider = activeProvider();
     const health = {
+      bills_provider: provider,
+      // Status of the ACTIVE bills provider: missing | test | live
+      bills: !billsConfigured() ? "missing" : billsTestMode() ? "test" : "live",
+      vtpass_phone: !!(process.env.VTPASS_DEFAULT_PHONE ?? "").trim(),
       flutterwave: flwKey ? (flwKey.startsWith("FLWSECK_TEST") ? "test" : "live") : "missing",
       paystack: process.env.PAYSTACK_SECRET_KEY ? (paystackIsTestMode() ? "test" : "live") : "missing",
       stripe: process.env.STRIPE_SECRET_KEY ? "set" : "missing",
