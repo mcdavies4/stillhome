@@ -29,6 +29,10 @@ const GH_ENABLED = process.env.NEXT_PUBLIC_GH_ENABLED === "1";
 const ANY_PAY = NGN_ENABLED || UK_ENABLED;
 const DOMESTIC = !UK_ENABLED;
 const FEE_SET = ngnFeeSettings();
+// WhatsApp receipts to the recipient stay hidden until a working WhatsApp sender is connected:
+// set NEXT_PUBLIC_WHATSAPP_RECEIPTS=1 in Vercel to show the "Their mobile number" box.
+const WA_RECEIPTS = process.env.NEXT_PUBLIC_WHATSAPP_RECEIPTS === "1";
+const RECEIPT_TAIL = WA_RECEIPTS ? "the receipt goes to their phone — token included." : "your receipt, token included, arrives by email.";
 
 const itemKey = (i: BillerItem) => `${i.biller_code}:${i.item_code}:${i.short_name ?? i.name}`;
 
@@ -49,7 +53,7 @@ const CHECKS = [
 const CATEGORIES = [
   {
     title: "Electricity",
-    text: "Prepaid meter tokens, issued in seconds. The token is shown to you and sent to their phone.",
+    text: "Prepaid meter tokens, issued in seconds. The token is shown to you and emailed to you" + (WA_RECEIPTS ? " and sent to their phone." : "."),
     names: GH_ENABLED ? "IKEDC · EKEDC · AEDC · IBEDC · PHED · ECG (Ghana) and more" : "IKEDC · EKEDC · AEDC · IBEDC · PHED and more",
     icon: <path d="M13 2L5 13.5h6L10 22l9-12h-6.2L13 2z" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />,
   },
@@ -75,7 +79,7 @@ const CATEGORIES = [
 
 const FAQS_DIASPORA = [
   { q: "Which countries does Nolgic support?", a: "Nigeria and Ghana today — electricity, TV subscriptions, airtime and data in both. We're building Nolgic as one tool for paying bills across Africa, and more countries are on the way. Pick the country at the top of the payment form." },
-  { q: "How do I pay a NEPA / electricity bill in Nigeria from the UK?", a: "Pick the DisCo (EKEDC, IKEDC, EEDC and others), enter the meter number, and we show you the registered account name. Pay in pounds by card and the prepaid token is issued in seconds — we show it on screen, email it to you, and can send it to your family's phone." },
+  { q: "How do I pay a NEPA / electricity bill in Nigeria from the UK?", a: "Pick the DisCo (EKEDC, IKEDC, EEDC and others), enter the meter number, and we show you the registered account name. Pay in pounds by card and the prepaid token is issued in seconds — we show it on screen, email it to you" + (WA_RECEIPTS ? ", and can send it to your family's phone." : ".") },
   { q: "Can I pay for DSTV or GOTV from abroad?", a: "Yes. Choose the package, enter the smartcard/IUC number, confirm the account holder's name we look up, and pay by card. The decoder is credited within seconds — no one in Nigeria needs to queue or do anything." },
   { q: "How do I buy MTN, Airtel or Glo airtime from the UK?", a: "Select the network, enter the phone number and amount, and pay in pounds. The airtime lands on the phone instantly. Data bundles work the same way." },
   ...(NGN_ENABLED ? [
@@ -88,7 +92,7 @@ const FAQS_DIASPORA = [
 
 const FAQS_DOMESTIC = [
   { q: "Which countries does Nolgic support?", a: "Nigeria today, paid in naira. Payments from the UK in pounds, and Ghana, are coming soon." },
-  { q: "How do I buy electricity (NEPA) with Nolgic?", a: "Pick your DisCo (EKEDC, IKEDC, EEDC and others), enter the meter number, and we show you the registered account name. Pay by card, bank transfer or USSD and the prepaid token is issued in seconds — we show it on screen, email it to you, and can send it to another phone." },
+  { q: "How do I buy electricity (NEPA) with Nolgic?", a: "Pick your DisCo (EKEDC, IKEDC, EEDC and others), enter the meter number, and we show you the registered account name. Pay by card, bank transfer or USSD and the prepaid token is issued in seconds — we show it on screen, email it to you" + (WA_RECEIPTS ? ", and can send it to another phone." : ".") },
   { q: "Can I pay for DSTV or GOTV?", a: "Yes. Choose the package, enter the smartcard/IUC number, confirm the account holder's name we look up, and pay. The decoder is credited within seconds." },
   { q: "How do I buy MTN, Airtel or Glo airtime and data?", a: "Select the network, enter the phone number and the amount, and pay. The airtime or data lands on the phone instantly." },
   { q: "Is Nolgic a money transfer service?", a: "No — you're buying a prepaid product (a token, subscription or top-up) at a price shown upfront. We deliver the product directly; we never move money to a person." },
@@ -102,10 +106,10 @@ const STEPS = [
   { n: "1", title: "Pick the bill", text: "Electricity token, DSTV, GOTV, airtime or data — for any meter, decoder or phone number." },
   { n: "2", title: "See who you're paying", text: "We look the number up with the provider and show you the registered name. You confirm it's your people before any money moves." },
   { n: "3", title: "Pay. Done.", text: DOMESTIC
-      ? "Pay by card, bank transfer or USSD. Delivery lands in seconds, and the receipt goes to their phone — token included."
+      ? "Pay by card, bank transfer or USSD. Delivery lands in seconds, and " + RECEIPT_TAIL
       : NGN_ENABLED
-        ? "Card checkout in pounds, or pay in naira from inside Nigeria. Delivery lands in seconds, and the receipt goes to their phone — token included."
-        : "Card checkout in pounds. Delivery lands in seconds, and the receipt goes to their phone — token included." },
+        ? "Card checkout in pounds, or pay in naira from inside Nigeria. Delivery lands in seconds, and " + RECEIPT_TAIL
+        : "Card checkout in pounds. Delivery lands in seconds, and " + RECEIPT_TAIL },
 ];
 
 const BRANDS = "MTN, Airtel, Glo, 9mobile, DStv, GOtv, StarTimes and every major electricity company";
@@ -538,6 +542,7 @@ export default function Home() {
                   <div className="mt-5 pt-5 border-t border-line stub-in">
                     <label htmlFor="email">Your email (for your receipt)</label>
                     <input id="email" value={email} onChange={(e) => setEmail(e.target.value.trim())} placeholder="you@example.com" type="email" inputMode="email" enterKeyHint="next" autoComplete="email" autoCapitalize="off" autoCorrect="off" spellCheck={false} />
+                    {WA_RECEIPTS && (
                     <div className="mt-3">
                       <label htmlFor="whatsapp">Their mobile number <span className="text-haze font-normal">(optional)</span></label>
                       <input id="whatsapp" value={whatsapp}
@@ -546,6 +551,7 @@ export default function Home() {
                         placeholder={country === "GH" ? "024 123 4567" : "0803 123 4567"} type="tel" inputMode="tel" enterKeyHint="done" maxLength={20} autoComplete="off" />
                       <p className="text-xs text-haze mt-1.5">We&rsquo;ll send them the receipt and token. A Nigerian number with a leading 0 is fine; we add +234 for you.</p>
                     </div>
+                    )}
                   </div>
                 )}
 
