@@ -122,6 +122,20 @@ async function pb(path: string, opts: { method?: "GET" | "POST"; body?: Record<s
   };
 }
 
+/**
+ * Data-plan list for one network. Paybeta's docs say POST {service}, but its sandbox answers
+ * "The POST method is not supported for this route. Supported method: GET" — so try GET ?service= first,
+ * then POST, and keep the reason from both if neither works.
+ */
+async function pbDataList(service: string): Promise<any> {
+  const g = await pb(`/v2/data-bundle/list?service=${encodeURIComponent(service)}`);
+  if (g.ok) return g.data;
+  const p = await pb("/v2/data-bundle/list", { method: "POST", body: { service } });
+  if (p.ok) return p.data;
+  const why = (r: PbResult) => `HTTP ${r.http}${r.message ? `: ${r.message}` : ""}`;
+  throw new FlwError(`data list failed — GET ${why(g)} | POST ${why(p)}`, { get: g.body, post: p.body });
+}
+
 /** Catalogue/lookup calls: anything but a clean success is an error (never a guess). */
 async function pbGet(path: string, method: "GET" | "POST" = "GET", body?: Record<string, unknown>): Promise<any> {
   const r = await pb(path, { method, body });
@@ -227,7 +241,7 @@ async function buildCatalogue(): Promise<BillerItem[]> {
       const why: string[] = [];
       for (const cand of dataServiceCandidates(p)) {
         try {
-          const d = await pbGet("/v2/data-bundle/list", "POST", { service: cand });
+          const d = await pbDataList(cand);
           // docs show data.packages; also accept a bare array in case the sandbox differs
           const list = arr(d?.packages ?? d?.bundles ?? d);
           if (list.length) { service = cand; pkgs = list; break; }
@@ -339,13 +353,16 @@ export async function pbValidate(itemCode: string, billerCode: string, identifie
 
 // ───────────────────────── vend ─────────────────────────
 
-/** Token from a vend/webhook payload: data.token (strips a leading "Token:" label). */
+/**
+ * Token from a vend/webhook payload: data.token (strips a leading "Token:" label).
+ * Paybeta's sandbox sends 0 for products that have no token (data, TV), so "0"/"000…" is never a token.
+ */
 export function pbToken(data: unknown): string | null {
   const d = (data ?? {}) as Json;
   for (const c of [d.token, d.Token]) {
     if (c == null) continue;
     const s = String(c).replace(/^\s*token\s*:?\s*/i, "").trim();
-    if (s && !/^(null|undefined|n\/a)$/i.test(s)) return s;
+    if (s && !/^(null|undefined|n\/a|0+)$/i.test(s)) return s;
   }
   return null;
 }
@@ -405,7 +422,7 @@ export async function pbPay(params: {
       flw_ref: String(d.transactionId ?? ""),
       tx_ref: reference,
       reference,
-      extra: pbToken(d),
+      extra: kind === "electricity" ? pbToken(d) : null, // only electricity has a token to show the customer
     };
   }
 

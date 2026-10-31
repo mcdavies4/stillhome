@@ -18,8 +18,9 @@ async function main() {
   if (!key) { console.log("Set PAYBETA_API_KEY in .env.local"); return; }
   console.log(`Probing ${base}`);
   await call("GET", "/v2/data-bundle/providers");
-  for (const service of ["mtn_data", "mtn-data", "MTN_DATA", "mtn", "MTN Data", "glo_data", "airtel_data", "9mobile_data"]) {
-    await call("POST", "/v2/data-bundle/list", { service });
+  for (const service of ["mtn_data", "glo_data", "airtel_data", "9mobile_data"]) {
+    await call("GET", `/v2/data-bundle/list?service=${service}`);
   }
+  await call("POST", "/v2/data-bundle/list", { service: "mtn_data" });
 }
 main();
