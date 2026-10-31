@@ -2,7 +2,9 @@ import { NextResponse } from "next/server";
 import { getBillCategories } from "@/lib/bills";
 import { isSupportedCountry, DEFAULT_COUNTRY } from "@/lib/countries";
 
-export const revalidate = 3600; // catalogue changes rarely
+// Always run on the server per request, and let the CDN keep a good answer for an hour.
+// (A failed answer is sent with no-store, so an outage can never get stuck in the cache.)
+export const dynamic = "force-dynamic";
 
 export async function GET(req: Request) {
   // ?country=GH (defaults to NG). Only supported countries are allowed.
@@ -19,8 +21,12 @@ export async function GET(req: Request) {
       seen.add(key);
       return true;
     });
-    return NextResponse.json({ country, items: deduped });
+    return NextResponse.json(
+      { country, items: deduped },
+      { headers: { "Cache-Control": deduped.length ? "public, s-maxage=3600, stale-while-revalidate=86400" : "no-store" } }
+    );
   } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 502 });
+    console.error("[billers] catalogue failed:", e?.message ?? e);
+    return NextResponse.json({ error: e?.message ?? "Catalogue unavailable" }, { status: 502, headers: { "Cache-Control": "no-store" } });
   }
 }

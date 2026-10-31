@@ -16,7 +16,7 @@ type BillerItem = {
   label_name: string;
 };
 
-// Naira (Nigeria-domestic) checkout stays hidden until Paystack is live:
+// Naira (Nigeria-domestic) checkout stays hidden until a naira rail (Paystack or Flutterwave) is live:
 // set NEXT_PUBLIC_NGN_PAY_ENABLED=1 in Vercel to show it.
 const NGN_ENABLED = process.env.NEXT_PUBLIC_NGN_PAY_ENABLED === "1";
 // Launch switches (all default OFF — set to "1" in Vercel to open each one):
@@ -148,9 +148,14 @@ export default function Home() {
   useEffect(() => {
     setItems([]); setLoaded(false); setItem(null); setProvider(""); setValidated(null); setIdentifier(""); setAmountLocal("");
     fetch(`/api/billers?country=${country}`)
-      .then((r) => r.json())
-      .then((d) => { setItems(d.items ?? []); setLoaded(true); })
-      .catch(() => { setLoaded(true); setError("Could not load billers. Refresh to retry."); });
+      .then(async (r) => ({ ok: r.ok, d: await r.json().catch(() => ({})) }))
+      .then(({ ok, d }) => {
+        setItems(d.items ?? []); setLoaded(true);
+        if (!ok || d.error || !(d.items ?? []).length) {
+          setError(`We couldn’t load the list of services${d.error ? ` (${String(d.error).slice(0, 140)})` : ""}. Refresh the page to try again.`);
+        }
+      })
+      .catch(() => { setLoaded(true); setError("We couldn’t load the list of services. Refresh the page to try again."); });
   }, [country]);
 
   const tabItems = useMemo(() => {
@@ -316,7 +321,7 @@ export default function Home() {
                 {inNgn && (
                   <span className="inline-flex items-center gap-1.5 text-xs text-haze">
                     <svg width="13" height="13" viewBox="0 0 24 24" aria-hidden="true"><rect x="4.5" y="10.5" width="15" height="10" rx="2.5" fill="none" stroke="currentColor" strokeWidth="2" /><path d="M8 10.5V8a4 4 0 018 0v2.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" /></svg>
-                    Secured by Paystack
+                    Secure checkout
                   </span>
                 )}
               </div>
@@ -439,6 +444,15 @@ export default function Home() {
                         {plans.map((i) => (
                           <option key={itemKey(i)} value={itemKey(i)}>{i.name}{i.amount > 0 ? ` — ${fmtLocal(i.amount / cfg.fixedAmountDivisor)}` : ""}</option>
                         ))}
+                      </select>
+                    </div>
+                  )}
+                  {/* Data and TV always have a package list: show it from the start so it is clear where it will appear. */}
+                  {!provider && (tab === "data" || tab === "cable") && (
+                    <div className="mt-3">
+                      <label htmlFor="plan-wait">{LABELS[tab].plan}</label>
+                      <select id="plan-wait" disabled value="" onChange={() => {}}>
+                        <option value="">{tab === "data" ? "Choose a network first" : "Choose a TV provider first"}</option>
                       </select>
                     </div>
                   )}
