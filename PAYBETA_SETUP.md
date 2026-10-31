@@ -24,7 +24,9 @@ $env:CHECK_VEND="airtime"; npx dotenv -e .env.local -- npx tsx scripts/check-pay
 
 ## 3. Webhook (required — Paybeta has no status-check endpoint)
 Paybeta console -> Settings -> Webhook URL: `https://www.nolgic.com/api/paybeta/webhook` (use the www host).
-Signature header `Signature` = HMAC-SHA256 of `data.reference` keyed with your API key.
+Signature header `Signature` = HMAC-SHA256 of `data.reference` keyed with your secret key.
+If the console shows a separate "secret key", set `PAYBETA_SECRET_KEY` to it (the API calls keep using `PAYBETA_API_KEY`).
+If it shows only one key, set just `PAYBETA_API_KEY`.
 
 ## 4. Go live
 Production only: `PAYBETA_ENV=live` and the LIVE key (a different key from sandbox). Fund the Paybeta wallet.

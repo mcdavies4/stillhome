@@ -224,14 +224,17 @@ async function buildCatalogue(): Promise<BillerItem[]> {
       if (!name) continue;
       let service = "";
       let pkgs: Json[] = [];
+      const why: string[] = [];
       for (const cand of dataServiceCandidates(p)) {
         try {
           const d = await pbGet("/v2/data-bundle/list", "POST", { service: cand });
-          const list = arr(d?.packages);
+          // docs show data.packages; also accept a bare array in case the sandbox differs
+          const list = arr(d?.packages ?? d?.bundles ?? d);
           if (list.length) { service = cand; pkgs = list; break; }
-        } catch { /* try the other spelling */ }
+          why.push(`${cand}: answered but no plans (data keys: ${d && typeof d === "object" ? Object.keys(d).join(",") || "none" : typeof d})`);
+        } catch (e) { why.push(`${cand}: ${String((e as any)?.message ?? e).slice(0, 140)}`); }
       }
-      if (!service) { console.error(`[paybeta] data plans unavailable for "${name}" (tried ${dataServiceCandidates(p).join(", ")})`); continue; }
+      if (!service) { console.error(`[paybeta] data plans unavailable for "${name}" — ${why.join(" | ")}`); continue; }
       const seen = new Set<string>();
       for (const k of pkgs) {
         const code = String(k.code ?? "").trim();
@@ -460,19 +463,26 @@ export async function pbBalance(): Promise<number> {
 // ───────────────────────── webhook helpers ─────────────────────────
 
 /**
- * Paybeta signs `data.reference` (NOT the whole body) with HMAC-SHA256 using your API secret key and
+ * Paybeta signs `data.reference` (NOT the whole body) with HMAC-SHA256 using your API secret key (PAYBETA_SECRET_KEY, else PAYBETA_API_KEY) and
  * sends it in the `Signature` header. The docs don't say hex or base64, so both are accepted.
  */
-export function pbVerifySignature(reference: string, header: string | null, secret: string = apiKey()): boolean {
-  if (!secret || !header || !reference) return false;
-  const mac = createHmac("sha256", secret).update(reference).digest();
+export function pbVerifySignature(reference: string, header: string | null, secrets?: string[]): boolean {
+  // The console may show an "API key" and a separate "Secret key". The docs say the signature uses the
+  // secret key, so PAYBETA_SECRET_KEY (if set) is tried first, then PAYBETA_API_KEY. Both are secrets.
+  const keys = (secrets ?? [process.env.PAYBETA_SECRET_KEY ?? "", apiKey()]).map((k) => k.trim()).filter(Boolean);
+  if (!keys.length || !header || !reference) return false;
   const given = header.trim();
   const eq = (x: string, y: string) => {
     const a = Buffer.from(x, "utf8");
     const b = Buffer.from(y, "utf8");
     return a.length === b.length && timingSafeEqual(a, b);
   };
-  return eq(mac.toString("hex"), given.toLowerCase()) || eq(mac.toString("base64"), given);
+  let ok = false;
+  for (const k of keys) {
+    const mac = createHmac("sha256", k).update(reference).digest();
+    if (eq(mac.toString("hex"), given.toLowerCase()) || eq(mac.toString("base64"), given)) ok = true; // no early exit: constant work
+  }
+  return ok;
 }
 
 export interface PbWebhook {
