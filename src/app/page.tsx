@@ -147,6 +147,8 @@ export default function Home() {
   // Reload billers whenever the country changes; reset the in-progress order.
   useEffect(() => {
     setItems([]); setLoaded(false); setItem(null); setProvider(""); setValidated(null); setIdentifier(""); setAmountLocal("");
+    // While payments are closed the form is hidden, so don't ask the bills provider for a list nobody can use.
+    if (!ANY_PAY) { setLoaded(true); return; }
     fetch(`/api/billers?country=${country}`)
       .then(async (r) => ({ ok: r.ok, d: await r.json().catch(() => ({})) }))
       .then(({ ok, d }) => {
