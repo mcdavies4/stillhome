@@ -9,7 +9,7 @@ import { velocityCheck } from "@/lib/velocity";
 import { alertFounder } from "@/lib/alerts";
 import { initializeTransaction, paystackConfigured } from "@/lib/paystack";
 import { ngnPayProvider, flwPayConfigured, initializePayment as flwInitialize } from "@/lib/flwpay";
-import { cap, normaliseEmail, normalisePhone } from "@/lib/security";
+import { cap, normaliseEmail, normalisePhone, toInternationalPhone } from "@/lib/security";
 import { ngnServiceFee } from "@/lib/ngn-fee";
 
 // Creates the order row + a payment session:
@@ -37,7 +37,7 @@ export async function POST(req: Request) {
     if (!email) return NextResponse.json({ error: "Please enter a valid email address." }, { status: 400 });
     let recipientWhatsapp: string | null = null;
     if (raw.recipientWhatsapp) {
-      recipientWhatsapp = normalisePhone(raw.recipientWhatsapp);
+      recipientWhatsapp = toInternationalPhone(raw.recipientWhatsapp, typeof raw.country === "string" ? raw.country.toUpperCase().slice(0, 2) : "NG");
       if (!recipientWhatsapp) {
         return NextResponse.json({ error: "That mobile number doesn't look right — use digits only, with country code if outside Nigeria." }, { status: 400 });
       }

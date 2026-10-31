@@ -39,6 +39,24 @@ export function normalisePhone(v: unknown): string | null {
   return /^\+?\d{8,15}$/.test(p) ? p : null;
 }
 
+/**
+ * A mobile number in international form. People type it the local way (0903 774 5486), so a number
+ * without a country code gets the code of the country they are paying in (Nigeria +234, Ghana +233).
+ * Anything that isn't a clear local number is returned as typed (already valid by normalisePhone).
+ */
+export function toInternationalPhone(v: unknown, country: string = "NG"): string | null {
+  const n = normalisePhone(v);
+  if (!n) return null;
+  if (n.startsWith("+")) return n;
+  if (n.startsWith("00")) return `+${n.slice(2)}`;
+  const dial = country === "GH" ? "233" : "234";
+  const len = country === "GH" ? 9 : 10; // digits after the leading 0
+  if (n.startsWith("0") && n.length === len + 1) return `+${dial}${n.slice(1)}`;
+  if (n.startsWith(dial) && n.length === dial.length + len) return `+${n}`;
+  if (n.length === len) return `+${dial}${n}`;
+  return n;
+}
+
 /** String with a hard length cap; non-strings become "". */
 export function cap(v: unknown, max: number): string {
   return typeof v === "string" ? v.trim().slice(0, max) : "";

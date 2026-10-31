@@ -124,6 +124,22 @@ const LABELS: Record<string, { provider: string; plan: string }> = {
 
 const QUICK_AMOUNTS = [200, 500, 1000, 2000, 5000];
 
+// Keep only what the field can hold: a phone number keeps digits and a leading +; a meter or smartcard number drops spaces and dashes.
+const cleanIdentifier = (v: string, isPhone: boolean) =>
+  isPhone ? v.replace(/[^\d+]/g, "").replace(/(?!^)\+/g, "") : v.replace(/[\s\-]/g, "");
+
+// 0803 123 4567 -> +2348031234567 (Nigeria) / 024 123 4567 -> +233241234567 (Ghana). Anything else is left as typed.
+function withCountryCode(v: string, country: string): string {
+  const n = v.replace(/[\s\-().]/g, "");
+  if (!n || n.startsWith("+")) return n;
+  if (n.startsWith("00")) return `+${n.slice(2)}`;
+  const dial = country === "GH" ? "233" : "234";
+  const len = country === "GH" ? 9 : 10;
+  if (n.startsWith("0") && n.length === len + 1) return `+${dial}${n.slice(1)}`;
+  if (n.startsWith(dial) && n.length === dial.length + len) return `+${n}`;
+  return n;
+}
+
 export default function Home() {
   const [country, setCountry] = useState<CountryCode>("NG");
   const [payIn, setPayIn] = useState<"gbp" | "ngn">(UK_ENABLED ? "gbp" : "ngn");
@@ -464,14 +480,19 @@ export default function Home() {
                 {item && (
                   <div className="mt-5 pt-5 border-t border-line stub-in">
                     <label htmlFor="identifier">{item.label_name || "Account number"}</label>
-                    <input id="identifier" value={identifier} onChange={(e) => { setIdentifier(e.target.value); setValidated(null); }}
+                    {/* Phone numbers get the phone keypad, meter and smartcard numbers the number pad. */}
+                    <input id="identifier" value={identifier}
+                      onChange={(e) => { setIdentifier(cleanIdentifier(e.target.value, isNoValidate(item))); setValidated(null); }}
                       placeholder={isNoValidate(item) ? cfg.identifierExamples.phone : cfg.identifierExamples.electricity}
-                      inputMode={isNoValidate(item) ? "tel" : "text"} autoComplete="off" />
+                      type={isNoValidate(item) ? "tel" : "text"}
+                      inputMode={isNoValidate(item) ? "tel" : "numeric"}
+                      enterKeyHint="go" maxLength={isNoValidate(item) ? 16 : 20}
+                      autoComplete={isNoValidate(item) ? "tel" : "off"} autoCorrect="off" autoCapitalize="off" spellCheck={false} />
 
                     {!fixedAmount && (
                       <div className="mt-3">
                         <label htmlFor="amount">Amount ({cfg.currencySymbol})</label>
-                        <input id="amount" value={amountLocal} onChange={(e) => setAmountLocal(e.target.value.replace(/[^\d]/g, ""))} placeholder="5000" inputMode="numeric" className="num" />
+                        <input id="amount" value={amountLocal} onChange={(e) => setAmountLocal(e.target.value.replace(/[^\d]/g, ""))} placeholder="5000" inputMode="numeric" enterKeyHint="done" maxLength={7} autoComplete="off" className="num" />
                         {inNgn && (
                           <div className="flex gap-2 flex-wrap mt-2">
                             {QUICK_AMOUNTS.filter((a) => a >= minNgn).map((a) => (
@@ -516,11 +537,14 @@ export default function Home() {
                 {validated && (
                   <div className="mt-5 pt-5 border-t border-line stub-in">
                     <label htmlFor="email">Your email (for your receipt)</label>
-                    <input id="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" inputMode="email" autoComplete="email" />
+                    <input id="email" value={email} onChange={(e) => setEmail(e.target.value.trim())} placeholder="you@example.com" type="email" inputMode="email" enterKeyHint="next" autoComplete="email" autoCapitalize="off" autoCorrect="off" spellCheck={false} />
                     <div className="mt-3">
                       <label htmlFor="whatsapp">Their mobile number <span className="text-haze font-normal">(optional)</span></label>
-                      <input id="whatsapp" value={whatsapp} onChange={(e) => setWhatsapp(e.target.value)} placeholder={country === "GH" ? "+233..." : "+234..."} inputMode="tel" autoComplete="off" />
-                      <p className="text-xs text-haze mt-1.5">We&rsquo;ll send them the receipt and token.</p>
+                      <input id="whatsapp" value={whatsapp}
+                        onChange={(e) => setWhatsapp(e.target.value.replace(/[^\d+\s]/g, ""))}
+                        onBlur={() => setWhatsapp((w) => withCountryCode(w, country))}
+                        placeholder={country === "GH" ? "024 123 4567" : "0803 123 4567"} type="tel" inputMode="tel" enterKeyHint="done" maxLength={20} autoComplete="off" />
+                      <p className="text-xs text-haze mt-1.5">We&rsquo;ll send them the receipt and token. A Nigerian number with a leading 0 is fine; we add +234 for you.</p>
                     </div>
                   </div>
                 )}
