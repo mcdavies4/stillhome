@@ -10,6 +10,7 @@ type Order = {
   identifier: string;
   identifier_label: string;
   customer_name: string | null;
+  email?: string | null;
   amount_ngn: number;
   amount_gbp_pence: number;
   flw_token: string | null;
@@ -204,6 +205,17 @@ export default function OrderPage() {
         </div>
       </div>
 
+      {order.status === "fulfilled" && (
+        <div className="mt-6 rounded-2xl border border-line p-5">
+          <p className="text-haze text-sm leading-relaxed">
+            {order.email ? <>We emailed your receipt{order.flw_token ? " and token" : ""} to <span className="text-paper font-medium">{maskEmail(order.email)}</span>. </> : null}
+            Missed it, or typed the wrong email? Write to{" "}
+            <a className="text-tungsten underline underline-offset-2" href={`mailto:nolgichq@gmail.com?subject=${encodeURIComponent("Order " + orderNo)}`}>nolgichq@gmail.com</a>{" "}
+            with order number <span className="font-mono text-paper">{orderNo}</span> and we&rsquo;ll send it again.
+          </p>
+        </div>
+      )}
+
       {needsHelp && (
         <div className="mt-6 rounded-2xl border border-line p-5">
           <p className="font-display font-bold">Need to talk to us?</p>
@@ -225,6 +237,13 @@ export default function OrderPage() {
       </a>
     </main>
   );
+}
+
+/** ab***@gmail.com: enough for the buyer to recognise it, not enough to expose it to someone holding the link. */
+function maskEmail(e: string): string {
+  const [name, domain] = e.split("@");
+  if (!domain) return e;
+  return `${name.slice(0, Math.min(2, name.length))}***@${domain}`;
 }
 
 function Row({ k, v, num, mono }: { k: string; v: string; num?: boolean; mono?: boolean }) {

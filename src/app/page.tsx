@@ -283,7 +283,7 @@ export default function Home() {
     : "Pay in pounds, straight from your card. You see who you’re paying before any money moves.";
 
   const payDisabled =
-    busy !== null || !email || (!fixedAmount && !amountLocal) || belowMin || aboveMax;
+    busy !== null || !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email) || (!fixedAmount && !amountLocal) || belowMin || aboveMax;
 
   const countries = [
     {
@@ -540,7 +540,7 @@ export default function Home() {
                 {/* Step 3 — contact */}
                 {validated && (
                   <div className="mt-5 pt-5 border-t border-line stub-in">
-                    <label htmlFor="email">Your email (for your receipt)</label>
+                    <label htmlFor="email">Your email (we send your receipt and token here)</label>
                     <input id="email" value={email} onChange={(e) => setEmail(e.target.value.trim())} placeholder="you@example.com" type="email" inputMode="email" enterKeyHint="next" autoComplete="email" autoCapitalize="off" autoCorrect="off" spellCheck={false} />
                     {WA_RECEIPTS && (
                     <div className="mt-3">
@@ -569,8 +569,13 @@ export default function Home() {
                     <div className="flex justify-between gap-4 items-baseline pt-2.5 mt-2.5 border-t border-line"><dt className="font-semibold">Total</dt><dd className="font-display font-bold text-2xl">{fmtLocal(ngnTotal)}</dd></div>
                   </dl>
                 )}
+                <p className="mt-4 text-xs text-haze leading-relaxed">
+                  {email
+                    ? <>Your receipt and token will be emailed to <span className="text-paper font-medium break-all">{email}</span> and shown on the next page. Check it&rsquo;s right.</>
+                    : "Add your email above. We email your receipt and token there, and show them on the next page too."}
+                </p>
                 <button onClick={pay} disabled={payDisabled}
-                  className="mt-4 w-full h-14 rounded-2xl bg-cta text-oncta font-display font-bold text-lg hover:brightness-105 active:brightness-95 disabled:opacity-40 disabled:hover:brightness-100 num">
+                  className="mt-3 w-full h-14 rounded-2xl bg-cta text-oncta font-display font-bold text-lg hover:brightness-105 active:brightness-95 disabled:opacity-40 disabled:hover:brightness-100 num">
                   {busy === "pay" ? "Opening secure checkout…" : inNgn && billAmount > 0 ? `Pay ${fmtLocal(ngnTotal)}` : "Continue to payment"}
                 </button>
                 <p className="text-haze text-xs mt-3 text-center leading-relaxed">

@@ -17,19 +17,19 @@ export async function sendNgnReceiptEmail(
     service_fee_local?: number | null;
   },
   token: string | null
-): Promise<void> {
-  if (!order.email || !process.env.RESEND_API_KEY) return;
+): Promise<boolean> {
+  if (!order.email || !process.env.RESEND_API_KEY) return false;
 
   const fee = Number(order.service_fee_local ?? 0);
   const total = Number(order.amount_ngn) + fee;
   const n = (v: number) => `₦${Number(v).toLocaleString("en-NG")}`;
-  const ref = `NLG-${order.id.replace(/-/g, "").slice(0, 6).toUpperCase()}`;
+  const ref = order.id.slice(0, 8); // the same order number the order page shows
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "https://www.nolgic.com";
 
   const html = `
   <div style="font-family:system-ui,Arial,sans-serif;max-width:520px;margin:0 auto;color:#12151e">
     <h2 style="margin:0 0 4px">Payment successful ✅</h2>
-    <p style="color:#666;margin:0 0 16px">Your Nolgic order ${ref}</p>
+    <p style="color:#666;margin:0 0 16px">Order number ${ref}</p>
     <table style="width:100%;border-collapse:collapse;font-size:15px">
       <tr><td style="padding:6px 0;color:#666">Item</td><td style="text-align:right">${esc(order.biller_name)}</td></tr>
       <tr><td style="padding:6px 0;color:#666">Account / meter</td><td style="text-align:right">${esc(order.identifier)}</td></tr>
@@ -46,15 +46,21 @@ export async function sendNgnReceiptEmail(
     <p style="color:#999;font-size:12px;margin-top:20px">Nolgic sells prepaid digital products. Questions: nolgichq@gmail.com</p>
   </div>`;
 
-  const res = await fetch("https://api.resend.com/emails", {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${process.env.RESEND_API_KEY}` },
-    body: JSON.stringify({
-      from: process.env.RESEND_FROM ?? "Nolgic <noreply@songsnap.online>",
-      to: order.email,
-      subject: `Nolgic receipt — ${order.biller_name} ${n(order.amount_ngn)}`,
-      html,
-    }),
-  });
-  if (!res.ok) console.error("[receipt-ngn] send failed", res.status, await res.text());
+  try {
+    const res = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${process.env.RESEND_API_KEY}` },
+      body: JSON.stringify({
+        from: process.env.RESEND_FROM ?? "Nolgic <noreply@songsnap.online>",
+        to: order.email,
+        subject: `Nolgic receipt — ${order.biller_name} ${n(order.amount_ngn)}`,
+        html,
+      }),
+    });
+    if (!res.ok) { console.error("[receipt-ngn] send failed", res.status, await res.text()); return false; }
+    return true;
+  } catch (e) {
+    console.error("[receipt-ngn] send failed", e);
+    return false;
+  }
 }

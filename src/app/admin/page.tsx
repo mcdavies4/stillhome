@@ -353,7 +353,7 @@ function Orders({ api, reload }: { api: Api; reload: () => void }) {
   return (
     <>
       <div className="flex flex-wrap gap-2 mb-4">
-        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search email, meter, phone, biller…" className="!w-full sm:!w-72" aria-label="Search orders" />
+        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search email, meter, phone, biller, order number…" className="!w-full sm:!w-72" aria-label="Search orders" />
         <select value={status} onChange={(e) => setStatus(e.target.value)} className="!w-auto" aria-label="Filter by status">
           {STATUSES.map((s) => <option key={s} value={s}>{s || "All statuses"}</option>)}
         </select>
@@ -388,6 +388,49 @@ function Orders({ api, reload }: { api: Api; reload: () => void }) {
   );
 }
 
+/** For a customer who missed the page or typed the wrong email: show the token we hold, or email it again (optionally to a corrected address). */
+function TokenTools({ o, api }: { o: OrderRow; api: Api }) {
+  const [token, setToken] = useState<string | null | undefined>(undefined);
+  const [email, setEmail] = useState(o.email ?? "");
+  const [msg, setMsg] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  async function call(action: "reveal" | "resend") {
+    setBusy(true); setMsg(null);
+    try {
+      const r = await api(`/api/admin/orders/${o.id}`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(action === "resend" ? { action, email } : { action }),
+      });
+      const d = await r.json();
+      if (!r.ok) { setMsg(d.error ?? "Something went wrong."); return; }
+      if (action === "reveal") setToken(d.token ?? null);
+      else setMsg(d.sent ? `Sent to ${d.email}.` : `Could not send to ${d.email}. Check Resend.`);
+    } catch { /* auth errors handled by api() */ } finally { setBusy(false); }
+  }
+
+  return (
+    <div className="pt-3 mt-2 border-t border-line space-y-2 font-sans">
+      <div className="flex flex-wrap items-center gap-2">
+        <button disabled={busy} onClick={() => call("reveal")} className="px-3 py-1.5 rounded-lg border border-line text-xs font-semibold hover:border-tungsten">
+          {token === undefined ? "Show token" : "Refresh"}
+        </button>
+        {token !== undefined && (
+          <span className="font-mono text-sm break-all">{token ?? "No token on this order (airtime, data and TV have none)"}</span>
+        )}
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="email to send to" inputMode="email" autoCapitalize="off"
+          className="!w-full sm:!w-64 !h-9 !text-xs" aria-label="Email to send the receipt to" />
+        <button disabled={busy || !email} onClick={() => call("resend")} className="px-3 py-1.5 rounded-lg bg-tungsten text-white dark:text-night text-xs font-bold">
+          Resend receipt
+        </button>
+      </div>
+      {msg && <p className="text-xs text-haze">{msg}</p>}
+    </div>
+  );
+}
+
 function OrderDetail({ o, api, reload }: { o: OrderRow; api: Api; reload: () => void }) {
   const Row = ({ k, v }: { k: string; v: string | null }) => v ? (
     <div className="flex justify-between gap-4"><span className="text-haze">{k}</span><span className="text-right break-all">{v}</span></div>
@@ -402,8 +445,10 @@ function OrderDetail({ o, api, reload }: { o: OrderRow; api: Api; reload: () => 
       <Row k="Provider" v={o.payment_provider ?? "stripe"} />
       <Row k="Paystack ref" v={o.paystack_reference} />
       <Row k="Bills provider ref" v={o.flw_reference} />
+      <Row k="Email" v={o.email} />
       <Row k="Token issued" v={o.has_token ? "yes" : null} />
       <Row k="Source" v={o.source} />
+      {o.status === "fulfilled" && <TokenTools o={o} api={api} />}
       {o.error && <p className="text-bad break-words">{o.error}</p>}
       {["paid", "needs_review", "refund_failed", "fulfilled"].includes(o.status) && (
         <div className="pt-2"><AttentionCard o={o} api={api} reload={reload} compact /></div>

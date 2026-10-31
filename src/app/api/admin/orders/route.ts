@@ -32,7 +32,12 @@ export async function GET(req: Request) {
 
   if (STATUSES.includes(status)) query = query.eq("status", status);
   if (before && !Number.isNaN(Date.parse(before))) query = query.lt("created_at", before);
-  if (q) {
+  // Order number from the order page or the email (first 6-8 characters of the order id, "NLG-" prefix allowed).
+  const orderNo = q.replace(/^nlg-/i, "").toLowerCase();
+  if (/^[0-9a-f]{6,8}$/.test(orderNo)) {
+    const fill = (c: string) => { const h = orderNo.padEnd(32, c); return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`; };
+    query = query.gte("id", fill("0")).lte("id", fill("f"));
+  } else if (q) {
     const like = `%${q.replace(/ /g, "%")}%`;
     query = query.or(`email.ilike.${like},identifier.ilike.${like},biller_name.ilike.${like},customer_name.ilike.${like}`);
   }

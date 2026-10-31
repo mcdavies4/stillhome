@@ -95,7 +95,7 @@ export async function confirmFlutterwavePayment(orderId: string, opts: { transac
     refund: async () => {
       await refundTransaction(tx.id);
     },
-    sendReceiptEmail: (o, token) => sendNgnReceiptEmail(o as any, token),
+    sendReceiptEmail: async (o, token) => { await sendNgnReceiptEmail(o as any, token); },
     paymentLabel: `Flutterwave tx ${tx.id} (${expectedRef})`,
   });
   return { state: "processed", outcome: result.outcome };

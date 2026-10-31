@@ -96,7 +96,7 @@ export async function POST(req: Request) {
     refund: async () => {
       await refundTransaction(reference);
     },
-    sendReceiptEmail: (o, token) => sendNgnReceiptEmail(o as any, token),
+    sendReceiptEmail: async (o, token) => { await sendNgnReceiptEmail(o as any, token); },
     paymentLabel: `Paystack ref ${reference}`,
   });
 
