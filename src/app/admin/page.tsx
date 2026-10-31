@@ -370,7 +370,7 @@ function Orders({ api, reload }: { api: Api; reload: () => void }) {
                   <p className="text-haze text-xs font-mono truncate">{when(o.created_at)} · {o.email ?? "—"}</p>
                 </div>
                 <div className="text-right shrink-0">
-                  <p className="font-mono text-sm">{o.payment_provider === "paystack" ? ngn(Number(o.amount_ngn) + Number(o.service_fee_local ?? 0)) : gbp((o.amount_gbp_pence ?? 0) / 100)}</p>
+                  <p className="font-mono text-sm">{o.payment_provider === "paystack" || o.payment_provider === "flutterwave" ? ngn(Number(o.amount_ngn) + Number(o.service_fee_local ?? 0)) : gbp((o.amount_gbp_pence ?? 0) / 100)}</p>
                   <Badge s={o.status} />
                 </div>
               </div>

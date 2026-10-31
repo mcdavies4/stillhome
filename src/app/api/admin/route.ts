@@ -63,7 +63,8 @@ export async function GET(req: Request) {
     const since = new Date(now - 35 * 86400_000).toISOString();
     const all = await fetchOrders(since);
 
-    const isNgnPaystack = (o: Row) => o.payment_provider === "paystack";
+    // Naira orders are paid through Paystack or Flutterwave (the fee estimate below is Paystack's; close enough for Flutterwave).
+    const isNgnPaystack = (o: Row) => o.payment_provider === "paystack" || o.payment_provider === "flutterwave";
     const fulfilled = all.filter((o) => o.status === "fulfilled");
     const inWindow = (o: Row, days: number) => now - new Date(o.created_at).getTime() < days * 86400_000;
 

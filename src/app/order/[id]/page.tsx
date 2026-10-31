@@ -103,10 +103,10 @@ export default function OrderPage() {
 
   const c = COPY[order.status] ?? COPY.paid;
   const tone = TONE[c.tone];
-  // Naira (Paystack) orders were charged in ₦ (amount + fee); everything else in £.
+  // Naira orders (paid through Paystack or Flutterwave) were charged in ₦ (amount + fee); everything else in £.
   const sym = order.currency === "GHS" ? "₵" : "₦";
   const chargedText =
-    order.payment_provider === "paystack"
+    order.payment_provider === "paystack" || order.payment_provider === "flutterwave"
       ? `₦${(Number(order.amount_ngn) + Number(order.service_fee_local ?? 0)).toLocaleString("en-NG")}`
       : `£${(order.amount_gbp_pence / 100).toFixed(2)}`;
   const tokenPending = order.status === "fulfilled" && !order.flw_token && expectsToken(order);
