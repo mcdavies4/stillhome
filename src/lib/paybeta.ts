@@ -91,6 +91,7 @@ async function pb(path: string, opts: { method?: "GET" | "POST"; body?: Record<s
       body: opts.body ? JSON.stringify(opts.body) : undefined,
       signal: ctrl.signal,
       redirect: "manual",
+      cache: "no-store", // wallet balance and vend answers must never be cached
     });
     text = await res.text();
   } catch (e: any) {

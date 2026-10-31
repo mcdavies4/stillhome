@@ -55,6 +55,7 @@ async function fw(path: string, init: RequestInit = {}): Promise<any> {
   try {
     res = await fetch(`${flwBase()}${path}`, {
       ...init,
+      cache: "no-store", // a payment check must always be fresh
       headers: {
         Authorization: `Bearer ${secretKey()}`,
         "Content-Type": "application/json",

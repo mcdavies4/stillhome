@@ -89,6 +89,7 @@ async function vt(path: string, opts: VtOpts = {}): Promise<Json> {
       body: opts.body ? JSON.stringify(opts.body) : undefined,
       signal: ctrl.signal,
       redirect: "manual",
+      cache: "no-store",
     });
     text = await res.text();
   } catch (e: any) {

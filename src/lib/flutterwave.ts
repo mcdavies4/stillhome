@@ -32,6 +32,7 @@ export class FlwError extends Error {
 async function flw<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${flwBase()}${path}`, {
     ...init,
+    cache: "no-store", // never reuse a cached provider answer (balances, statuses)
     headers: {
       Authorization: `Bearer ${(process.env.FLW_SECRET_KEY ?? "").trim()}`,
       "Content-Type": "application/json",

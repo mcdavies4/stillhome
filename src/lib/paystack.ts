@@ -32,6 +32,7 @@ async function ps<T = any>(path: string, init: RequestInit = {}): Promise<T> {
 
   const res = await fetch(`${BASE}${path}`, {
     ...init,
+    cache: "no-store",
     headers: {
       Authorization: `Bearer ${key}`,
       "Content-Type": "application/json",
