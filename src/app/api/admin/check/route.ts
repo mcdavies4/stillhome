@@ -11,6 +11,7 @@ import { adminGate } from "@/lib/admin-auth";
 import { checkBillStatus, providerForReference, providerLabel } from "@/lib/bills";
 import { verifyTransaction, paystackConfigured } from "@/lib/paystack";
 import { UUID_RE } from "@/lib/security";
+import { payProviderLabel } from "@/lib/flwpay";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
@@ -60,7 +61,7 @@ export async function POST(req: Request) {
   let advice = "Nothing to do.";
   if (order.status === "fulfilled") advice = flwSuccess ? `Delivered and confirmed by ${pname}.` : `Marked fulfilled here but ${pname} does not confirm it. Investigate.`;
   else if (flwSuccess) advice = `${pname} says the vend SUCCEEDED. Use “Mark delivered” — do NOT refund.`;
-  else if (flw.found) advice = `${pname} status is “${flw.status}”. If it is a definite failure and the customer paid, refund them in the ${order.payment_provider === "paystack" ? "Paystack" : "Stripe"} dashboard, then note it.`;
+  else if (flw.found) advice = `${pname} status is “${flw.status}”. If it is a definite failure and the customer paid, refund them in the ${payProviderLabel(order.payment_provider)} dashboard, then note it.`;
   else if (["needs_review", "paid", "refund_failed"].includes(order.status)) advice = `${pname} has no record of this vend. If the customer paid, refund them manually, then note it.`;
 
   let applied = false;

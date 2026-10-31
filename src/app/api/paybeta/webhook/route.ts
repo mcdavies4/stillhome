@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { alertFounder } from "@/lib/alerts";
 import { paybetaConfigured, pbParseWebhook, pbVerifySignature, isPbReference } from "@/lib/paybeta";
-import { refundTransaction } from "@/lib/paystack";
+import { canAutoRefund, paymentRefLabel, refundOrderPayment } from "@/lib/refund-order";
 import { sendNgnReceiptEmail } from "@/lib/receipt-ngn";
 import { sendReceipt } from "@/lib/whatsapp";
 import { waOnFulfilled, waOnFailedRefunded } from "@/lib/wa/hooks";
@@ -17,7 +17,7 @@ import { waOnFulfilled, waOnFailedRefunded } from "@/lib/wa/hooks";
 //   2. record the event in paybeta_events (the order pipeline reads it as the vend's status)
 //   3. if the order is waiting in needs_review:
 //        success -> mark fulfilled, store the token, send the receipt
-//        failed  -> refund through Paystack, mark failed_refunded
+//        failed  -> refund through the rail the customer paid with (Paystack or Flutterwave), mark failed_refunded
 //      Only orders in needs_review move, and only through an atomic status flip, so a repeated
 //      webhook can never deliver or refund twice.
 // After a valid signature we answer 200, otherwise Paybeta keeps retrying.
@@ -79,8 +79,8 @@ export async function POST(req: Request) {
   const sym = order.currency === "GHS" ? "₵" : "₦";
   const label = `${order.biller_name} ${sym}${Number(order.amount_ngn).toLocaleString()}`;
 
-  // Only Paystack (₦) orders are resolved automatically — Stripe orders are left for a human.
-  if (order.payment_provider !== "paystack" || !order.paystack_reference) {
+  // Only naira orders (Paystack / Flutterwave) are resolved automatically — Stripe orders are left for a human.
+  if (!canAutoRefund(order)) {
     await alertFounder(
       `Paybeta says ${ev.state.toUpperCase()} — order needs a manual step`,
       `Order ${order.id} (${label}) is paid by ${order.payment_provider}.\nPaybeta result: ${ev.state}. ${ev.state === "success" ? "Use Mark delivered in /admin." : "Refund the customer in the payment dashboard."}`
@@ -119,13 +119,13 @@ export async function POST(req: Request) {
     .maybeSingle();
   if (!claimed) return NextResponse.json({ received: true, note: "already handled" });
   try {
-    await refundTransaction(order.paystack_reference);
-    await alertFounder("Paybeta reported failure — customer auto-refunded", `Order ${order.id} (${label}) Paystack ref ${order.paystack_reference}`);
+    await refundOrderPayment(order);
+    await alertFounder("Paybeta reported failure — customer auto-refunded", `Order ${order.id} (${label}) ${paymentRefLabel(order)}`);
     await waOnFailedRefunded(claimed as any);
     return NextResponse.json({ received: true, state: "failed", order: "failed_refunded" });
   } catch (e: any) {
     await db.from("orders").update({ status: "refund_failed", error: `Paybeta failed | REFUND FAILED: ${e?.message}` }).eq("id", order.id);
-    await alertFounder("🚨 REFUND FAILED — manual action needed", `Order ${order.id} (${label})\nPaybeta reported the vend failed but the Paystack refund failed: ${e?.message}\nPaystack ref ${order.paystack_reference}`);
+    await alertFounder("🚨 REFUND FAILED — manual action needed", `Order ${order.id} (${label})\nPaybeta reported the vend failed but the refund failed: ${e?.message}\n${paymentRefLabel(order)}`);
     return NextResponse.json({ received: true, state: "failed", order: "refund_failed" });
   }
 }

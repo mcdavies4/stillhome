@@ -6,6 +6,7 @@ import { supabaseAdmin } from "@/lib/supabase";
 import { adminGate } from "@/lib/admin-auth";
 import { getBalance, activeProvider, billsConfigured, billsTestMode } from "@/lib/bills";
 import { paystackIsTestMode } from "@/lib/paystack";
+import { ngnPayProvider } from "@/lib/flwpay";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
@@ -145,6 +146,8 @@ export async function GET(req: Request) {
       bills: !billsConfigured() ? "missing" : billsTestMode() ? "test" : "live",
       vtpass_phone: !!(process.env.VTPASS_DEFAULT_PHONE ?? "").trim(),
       flutterwave: flwKey ? (flwKey.startsWith("FLWSECK_TEST") ? "test" : "live") : "missing",
+      ngn_pay_provider: ngnPayProvider(),
+      flw_pay_hash: !!(process.env.FLW_SECRET_HASH ?? "").trim(),
       paystack: process.env.PAYSTACK_SECRET_KEY ? (paystackIsTestMode() ? "test" : "live") : "missing",
       stripe: process.env.STRIPE_SECRET_KEY ? "set" : "missing",
       resend: process.env.RESEND_API_KEY ? "set" : "missing",

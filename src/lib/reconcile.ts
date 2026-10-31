@@ -71,7 +71,7 @@ export async function runReconcile(dateStr = yesterdayUTC(), deep = true): Promi
   // Paystack (₦) orders have no Stripe charge — keep them out of the Stripe three-way
   // match and the £ margin; report them on their own line.
   const rows = allRows.filter((o: any) => (o.payment_provider ?? "stripe") === "stripe");
-  const psRows = allRows.filter((o: any) => o.payment_provider === "paystack");
+  const psRows = allRows.filter((o: any) => o.payment_provider === "paystack" || o.payment_provider === "flutterwave");
   const psFulfilled = psRows.filter((o: any) => o.status === "fulfilled");
   const paystackNgn = psFulfilled.reduce(
     (a: number, o: any) => a + Number(o.amount_ngn ?? 0) + Number(o.service_fee_local ?? 0), 0);
@@ -110,15 +110,15 @@ export async function runReconcile(dateStr = yesterdayUTC(), deep = true): Promi
   // Paystack orders: vend verification + stuck-state flags (no Stripe to match against).
   if (deep) {
     for (const o of psFulfilled) {
-      if (!o.flw_reference) { flags.push({ level: "warn", msg: `Paystack order ${o.id} fulfilled but has no flw_reference to verify` }); continue; }
+      if (!o.flw_reference) { flags.push({ level: "warn", msg: `Naira order ${o.id} fulfilled but has no flw_reference to verify` }); continue; }
       const v = await flwVended(o.flw_reference);
-      if (!v.found) flags.push({ level: "danger", msg: `DANGER: Paystack order ${o.id} fulfilled but the bills provider has no record of ${o.flw_reference}` });
+      if (!v.found) flags.push({ level: "danger", msg: `DANGER: Naira order ${o.id} fulfilled but the bills provider has no record of ${o.flw_reference}` });
       else if (v.status && !v.status.includes("success") && !v.status.includes("completed"))
-        flags.push({ level: "danger", msg: `Paystack order ${o.id}: provider status "${v.status}" (expected success)` });
+        flags.push({ level: "danger", msg: `Naira order ${o.id}: provider status "${v.status}" (expected success)` });
     }
   }
   for (const o of psRows.filter((o: any) => ["paid", "needs_review", "refund_failed"].includes(o.status)))
-    flags.push({ level: o.status === "refund_failed" ? "danger" : "warn", msg: `Paystack order ${o.id} stuck in ${o.status} (${o.biller_name} ${ngn(o.amount_ngn)}) — check Paystack + the bills provider` });
+    flags.push({ level: o.status === "refund_failed" ? "danger" : "warn", msg: `Naira order ${o.id} (${o.payment_provider}) stuck in ${o.status} (${o.biller_name} ${ngn(o.amount_ngn)}) — check the payment dashboard + the bills provider` });
 
   for (const o of rows.filter((o) => o.status === "needs_review"))
     flags.push({ level: "warn", msg: `needs_review UNRESOLVED: order ${o.id} (${o.biller_name} ${ngn(o.amount_ngn)})` });

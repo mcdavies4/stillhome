@@ -27,6 +27,7 @@ type Stats = {
   health: {
     bills_provider: string; bills: string; vtpass_phone: boolean;
     flutterwave: string; paystack: string; stripe: string; resend: string;
+    ngn_pay_provider: string; flw_pay_hash: boolean;
     cron_secret: boolean; admin_secret: boolean; app_url: string | null;
     ngn_pay_enabled: boolean; uk_pay_enabled: boolean; gh_enabled: boolean;
     fee: { pct: number; min: number; max: number };
@@ -420,7 +421,10 @@ function Health({ stats }: { stats: Stats }) {
     { label: "Partner admin secret", ok: h.admin_secret, detail: h.admin_secret ? "Set" : "Missing — partner admin APIs are locked", fix: "Set ADMIN_SECRET (only needed for /admin/partners)" },
     { label: `Bills provider: ${h.bills_provider === "vtpass" ? "VTpass" : h.bills_provider === "paybeta" ? "Paybeta" : "Flutterwave"}`, ok: h.bills === "live", detail: h.bills === "live" ? "Live" : h.bills === "test" ? (h.bills_provider === "flutterwave" ? "TEST key — vends are not real" : "SANDBOX — vends are not real") : "Keys missing", fix: h.bills_provider === "vtpass" ? "VTPASS_API_KEY, VTPASS_PUBLIC_KEY, VTPASS_SECRET_KEY, VTPASS_ENV=live" : h.bills_provider === "paybeta" ? "PAYBETA_API_KEY, PAYBETA_ENV=live (and the webhook URL in the Paybeta console)" : "FLW_SECRET_KEY" },
     ...(h.bills_provider === "vtpass" ? [{ label: "VTpass default phone", ok: h.vtpass_phone, detail: h.vtpass_phone ? "Set" : "Missing — electricity and TV vends need a phone number", fix: "VTPASS_DEFAULT_PHONE (an 11-digit Nigerian mobile you own)" }] : []),
-    { label: "Paystack key", ok: h.paystack === "live", detail: h.paystack === "live" ? "Live" : h.paystack === "test" ? "TEST key — customers can’t pay real money yet" : "Missing — naira checkout returns 503", fix: "PAYSTACK_SECRET_KEY" },
+    ...(h.ngn_pay_provider === "flutterwave"
+      ? [{ label: "Naira payments: Flutterwave", ok: h.flutterwave === "live" && h.flw_pay_hash, detail: h.flutterwave === "live" ? (h.flw_pay_hash ? "Live" : "Webhook secret hash missing — the order page still confirms payments, but set it") : h.flutterwave === "test" ? "TEST key — customers can’t pay real money yet" : "Missing — naira checkout returns 503", fix: "FLW_SECRET_KEY, FLW_SECRET_HASH (same value as the Secret Hash in the Flutterwave dashboard)" }]
+      : []),
+    { label: "Paystack key", ok: h.ngn_pay_provider === "flutterwave" || h.paystack === "live", detail: h.ngn_pay_provider === "flutterwave" ? "Not used for naira right now" : h.paystack === "live" ? "Live" : h.paystack === "test" ? "TEST key — customers can’t pay real money yet" : "Missing — naira checkout returns 503", fix: "PAYSTACK_SECRET_KEY" },
     { label: "Email receipts (Resend)", ok: h.resend === "set", detail: h.resend === "set" ? "Set" : "Missing — no receipts or alerts", fix: "RESEND_API_KEY" },
     { label: "Stripe (£)", ok: h.stripe === "set" || !h.uk_pay_enabled, detail: h.stripe === "set" ? "Key set" : "Not set (fine while UK is switched off)" },
     { label: "App URL", ok: !!h.app_url && h.app_url.startsWith("https://"), detail: h.app_url ?? "Missing", fix: "NEXT_PUBLIC_APP_URL=https://www.nolgic.com" },

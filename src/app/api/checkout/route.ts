@@ -8,13 +8,14 @@ import { rateLimit } from "@/lib/ratelimit";
 import { velocityCheck } from "@/lib/velocity";
 import { alertFounder } from "@/lib/alerts";
 import { initializeTransaction, paystackConfigured } from "@/lib/paystack";
+import { ngnPayProvider, flwPayConfigured, initializePayment as flwInitialize } from "@/lib/flwpay";
 import { cap, normaliseEmail, normalisePhone } from "@/lib/security";
 import { ngnServiceFee } from "@/lib/ngn-fee";
 
 // Creates the order row + a payment session:
 //   - default: Stripe Checkout in GBP (diaspora, any supported country)
-//   - payIn:"ngn" (Nigeria only): Paystack hosted checkout in naira
-//     (card / bank transfer / USSD). Fee = 2% of the amount, min ₦100, max ₦500 (see lib/ngn-fee.ts).
+//   - payIn:"ngn" (Nigeria only): hosted checkout in naira (card / bank transfer / USSD) on Paystack,
+//     or Flutterwave when NGN_PAY_PROVIDER=flutterwave. Fee = 2% of the amount, min ₦100, max ₦500 (see lib/ngn-fee.ts).
 // Re-validates the identifier server-side where the biller supports it —
 // airtime/data have no validation (the phone number IS the account).
 export async function POST(req: Request) {
@@ -100,7 +101,8 @@ export async function POST(req: Request) {
       if (countryCode !== "NG") {
         return NextResponse.json({ error: "Naira payment is only available for Nigeria." }, { status: 400 });
       }
-      if (!paystackConfigured()) {
+      const rail = ngnPayProvider();
+      if (rail === "flutterwave" ? !flwPayConfigured() : !paystackConfigured()) {
         return NextResponse.json({ error: "Naira payments aren't available yet — please check back soon." }, { status: 503 });
       }
       const amountNgn = Math.round(Number(amountLocal));
@@ -119,7 +121,7 @@ export async function POST(req: Request) {
       if (velN.blocked) {
         alertFounder(
           "Order blocked by velocity check",
-          `Email: ${b.email}\nIP: ${ip}\nReason: ${velN.reason}\nAmount: ₦${totalNgn.toLocaleString()} · ${b.billerName} · NG (Paystack)`
+          `Email: ${b.email}\nIP: ${ip}\nReason: ${velN.reason}\nAmount: ₦${totalNgn.toLocaleString()} · ${b.billerName} · NG (${rail === "flutterwave" ? "Flutterwave" : "Paystack"})`
         );
         return NextResponse.json(
           { error: "For your security this order needs review. Please contact nolgichq@gmail.com if you believe this is a mistake." },
@@ -136,7 +138,7 @@ export async function POST(req: Request) {
           ip,
           country: "NG",
           currency: "NGN",
-          payment_provider: "paystack",
+          payment_provider: rail,
           biller_code: b.billerCode,
           item_code: b.itemCode,
           biller_name: b.billerName,
@@ -156,6 +158,18 @@ export async function POST(req: Request) {
       if (errN) throw errN;
 
       const appUrlN = process.env.NEXT_PUBLIC_APP_URL!;
+      if (rail === "flutterwave") {
+        const fw = await flwInitialize({
+          email: b.email,
+          name: v.name,
+          amountNgn: totalNgn,
+          orderId: orderN.id,
+          redirectUrl: `${appUrlN}/order/${orderN.id}?paid=1`,
+          description: `${b.billerName} — ₦${amountNgn.toLocaleString()}`,
+        });
+        await dbN.from("orders").update({ flw_pay_ref: fw.txRef }).eq("id", orderN.id);
+        return NextResponse.json({ url: fw.link, orderId: orderN.id, total: `₦${totalNgn.toLocaleString()}` });
+      }
       const init = await initializeTransaction({
         email: b.email,
         amountNgn: totalNgn,
@@ -255,7 +269,7 @@ export async function POST(req: Request) {
     console.error("[checkout] failed", e);
     const msg0 = String(e?.message ?? "");
     const safe =
-      (e?.name === "FlwError" && !/^(Flutterwave|VTpass) /i.test(msg0)) ||
+      (e?.name === "FlwError" && !/^(Flutterwave|VTpass|Paybeta) /i.test(msg0)) ||
       e?.name === "PaystackError" ||
       /^Amount must be between/.test(msg0);
     return NextResponse.json({ error: safe ? e.message : "Checkout failed — please try again." }, { status: safe ? 400 : 500 });
