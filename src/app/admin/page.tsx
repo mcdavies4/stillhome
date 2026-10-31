@@ -310,7 +310,7 @@ function AttentionCard({ o, api, reload, compact = false }: { o: Brief; api: Api
       {res && (
         <div className="mt-3 rounded-xl bg-night border border-line p-3 text-xs space-y-1">
           {res.error && <p className="text-bad">{res.error}</p>}
-          <p><span className="text-haze">{res.provider === "vtpass" ? "VTpass" : "Flutterwave"}:</span> {res.flutterwave.found ? `${res.flutterwave.status ?? "unknown"}${res.flutterwave.token_available ? " · token available" : ""}` : `no record${res.flutterwave.error ? ` (${res.flutterwave.error})` : ""}`}</p>
+          <p><span className="text-haze">{res.provider === "vtpass" ? "VTpass" : res.provider === "paybeta" ? "Paybeta" : "Flutterwave"}:</span> {res.flutterwave.found ? `${res.flutterwave.status ?? "unknown"}${res.flutterwave.token_available ? " · token available" : ""}` : `no record${res.flutterwave.error ? ` (${res.flutterwave.error})` : ""}`}</p>
           {res.paystack.checked && <p><span className="text-haze">Paystack:</span> {res.paystack.error ?? `${res.paystack.status} · ${ngn(res.paystack.amountNgn)}`}</p>}
           <p className="font-semibold">{res.applied ? "Marked as delivered ✓" : res.advice}</p>
         </div>
@@ -418,7 +418,7 @@ function Health({ stats }: { stats: Stats }) {
     { label: "Cron secret", ok: h.cron_secret, detail: h.cron_secret ? "Set" : "Missing — daily token recovery, FX guard and reconcile email will be refused", fix: "Set CRON_SECRET in Vercel, redeploy" },
     { label: "Admin password", ok: true, detail: "You’re signed in with it" },
     { label: "Partner admin secret", ok: h.admin_secret, detail: h.admin_secret ? "Set" : "Missing — partner admin APIs are locked", fix: "Set ADMIN_SECRET (only needed for /admin/partners)" },
-    { label: `Bills provider: ${h.bills_provider === "vtpass" ? "VTpass" : "Flutterwave"}`, ok: h.bills === "live", detail: h.bills === "live" ? "Live" : h.bills === "test" ? (h.bills_provider === "vtpass" ? "SANDBOX — vends are not real" : "TEST key — vends are not real") : "Keys missing", fix: h.bills_provider === "vtpass" ? "VTPASS_API_KEY, VTPASS_PUBLIC_KEY, VTPASS_SECRET_KEY, VTPASS_ENV=live" : "FLW_SECRET_KEY" },
+    { label: `Bills provider: ${h.bills_provider === "vtpass" ? "VTpass" : h.bills_provider === "paybeta" ? "Paybeta" : "Flutterwave"}`, ok: h.bills === "live", detail: h.bills === "live" ? "Live" : h.bills === "test" ? (h.bills_provider === "flutterwave" ? "TEST key — vends are not real" : "SANDBOX — vends are not real") : "Keys missing", fix: h.bills_provider === "vtpass" ? "VTPASS_API_KEY, VTPASS_PUBLIC_KEY, VTPASS_SECRET_KEY, VTPASS_ENV=live" : h.bills_provider === "paybeta" ? "PAYBETA_API_KEY, PAYBETA_ENV=live (and the webhook URL in the Paybeta console)" : "FLW_SECRET_KEY" },
     ...(h.bills_provider === "vtpass" ? [{ label: "VTpass default phone", ok: h.vtpass_phone, detail: h.vtpass_phone ? "Set" : "Missing — electricity and TV vends need a phone number", fix: "VTPASS_DEFAULT_PHONE (an 11-digit Nigerian mobile you own)" }] : []),
     { label: "Paystack key", ok: h.paystack === "live", detail: h.paystack === "live" ? "Live" : h.paystack === "test" ? "TEST key — customers can’t pay real money yet" : "Missing — naira checkout returns 503", fix: "PAYSTACK_SECRET_KEY" },
     { label: "Email receipts (Resend)", ok: h.resend === "set", detail: h.resend === "set" ? "Set" : "Missing — no receipts or alerts", fix: "RESEND_API_KEY" },
@@ -460,7 +460,7 @@ function Health({ stats }: { stats: Stats }) {
 
       <p className={`${eyebrow} mt-8`}>Dashboards</p>
       <div className="flex flex-wrap gap-2 text-sm">
-        {[["Paystack", "https://dashboard.paystack.com"], ["Flutterwave", "https://app.flutterwave.com"], ["VTpass", "https://vtpass.com"], ["Stripe", "https://dashboard.stripe.com"], ["Vercel", "https://vercel.com/dashboard"], ["Supabase", "https://supabase.com/dashboard"]].map(([n, u]) => (
+        {[["Paystack", "https://dashboard.paystack.com"], ["Flutterwave", "https://app.flutterwave.com"], ["VTpass", "https://vtpass.com"], ["Paybeta", "https://console.paybeta.ng"], ["Stripe", "https://dashboard.stripe.com"], ["Vercel", "https://vercel.com/dashboard"], ["Supabase", "https://supabase.com/dashboard"]].map(([n, u]) => (
           <a key={n} href={u} target="_blank" rel="noopener noreferrer" className="px-3 py-1.5 rounded-lg border border-line hover:border-tungsten">{n} ↗</a>
         ))}
       </div>

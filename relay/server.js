@@ -6,6 +6,7 @@
 // whitelist that IP, and point Nolgic at it:
 //     VTPASS_BASE=https://relay.yourdomain.com/vtpass
 //     FLW_BASE=https://relay.yourdomain.com/flutterwave
+//     PAYBETA_BASE=https://relay.yourdomain.com/paybeta   (only if Paybeta asks for a whitelisted IP)
 //     RELAY_KEY=<the secret setup.sh printed>
 //
 // It is NOT an open proxy:
@@ -25,8 +26,10 @@ const DEFAULT_ROUTES = {
   "/vtpass/": "https://vtpass.com/api/",
   "/vtpass-sandbox/": "https://sandbox.vtpass.com/api/",
   "/flutterwave/": "https://api.flutterwave.com/v3/",
+  "/paybeta/": "https://api.paybeta.ng/",
+  "/paybeta-sandbox/": "https://api.sandbox.paybeta.ng/",
 };
-const FORWARD_HEADERS = ["authorization", "api-key", "public-key", "secret-key", "content-type", "accept"];
+const FORWARD_HEADERS = ["authorization", "api-key", "public-key", "secret-key", "p-api-key", "content-type", "accept"];
 const MAX_BODY = 100 * 1024;
 const MAX_RESPONSE = 2 * 1024 * 1024;
 const UPSTREAM_TIMEOUT_MS = 30000;

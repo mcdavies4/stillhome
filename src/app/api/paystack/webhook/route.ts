@@ -3,6 +3,7 @@ import { supabaseAdmin } from "@/lib/supabase";
 import { alertFounder } from "@/lib/alerts";
 import { paystackIsTestMode, paystackReferenceFor, refundTransaction, verifyWebhookSignature } from "@/lib/paystack";
 import { fulfilClaimedOrder, type ClaimedOrder } from "@/lib/fulfil-order";
+import { billsTestMode } from "@/lib/bills";
 import { sendNgnReceiptEmail } from "@/lib/receipt-ngn";
 
 // Paystack (₦) payment pipeline — the naira twin of /api/stripe/webhook.
@@ -67,14 +68,14 @@ export async function POST(req: Request) {
     return NextResponse.json({ received: true, note: "amount mismatch" });
   }
 
-  // Safety: a Paystack TEST payment is not real money. If Flutterwave is on a LIVE key it would
+  // Safety: a Paystack TEST payment is not real money. If the bills provider is LIVE it would
   // vend a real bill from your real wallet, so refuse unless you've explicitly opted in to a
   // supervised end-to-end test (PAYSTACK_TEST_ALLOW_LIVE_VEND=1 — remove it afterwards).
-  const flwIsLive = !(process.env.FLW_SECRET_KEY ?? "").startsWith("FLWSECK_TEST");
+  const flwIsLive = !billsTestMode(); // the ACTIVE bills provider (Flutterwave / VTpass / Paybeta), not Flutterwave only
   if (paystackIsTestMode() && flwIsLive && process.env.PAYSTACK_TEST_ALLOW_LIVE_VEND !== "1") {
     await alertFounder(
       "Paystack TEST payment — not vended",
-      `Order ${orderId}: Paystack is in test mode but Flutterwave is live, so nothing was vended. ` +
+      `Order ${orderId}: Paystack is in test mode but the bills provider is live, so nothing was vended. ` +
         `For a supervised end-to-end test set PAYSTACK_TEST_ALLOW_LIVE_VEND=1 (it will spend real ${existing.currency ?? "NGN"} float), then remove it.`
     );
     return NextResponse.json({ received: true, note: "test payment, live FLW — skipped" });
