@@ -5,7 +5,7 @@
 // flow through the already-tested Stripe webhook → vend → refund pipeline.
 
 import { stripe } from "@/lib/stripe";
-import { validateCustomer, FlwError } from "@/lib/flutterwave";
+import { validateCustomer, FlwError } from "@/lib/bills"; // the active bills provider (Flutterwave, VTpass or Paybeta)
 import { quoteGbp } from "@/lib/fx";
 import {
   db, upsertWaUser, getConversation, setConversation, resetConversation,

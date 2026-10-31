@@ -4,7 +4,7 @@
 // and mobile data bundles. Fixed-price items (TV packages, data bundles)
 // carry their catalogue amount; electricity is user-priced (amount = 0).
 
-import { getBillCategories } from "@/lib/flutterwave";
+import { getBillCategories } from "@/lib/bills"; // the active bills provider (Flutterwave, VTpass or Paybeta)
 
 export type Category = "electricity" | "tv" | "data" | "airtime";
 
