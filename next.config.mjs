@@ -10,6 +10,8 @@ const securityHeaders = [
 
 const nextConfig = {
   poweredByHeader: false,
+  // The site does not use next/image. Turning the optimizer off removes the /_next/image endpoint entirely.
+  images: { unoptimized: true },
   async headers() {
     return [
       { source: "/:path*", headers: securityHeaders },
