@@ -91,7 +91,7 @@ const FAQS_DIASPORA = [
 ];
 
 const FAQS_DOMESTIC = [
-  { q: "Which countries does Nolgic support?", a: "Nigeria today, paid in naira. Payments from the UK in pounds, and Ghana, are coming soon." },
+  { q: "Where does Nolgic work?", a: "Nigeria. Pay in naira for electricity, TV, airtime and data on any Nigerian meter, decoder or phone number." },
   { q: "How do I buy electricity (NEPA) with Nolgic?", a: "Pick your DisCo (EKEDC, IKEDC, EEDC and others), enter the meter number, and we show you the registered account name. Pay by card, bank transfer or USSD and the prepaid token is issued in seconds — we show it on screen, email it to you" + (WA_RECEIPTS ? ", and can send it to another phone." : ".") },
   { q: "Can I pay for DSTV or GOTV?", a: "Yes. Choose the package, enter the smartcard/IUC number, confirm the account holder's name we look up, and pay. The decoder is credited within seconds." },
   { q: "How do I buy MTN, Airtel or Glo airtime and data?", a: "Select the network, enter the phone number and the amount, and pay. The airtime or data lands on the phone instantly." },
@@ -587,11 +587,6 @@ export default function Home() {
             )}
           </div>
 
-          {DOMESTIC && ANY_PAY && (
-            <p className="text-center text-sm text-haze mt-4">
-              Paying from the UK or Ghana? <a href="#countries" className="text-tungsten font-medium underline underline-offset-2">Coming soon</a>
-            </p>
-          )}
         </div>
       </section>
 
@@ -651,6 +646,7 @@ export default function Home() {
       </section>
 
       {/* ───────── COUNTRIES ───────── */}
+      {!DOMESTIC && (
       <section id="countries" className="max-w-6xl mx-auto px-5 py-16 sm:py-24 scroll-mt-20">
         <h2 className={`${h2} max-w-2xl`}>{DOMESTIC ? "One tool for paying bills across Africa. Starting in Nigeria." : "One tool for paying bills across Africa. Starting with two countries."}</h2>
         <div className="mt-10 sm:mt-12 border-t border-line">
@@ -666,14 +662,10 @@ export default function Home() {
           ))}
         </div>
       </section>
+      )}
 
       {/* ───────── STORY / COMING SOON ───────── */}
-      {DOMESTIC ? (
-        <section className="max-w-2xl mx-auto px-5 pb-6">
-          <h2 className={`${h2} mb-5`}>Paying from the UK or Ghana?</h2>
-          <p className="text-haze text-lg leading-relaxed">Payments in pounds for family in Nigeria, and bills in Ghana, are on the way. Tell us you&rsquo;re waiting and we&rsquo;ll let you know the day they open: <a href="mailto:nolgichq@gmail.com?subject=Tell%20me%20when%20UK%20payments%20open" className="text-tungsten underline underline-offset-2">nolgichq@gmail.com</a>.</p>
-        </section>
-      ) : (
+      {DOMESTIC ? null : (
       <section className="max-w-2xl mx-auto px-5 pb-6">
         <h2 className={`${h2} mb-5`}>Every Sunday call ends the same way.</h2>
         <div className="text-haze text-lg leading-relaxed space-y-4">
@@ -728,7 +720,7 @@ export default function Home() {
             </ul>
           </div>
         </div>
-        <div className="max-w-6xl mx-auto px-5 pb-10 text-xs text-haze">Designed in London · © {new Date().getFullYear()} Nolgic</div>
+        <div className="max-w-6xl mx-auto px-5 pb-10 text-xs text-haze">© {new Date().getFullYear()} Nolgic · The 36th Solutions Ltd, Abuja, Nigeria</div>
       </footer>
     </main>
   );

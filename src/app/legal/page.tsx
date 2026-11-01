@@ -3,13 +3,18 @@ export const metadata = { title: "Terms, Refunds & Privacy — Nolgic" };
 const h2 = "font-display font-bold text-xl mb-3";
 const p = "text-haze mb-8";
 
+// The operating company. Add its CAC registration number in Vercel as NEXT_PUBLIC_COMPANY_RC (for example "RC 1234567") and it appears here.
+const COMPANY = "The 36th Solutions Ltd";
+const COMPANY_RC = (process.env.NEXT_PUBLIC_COMPANY_RC ?? "").trim();
+const COMPANY_LINE = `${COMPANY}, a company registered in Nigeria${COMPANY_RC ? ` (${COMPANY_RC})` : ""}`;
+
 export default function Legal() {
   return (
     <main id="content" className="max-w-xl mx-auto px-5 py-16 leading-relaxed">
       <h1 className="font-display font-extrabold text-3xl mb-2">Terms, Refunds &amp; Privacy</h1>
       <p className="text-haze text-sm mb-10">
-        These terms cover the Nolgic website (nolgic.com) and the Nolgic mobile app. Nolgic is operated from the
-        United Kingdom. Last updated October 2026.
+        These terms cover the Nolgic website (nolgic.com) and the Nolgic mobile app. Nolgic is built for Nigeria and is
+        operated by {COMPANY_LINE}. Last updated November 2026.
       </p>
 
       <h2 className={h2}>What Nolgic is</h2>
@@ -48,9 +53,8 @@ export default function Legal() {
 
       <h2 className={h2}>Payments</h2>
       <p className={p}>
-        Payments in naira are taken by Paystack or Flutterwave, by card, bank transfer or USSD. Where payments in pounds are
-        available, they are taken by Stripe. Your card and bank details are entered on the payment processor&rsquo;s
-        own page and never reach Nolgic&rsquo;s servers.
+        All payments are in naira, taken by Paystack or Flutterwave, by card, bank transfer or USSD. Your card and bank
+        details are entered on the payment processor&rsquo;s own page and never reach Nolgic&rsquo;s servers.
       </p>
 
       <h2 className={h2}>Privacy: what we collect and why</h2>
@@ -58,7 +62,6 @@ export default function Legal() {
       <ul className="text-haze mb-8 list-disc pl-5 space-y-1.5">
         <li>Your email address, to send your receipt and let you look up an order.</li>
         <li>The account details you enter (meter, smartcard or phone number), to look up the account holder and deliver your purchase.</li>
-        <li>Optionally, a mobile number for the person receiving the purchase, so we can send them the receipt and token.</li>
         <li>Order records: what you bought, the amount, the status and the token, so you can see your order and so we can handle refunds and disputes.</li>
       </ul>
       <p className={p}>
@@ -69,8 +72,8 @@ export default function Legal() {
       <h2 className={h2}>Who we share data with</h2>
       <p className="text-haze mb-3">Only the services that help us deliver your purchase:</p>
       <ul className="text-haze mb-8 list-disc pl-5 space-y-1.5">
-        <li>Paystack or Flutterwave (and Stripe, for payments in pounds) to take payment and make refunds.</li>
-        <li>Our bill-payment provider (VTpass, Paybeta or Flutterwave) to look up the account and deliver the token or top-up. They receive the account number, amount and the recipient&rsquo;s phone number.</li>
+        <li>Paystack or Flutterwave, to take payment and make refunds.</li>
+        <li>Our bill-payment provider (currently Paybeta), to look up the account and deliver the token or top-up. They receive the account number, the amount and, for airtime and data, the phone number.</li>
         <li>Our hosting, database and email providers, which store order records and send receipts on our behalf.</li>
       </ul>
 
@@ -89,6 +92,12 @@ export default function Legal() {
         law allows, delete it.
       </p>
 
+      <h2 className={h2}>Data protection and governing law</h2>
+      <p className={p}>
+        We handle personal data in line with the Nigeria Data Protection Act 2023. These terms are governed by the
+        laws of the Federal Republic of Nigeria.
+      </p>
+
       <h2 className={h2}>Security</h2>
       <p className={p}>
         All traffic between you and Nolgic is encrypted (HTTPS). Access to order data is limited to what is needed to
@@ -97,8 +106,10 @@ export default function Legal() {
 
       <h2 className={h2}>Contact</h2>
       <p className={p}>
-        Support and privacy requests: nolgichq@gmail.com. Nolgic is operated from the United Kingdom; the
-        operator&rsquo;s company details are available on request.
+        Support and privacy requests: nolgichq@gmail.com.
+      </p>
+      <p className={p}>
+        Operator: {COMPANY_LINE}, Abuja, Nigeria.
       </p>
 
       <a href="/" className="text-tungsten underline underline-offset-4">&larr; Back to Nolgic</a>
