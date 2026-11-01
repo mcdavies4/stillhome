@@ -78,7 +78,8 @@ export async function validateCustomer(
 
 // ───────────────────────── purchase rules ─────────────────────────
 
-export type PurchaseCheck = { ok: true } | { ok: false; error: string };
+/** `item` is the provider's own catalogue entry for the product (not set for Flutterwave). */
+export type PurchaseCheck = { ok: true; item?: { biller_code: string; item_code: string; biller_name: string; name: string; short_name?: string; is_airtime?: boolean } } | { ok: false; error: string };
 
 /**
  * Re-checks, on the server and BEFORE any payment is taken, that this product exists, that fixed-price
@@ -98,12 +99,12 @@ export async function checkPurchase(billerCode: string, itemCode: string, amount
     if (amount !== Math.round(item.amount)) {
       return { ok: false, error: "That plan's price has changed — please reload the page and try again." };
     }
-    return { ok: true };
+    return { ok: true, item };
   }
   const fmt = (n: number) => `₦${n.toLocaleString("en-NG")}`;
   if (min && amount < min) return { ok: false, error: `The minimum for this provider is ${fmt(min)}.` };
   if (max && amount > max) return { ok: false, error: `The maximum for this provider is ${fmt(max)}.` };
-  return { ok: true };
+  return { ok: true, item };
 }
 
 // ───────────────────────── vend ─────────────────────────

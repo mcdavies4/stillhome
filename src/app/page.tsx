@@ -3,7 +3,7 @@
 import Logo from "@/components/Logo";
 import { useEffect, useMemo, useState } from "react";
 import { allCountries, getCountry, type CountryCode } from "@/lib/countries";
-import { ngnFeeSettings, ngnServiceFee } from "@/lib/ngn-fee";
+import { ngnFeeRange, ngnServiceFee, ngnMaxOrder, feeKindOf } from "@/lib/ngn-fee";
 
 type BillerItem = {
   biller_code: string;
@@ -28,7 +28,7 @@ const UK_ENABLED = process.env.NEXT_PUBLIC_UK_PAY_ENABLED === "1";
 const GH_ENABLED = process.env.NEXT_PUBLIC_GH_ENABLED === "1";
 const ANY_PAY = NGN_ENABLED || UK_ENABLED;
 const DOMESTIC = !UK_ENABLED;
-const FEE_SET = ngnFeeSettings();
+const FEE_RANGE = ngnFeeRange();
 // WhatsApp receipts to the recipient stay hidden until a working WhatsApp sender is connected:
 // set NEXT_PUBLIC_WHATSAPP_RECEIPTS=1 in Vercel to show the "Their mobile number" box.
 const WA_RECEIPTS = process.env.NEXT_PUBLIC_WHATSAPP_RECEIPTS === "1";
@@ -97,7 +97,7 @@ const FAQS_DOMESTIC = [
   { q: "How do I buy MTN, Airtel or Glo airtime and data?", a: "Select the network, enter the phone number and the amount, and pay. The airtime or data lands on the phone instantly." },
   { q: "Is Nolgic a money transfer service?", a: "No — you're buying a prepaid product (a token, subscription or top-up) at a price shown upfront. We deliver the product directly; we never move money to a person." },
   { q: "What happens if delivery fails?", a: "You're refunded automatically and in full. You can never pay for something that wasn't delivered." },
-  { q: "What does it cost?", a: `The price shown at checkout is everything — the amount you're buying plus a small service fee (${FEE_SET.pct}% of the amount, minimum ₦${FEE_SET.min.toLocaleString()}, maximum ₦${FEE_SET.max.toLocaleString()}).` },
+  { q: "What does it cost?", a: `The price shown at checkout is everything — the amount you're buying plus a small service fee, shown before you pay. It is a small percentage of the amount: from ₦${FEE_RANGE.from.toLocaleString()} on airtime up to ₦${FEE_RANGE.to.toLocaleString()} on a large electricity token.` },
 ];
 
 const FAQS = DOMESTIC ? FAQS_DOMESTIC : FAQS_DIASPORA;
@@ -204,7 +204,7 @@ export default function Home() {
   // FLW returns some countries' fixed prices in minor units (GH: pesewas).
   const fixedLocal = item && item.amount > 0 ? item.amount / cfg.fixedAmountDivisor : 0;
   const billAmount = fixedAmount ? fixedLocal : Number(amountLocal || 0);
-  const ngnFee = billAmount > 0 ? ngnServiceFee(billAmount) : 0;
+  const ngnFee = billAmount > 0 ? ngnServiceFee(billAmount, feeKindOf(item)) : 0;
   const ngnTotal = billAmount + ngnFee;
   const isNoValidate = (i: BillerItem | null) =>
     !!i && (i.is_airtime || /VTU|AIRTIME|DATA|BROADBAND|SURFLINE|POSTPAID PAYMENT/i.test(i.biller_name + " " + i.name));
@@ -212,7 +212,8 @@ export default function Home() {
   // Naira checkout limits (the server enforces the same ones) — say so before the last step.
   const minNgn = cfg.minDomestic ?? cfg.minLocal;
   const belowMin = inNgn && billAmount > 0 && billAmount < minNgn;
-  const aboveMax = inNgn && billAmount > cfg.maxLocal;
+  const ngnMax = ngnMaxOrder(cfg.maxLocal);
+  const aboveMax = inNgn && billAmount > ngnMax;
 
   const stage = !item ? 0 : !validated ? 1 : 2;
 
@@ -516,7 +517,7 @@ export default function Home() {
                       <p className="text-sm text-bad mt-2.5" role="status">Naira payments start at {fmtLocal(minNgn)}. Choose a larger amount or plan.</p>
                     )}
                     {aboveMax && (
-                      <p className="text-sm text-bad mt-2.5" role="status">The most you can pay in one go is {fmtLocal(cfg.maxLocal)}.</p>
+                      <p className="text-sm text-bad mt-2.5" role="status">The most you can pay in one go is {fmtLocal(ngnMax)}.</p>
                     )}
 
                     <button onClick={validate} disabled={busy !== null || !identifier}

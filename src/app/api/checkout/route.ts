@@ -10,7 +10,7 @@ import { alertFounder } from "@/lib/alerts";
 import { initializeTransaction, paystackConfigured } from "@/lib/paystack";
 import { ngnPayProvider, flwPayConfigured, initializePayment as flwInitialize } from "@/lib/flwpay";
 import { cap, normaliseEmail, normalisePhone, toInternationalPhone } from "@/lib/security";
-import { ngnServiceFee } from "@/lib/ngn-fee";
+import { ngnServiceFee, ngnMaxOrder, feeKindOf } from "@/lib/ngn-fee";
 
 // Creates the order row + a payment session:
 //   - default: Stripe Checkout in GBP (diaspora, any supported country)
@@ -106,13 +106,21 @@ export async function POST(req: Request) {
         return NextResponse.json({ error: "Naira payments aren't available yet — please check back soon." }, { status: 503 });
       }
       const amountNgn = Math.round(Number(amountLocal));
-      if (!Number.isFinite(amountNgn) || amountNgn < (country.minDomestic ?? country.minLocal) || amountNgn > country.maxLocal) {
+      const maxNgn = ngnMaxOrder(country.maxLocal);
+      if (!Number.isFinite(amountNgn) || amountNgn < (country.minDomestic ?? country.minLocal) || amountNgn > maxNgn) {
         return NextResponse.json(
-          { error: `Amount must be between ${money(country.minDomestic ?? country.minLocal, "NG")} and ${money(country.maxLocal, "NG")}` },
+          { error: `Amount must be between ${money(country.minDomestic ?? country.minLocal, "NG")} and ${money(maxNgn, "NG")}` },
           { status: 400 }
         );
       }
-      const feeNgn = ngnServiceFee(amountNgn);
+      // The fee depends on the kind of product. Take that from the provider's own catalogue where we can
+      // (never from a name typed in the browser); Flutterwave has no such entry, so fall back to the request.
+      const feeKind = feeKindOf(
+        purchase.ok && purchase.item
+          ? purchase.item
+          : { biller_code: b.billerCode, item_code: b.itemCode, biller_name: b.billerName }
+      );
+      const feeNgn = ngnServiceFee(amountNgn, feeKind);
       const totalNgn = amountNgn + feeNgn;
 
       // Velocity check works in pence; approximate with the NGN rate (reference only).
