@@ -31,14 +31,14 @@ export const metadata: Metadata = {
     title: "Nolgic — light, TV, airtime and data, paid in seconds.",
     description:
       "Pay light, TV, airtime and data in Nigeria. Name-check before you pay, delivered in seconds.",
-    images: [{ url: "/og.png", width: 1200, height: 630, alt: "Nolgic — pay bills in Nigeria" }],
+    images: [{ url: "/og-v2.png", width: 1200, height: 630, alt: "Nolgic — pay bills in Nigeria" }],
   },
   twitter: {
     card: "summary_large_image",
     title: "Nolgic — pay light, DSTV, airtime & data in Nigeria",
     description:
       "Name-check before you pay. Delivered in seconds. Automatic refund if delivery fails.",
-    images: ["/og.png"],
+    images: ["/og-v2.png"],
   },
   icons: {
     icon: [
