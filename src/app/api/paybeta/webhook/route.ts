@@ -28,14 +28,18 @@ export async function POST(req: Request) {
   if (!paybetaConfigured()) return NextResponse.json({ error: "Not configured" }, { status: 503 });
 
   const raw = await req.text();
+  // A test ping (the Paybeta console checks the URL when you press Save) has no transaction in it.
+  // Nothing is read, stored or acted on for it, so acknowledge with 200. Anything that does carry a
+  // transaction reference must have a valid signature, otherwise 401.
   let payload: unknown;
   try {
     payload = JSON.parse(raw);
   } catch {
-    return NextResponse.json({ error: "Bad JSON" }, { status: 400 });
+    return NextResponse.json({ received: true, note: "ignored" });
   }
   const ev = pbParseWebhook(payload);
-  if (!ev || !pbVerifySignature(ev.reference, req.headers.get("signature"))) {
+  if (!ev) return NextResponse.json({ received: true, note: "ignored" });
+  if (!pbVerifySignature(ev.reference, req.headers.get("signature"))) {
     return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
   }
   // Not one of ours (e.g. a vend made from the Paybeta console): acknowledge and ignore.
