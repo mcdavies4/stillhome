@@ -11,6 +11,7 @@ import { initializeTransaction, paystackConfigured } from "@/lib/paystack";
 import { ngnPayProvider, flwPayConfigured, initializePayment as flwInitialize } from "@/lib/flwpay";
 import { cap, normaliseEmail, normalisePhone, toInternationalPhone } from "@/lib/security";
 import { ngnServiceFee, ngnMaxOrder, feeKindOf } from "@/lib/ngn-fee";
+import { orderIsTest } from "@/lib/test-mode";
 
 // Creates the order row + a payment session:
 //   - default: Stripe Checkout in GBP (diaspora, any supported country)
@@ -160,6 +161,7 @@ export async function POST(req: Request) {
           service_fee_pence: 0,
           amount_gbp_pence: 0, // not a GBP order
           status: "pending_payment",
+          ...(orderIsTest(rail) ? { is_test: true } : {}), // only written in test mode, so live orders never touch the column
         })
         .select("id")
         .single();
@@ -225,6 +227,7 @@ export async function POST(req: Request) {
         service_fee_pence: quote.serviceFeePence,
         amount_gbp_pence: quote.totalPence,
         status: "pending_payment",
+        ...(orderIsTest() ? { is_test: true } : {}),
       })
       .select("id")
       .single();

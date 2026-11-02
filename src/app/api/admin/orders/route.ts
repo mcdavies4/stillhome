@@ -22,27 +22,33 @@ export async function GET(req: Request) {
   // commas / parentheses / dots can't inject extra filter clauses.
   const q = (url.searchParams.get("q") ?? "").replace(/[^A-Za-z0-9@._+\- ]/g, "").trim().slice(0, 60);
 
-  let query = supabaseAdmin()
-    .from("orders")
-    .select(
-      "id,email,status,biller_name,identifier,identifier_label,customer_name,amount_ngn,amount_gbp_pence,service_fee_local,payment_provider,currency,country,error,flw_reference,flw_token,paystack_reference,source,created_at"
-    )
-    .order("created_at", { ascending: false })
-    .limit(limit + 1);
-
-  if (STATUSES.includes(status)) query = query.eq("status", status);
-  if (before && !Number.isNaN(Date.parse(before))) query = query.lt("created_at", before);
-  // Order number from the order page or the email (first 6-8 characters of the order id, "NLG-" prefix allowed).
+  // Test orders (sandbox / test card) are hidden unless ?test=1. Without migration 0017 there is no is_test column,
+  // so the first attempt fails and we fall back to the plain query.
+  const includeTest = url.searchParams.get("test") === "1";
+  const BASE_COLS =
+    "id,email,status,biller_name,identifier,identifier_label,customer_name,amount_ngn,amount_gbp_pence,service_fee_local,payment_provider,currency,country,error,flw_reference,flw_token,paystack_reference,source,created_at";
   const orderNo = q.replace(/^nlg-/i, "").toLowerCase();
-  if (/^[0-9a-f]{6,8}$/.test(orderNo)) {
-    const fill = (c: string) => { const h = orderNo.padEnd(32, c); return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`; };
-    query = query.gte("id", fill("0")).lte("id", fill("f"));
-  } else if (q) {
-    const like = `%${q.replace(/ /g, "%")}%`;
-    query = query.or(`email.ilike.${like},identifier.ilike.${like},biller_name.ilike.${like},customer_name.ilike.${like}`);
-  }
-
-  const { data, error } = await query;
+  const run = (withTest: boolean) => {
+    let query = supabaseAdmin()
+      .from("orders")
+      .select(withTest ? `${BASE_COLS},is_test` : BASE_COLS)
+      .order("created_at", { ascending: false })
+      .limit(limit + 1);
+    if (withTest && !includeTest) query = query.eq("is_test", false);
+    if (STATUSES.includes(status)) query = query.eq("status", status);
+    if (before && !Number.isNaN(Date.parse(before))) query = query.lt("created_at", before);
+    // Order number from the order page or the email (first 6-8 characters of the order id, "NLG-" prefix allowed).
+    if (/^[0-9a-f]{6,8}$/.test(orderNo)) {
+      const fill = (c: string) => { const h = orderNo.padEnd(32, c); return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`; };
+      query = query.gte("id", fill("0")).lte("id", fill("f"));
+    } else if (q) {
+      const like = `%${q.replace(/ /g, "%")}%`;
+      query = query.or(`email.ilike.${like},identifier.ilike.${like},biller_name.ilike.${like},customer_name.ilike.${like}`);
+    }
+    return query;
+  };
+  let { data, error }: { data: any[] | null; error: any } = await run(true);
+  if (error && /is_test/.test(error.message ?? "")) ({ data, error } = await run(false));
   if (error) {
     console.error("[admin/orders]", error);
     return NextResponse.json({ error: "Failed to load orders" }, { status: 500 });

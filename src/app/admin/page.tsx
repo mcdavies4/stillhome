@@ -36,7 +36,7 @@ type Stats = {
 type OrderRow = Brief & {
   identifier_label: string; customer_name: string | null; amount_gbp_pence: number | null;
   currency: string | null; country: string | null; flw_reference: string | null;
-  paystack_reference: string | null; source: string | null; has_token: boolean;
+  paystack_reference: string | null; source: string | null; has_token: boolean; is_test?: boolean;
 };
 type CheckResult = {
   advice: string; applied: boolean; reference: string; provider?: string;
@@ -324,6 +324,7 @@ function AttentionCard({ o, api, reload, compact = false }: { o: Brief; api: Api
 function Orders({ api, reload }: { api: Api; reload: () => void }) {
   const [status, setStatus] = useState("");
   const [q, setQ] = useState("");
+  const [showTest, setShowTest] = useState(false);
   const [rows, setRows] = useState<OrderRow[]>([]);
   const [next, setNext] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -337,12 +338,13 @@ function Orders({ api, reload }: { api: Api; reload: () => void }) {
       if (status) p.set("status", status);
       if (q.trim()) p.set("q", q.trim());
       if (before) p.set("before", before);
+      if (showTest) p.set("test", "1");
       const r = await api(`/api/admin/orders?${p}`);
       const d = await r.json();
       setRows((prev) => (replace ? d.orders : [...prev, ...d.orders]));
       setNext(d.next_before ?? null);
     } catch { /* handled */ } finally { setBusy(false); }
-  }, [api, status, q]);
+  }, [api, status, q, showTest]);
 
   useEffect(() => {
     if (debounce.current) clearTimeout(debounce.current);
@@ -357,6 +359,10 @@ function Orders({ api, reload }: { api: Api; reload: () => void }) {
         <select value={status} onChange={(e) => setStatus(e.target.value)} className="!w-auto" aria-label="Filter by status">
           {STATUSES.map((s) => <option key={s} value={s}>{s || "All statuses"}</option>)}
         </select>
+        <label className="flex items-center gap-2 text-sm text-haze">
+          <input type="checkbox" checked={showTest} onChange={(e) => setShowTest(e.target.checked)} className="!w-auto" />
+          Show test orders
+        </label>
       </div>
 
       <div className="bg-panel border border-line rounded-2xl overflow-hidden">
@@ -366,7 +372,7 @@ function Orders({ api, reload }: { api: Api; reload: () => void }) {
             <button onClick={() => setOpen(open === o.id ? null : o.id)} className="w-full text-left p-3 sm:p-4 hover:bg-night/40" aria-expanded={open === o.id}>
               <div className="flex items-center justify-between gap-3">
                 <div className="min-w-0">
-                  <p className="text-sm truncate">{o.biller_name}</p>
+                  <p className="text-sm truncate">{o.biller_name}{o.is_test && <span className="ml-2 text-[10px] font-mono tracking-widest text-tungsten border border-line rounded px-1.5 py-0.5 align-middle">TEST</span>}</p>
                   <p className="text-haze text-xs font-mono truncate">{when(o.created_at)} · {o.email ?? "—"}</p>
                 </div>
                 <div className="text-right shrink-0">

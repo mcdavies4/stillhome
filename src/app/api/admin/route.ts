@@ -31,16 +31,23 @@ const COLS =
   "id,email,status,biller_name,identifier,amount_ngn,amount_gbp_pence,service_fee_local,payment_provider,currency,created_at,error";
 
 // Supabase returns at most 1000 rows per request, so page through the window.
-async function fetchOrders(sinceIso: string): Promise<Row[]> {
+// Test orders (sandbox / test card) are left out unless asked for, so they never count as real money.
+// If migration 0017 has not been run yet there is no is_test column; then everything is counted, as before.
+async function fetchOrders(sinceIso: string, includeTest: boolean): Promise<Row[]> {
   const db = supabaseAdmin();
   const out: Row[] = [];
+  let useFilter = !includeTest;
   for (let page = 0; page < 8; page++) {
-    const { data, error } = await db
-      .from("orders")
-      .select(COLS)
-      .gte("created_at", sinceIso)
-      .order("created_at", { ascending: false })
-      .range(page * 1000, page * 1000 + 999);
+    const run = () => {
+      let q = db.from("orders").select(COLS).gte("created_at", sinceIso);
+      if (useFilter) q = q.eq("is_test", false);
+      return q.order("created_at", { ascending: false }).range(page * 1000, page * 1000 + 999);
+    };
+    let { data, error } = await run();
+    if (error && useFilter && /is_test/.test(error.message ?? "")) {
+      useFilter = false;
+      ({ data, error } = await run());
+    }
     if (error) throw error;
     out.push(...((data ?? []) as Row[]));
     if (!data || data.length < 1000) break;
@@ -62,7 +69,8 @@ export async function GET(req: Request) {
   try {
     const now = Date.now();
     const since = new Date(now - 35 * 86400_000).toISOString();
-    const all = await fetchOrders(since);
+    const includeTest = new URL(req.url).searchParams.get("test") === "1" || billsTestMode();
+    const all = await fetchOrders(since, includeTest);
 
     // Naira orders are paid through Paystack or Flutterwave (the fee estimate below is Paystack's; close enough for Flutterwave).
     const isNgnPaystack = (o: Row) => o.payment_provider === "paystack" || o.payment_provider === "flutterwave";

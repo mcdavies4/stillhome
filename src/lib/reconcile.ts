@@ -59,13 +59,18 @@ export async function runReconcile(dateStr = yesterdayUTC(), deep = true): Promi
   const start = new Date(`${dateStr}T00:00:00.000Z`);
   const end = new Date(`${dateStr}T23:59:59.999Z`);
 
-  const [{ data: orders }, charges] = await Promise.all([
-    db.from("orders")
+  // Test orders (sandbox / test card) never count in the real numbers. Without migration 0017 there is no
+  // is_test column, so the first attempt fails and we read everything, as before.
+  const readOrders = async (leaveOutTests: boolean) => {
+    let q = db.from("orders")
       .select("id, status, source, biller_name, identifier, amount_ngn, amount_gbp_pence, flw_reference, currency, created_at, payment_provider, service_fee_local")
       .gte("created_at", start.toISOString())
-      .lte("created_at", end.toISOString()),
-    stripeCharges(start, end),
-  ]);
+      .lte("created_at", end.toISOString());
+    if (leaveOutTests) q = q.eq("is_test", false);
+    return q;
+  };
+  const [first, charges] = await Promise.all([readOrders(true), stripeCharges(start, end)]);
+  const { data: orders } = first.error && /is_test/.test(first.error.message ?? "") ? await readOrders(false) : first;
 
   const allRows = orders ?? [];
   // Paystack (₦) orders have no Stripe charge — keep them out of the Stripe three-way
