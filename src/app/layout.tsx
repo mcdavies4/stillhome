@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 import ThemeToggle from "@/components/ThemeToggle";
 import Logo from "@/components/Logo";
+import RecentToast from "@/components/RecentToast";
 
 const BASE = process.env.NEXT_PUBLIC_APP_URL ?? "https://stillhome-ten.vercel.app";
 
@@ -31,14 +32,14 @@ export const metadata: Metadata = {
     title: "Nolgic — light, TV, airtime and data, paid in seconds.",
     description:
       "Pay light, TV, airtime and data in Nigeria. Name-check before you pay, delivered in seconds.",
-    images: [{ url: "/og.png", width: 1200, height: 630, alt: "Nolgic — pay bills in Nigeria" }],
+    images: [{ url: "/og-v2.png", width: 1200, height: 630, alt: "Nolgic — pay bills in Nigeria" }],
   },
   twitter: {
     card: "summary_large_image",
     title: "Nolgic — pay light, DSTV, airtime & data in Nigeria",
     description:
       "Name-check before you pay. Delivered in seconds. Automatic refund if delivery fails.",
-    images: ["/og.png"],
+    images: ["/og-v2.png"],
   },
   icons: {
     icon: [
@@ -104,6 +105,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           </div>
         </nav>
         {children}
+        <RecentToast />
       </body>
     </html>
   );
