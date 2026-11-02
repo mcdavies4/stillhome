@@ -3,6 +3,7 @@ import { supabaseAdmin } from "@/lib/supabase";
 import { tryRecoverToken, expectsToken } from "@/lib/fulfilment";
 import { sendReconcileEmail } from "@/lib/reconcile";
 import { cronAuthorized } from "@/lib/security";
+import { sweepBulk } from "@/lib/bulk";
 
 // Daily backstop: recover tokens for fulfilled orders still missing one
 // (last 72h). Vercel Cron calls this with Authorization: Bearer CRON_SECRET.
@@ -14,6 +15,9 @@ export async function GET(req: Request) {
   if (!cronAuthorized(req)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+
+  // Bulk airtime safety net: nudge any batch that isn't finished (missed webhook, customer closed the page).
+  try { await sweepBulk(); } catch (e) { console.error("[cron] bulk sweep failed", e); }
 
   const db = supabaseAdmin();
   const since = new Date(Date.now() - 72 * 3600 * 1000).toISOString();

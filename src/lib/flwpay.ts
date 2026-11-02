@@ -88,8 +88,10 @@ export async function initializePayment(p: {
   orderId: string;
   redirectUrl: string;
   description: string;
+  /** Override the tx_ref (bulk orders use their own NLGFB- prefix). */
+  txRef?: string;
 }): Promise<{ link: string; txRef: string }> {
-  const txRef = flwPayReferenceFor(p.orderId);
+  const txRef = p.txRef ?? flwPayReferenceFor(p.orderId);
   const body = await fw("/payments", {
     method: "POST",
     body: JSON.stringify({
@@ -141,11 +143,19 @@ export async function verifyByReference(txRef: string): Promise<FlwTx> {
   return norm(b?.data);
 }
 
-/** Full refund of a transaction. Throws if Flutterwave rejects it outright. */
-export async function refundTransaction(id: string | number): Promise<{ status: string }> {
+/**
+ * Refund of a transaction. With no `amountNgn` it is a full refund; with one it is a PARTIAL refund of that many
+ * naira (used by bulk orders when only some numbers failed). Throws if Flutterwave rejects it outright.
+ */
+export async function refundTransaction(id: string | number, amountNgn?: number): Promise<{ status: string }> {
   const safe = String(id).replace(/[^0-9]/g, "");
   if (!safe) throw new FlwPayError("Bad transaction id");
-  const b = await fw(`/transactions/${safe}/refund`, { method: "POST", body: JSON.stringify({}) });
+  let body: Record<string, unknown> = {};
+  if (amountNgn !== undefined) {
+    if (!Number.isFinite(amountNgn) || amountNgn <= 0) throw new FlwPayError("Bad refund amount");
+    body = { amount: Math.round(amountNgn * 100) / 100 };
+  }
+  const b = await fw(`/transactions/${safe}/refund`, { method: "POST", body: JSON.stringify(body) });
   return { status: String(b?.data?.status ?? b?.status ?? "unknown") };
 }
 

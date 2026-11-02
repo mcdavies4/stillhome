@@ -58,7 +58,7 @@ const TRY_AGAIN = "This service is temporarily unavailable — please try again 
 
 type Json = Record<string, any>;
 
-interface PbResult {
+export interface PbResult {
   http: number;
   ok: boolean; // HTTP 2xx AND a JSON body AND envelope status "successful"
   status: string; // envelope status, lower-cased ("" if none)
@@ -68,7 +68,7 @@ interface PbResult {
   unreadable: boolean; // no JSON body came back
 }
 
-async function pb(path: string, opts: { method?: "GET" | "POST"; body?: Record<string, unknown>; timeoutMs?: number } = {}): Promise<PbResult> {
+export async function pb(path: string, opts: { method?: "GET" | "POST"; body?: Record<string, unknown>; timeoutMs?: number } = {}): Promise<PbResult> {
   const method = opts.method ?? "GET";
   const headers: Record<string, string> = {
     "P-API-KEY": apiKey(),

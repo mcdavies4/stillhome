@@ -5,6 +5,7 @@
 import { NextRequest } from "next/server";
 import { sendReconcileEmail } from "@/lib/reconcile";
 import { cronAuthorized } from "@/lib/security";
+import { sweepBulk } from "@/lib/bulk";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -14,6 +15,8 @@ export async function GET(req: NextRequest) {
   if (!cronAuthorized(req)) {
     return new Response("Unauthorized", { status: 401 });
   }
+  // Safety net: nudge any bulk airtime batch that isn't finished (a webhook missed, a customer who closed the page).
+  try { await sweepBulk(); } catch (e) { console.error("[reconcile] bulk sweep failed", e); }
   const r = await sendReconcileEmail();
   return Response.json({ sent: true, ...r });
 }
