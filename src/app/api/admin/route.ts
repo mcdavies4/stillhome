@@ -4,7 +4,8 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { adminGate } from "@/lib/admin-auth";
-import { getBalance, activeProvider, billsConfigured, billsTestMode } from "@/lib/bills";
+import { getBalance, activeProvider, billsConfigured, billsTestMode, providerLabel } from "@/lib/bills";
+import { ngnFeeSettings } from "@/lib/ngn-fee";
 import { paystackIsTestMode } from "@/lib/paystack";
 import { ngnPayProvider } from "@/lib/flwpay";
 
@@ -124,13 +125,14 @@ export async function GET(req: Request) {
       .sort((a, b) => b.ngn - a.ngn)
       .slice(0, 8);
 
-    // Wallet balances (live from Flutterwave)
+    // Wallet balance of the ACTIVE bills provider (Paybeta, VTpass or Flutterwave)
+    const walletProvider = providerLabel();
     const wallet = async (cur: string, low: number) => {
       try {
         const balance = await getBalance(cur);
-        return { currency: cur, balance, low, ok: balance >= low, error: null as string | null };
+        return { provider: walletProvider, currency: cur, balance, low, ok: balance >= low, error: null as string | null };
       } catch (e: any) {
-        return { currency: cur, balance: null as number | null, low, ok: false, error: String(e?.message ?? e).slice(0, 120) };
+        return { provider: walletProvider, currency: cur, balance: null as number | null, low, ok: false, error: String(e?.message ?? e).slice(0, 120) };
       }
     };
     const wallets = [await wallet("NGN", Number(process.env.LOW_BALANCE_NGN ?? "100000"))];
@@ -158,11 +160,7 @@ export async function GET(req: Request) {
       ngn_pay_enabled: process.env.NEXT_PUBLIC_NGN_PAY_ENABLED === "1",
       uk_pay_enabled: process.env.NEXT_PUBLIC_UK_PAY_ENABLED === "1",
       gh_enabled: process.env.NEXT_PUBLIC_GH_ENABLED === "1",
-      fee: {
-        pct: Number(process.env.NEXT_PUBLIC_NG_FEE_PCT ?? "2"),
-        min: Number(process.env.NEXT_PUBLIC_NG_FEE_MIN ?? process.env.NEXT_PUBLIC_NG_LOCAL_FEE_NGN ?? "100"),
-        max: Number(process.env.NEXT_PUBLIC_NG_FEE_MAX ?? "500"),
-      },
+      fee: ngnFeeSettings(), // electricity settings; airtime and TV have their own
     };
 
     return NextResponse.json({

@@ -23,7 +23,7 @@ type Stats = {
   topBillers: { name: string; orders: number; ngn: number }[];
   attention: Brief[];
   recentFailures: Brief[];
-  wallets: { currency: string; balance: number | null; low: number; ok: boolean; error: string | null }[];
+  wallets: { provider?: string; currency: string; balance: number | null; low: number; ok: boolean; error: string | null }[];
   health: {
     bills_provider: string; bills: string; vtpass_phone: boolean;
     flutterwave: string; paystack: string; stripe: string; resend: string;
@@ -175,7 +175,7 @@ function Overview({ stats, api, reload }: { stats: Stats; api: Api; reload: () =
       <section className="grid sm:grid-cols-2 gap-3 mb-6">
         {stats.wallets.map((w) => (
           <div key={w.currency} className={`rounded-2xl border p-4 ${w.error ? "border-bad" : w.ok ? "border-line bg-panel" : "border-bad bg-bad/10"}`}>
-            <p className="font-mono text-[10px] tracking-[0.25em] text-tungsten mb-2">FLUTTERWAVE {w.currency} WALLET</p>
+            <p className="font-mono text-[10px] tracking-[0.25em] text-tungsten mb-2">{(w.provider ?? "Provider").toUpperCase()} {w.currency} WALLET</p>
             {w.balance === null
               ? <p className="text-bad text-sm">Couldn’t read balance{w.error ? `: ${w.error}` : ""}</p>
               : <p className="font-display font-extrabold text-3xl">{w.currency === "NGN" ? ngn(w.balance) : `${w.balance.toLocaleString()} ${w.currency}`}</p>}
