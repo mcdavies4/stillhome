@@ -3,6 +3,7 @@ import "./globals.css";
 import ThemeToggle from "@/components/ThemeToggle";
 import Logo from "@/components/Logo";
 import RecentToast from "@/components/RecentToast";
+import { themeInitScript } from "@/lib/theme-time";
 
 const BASE = process.env.NEXT_PUBLIC_APP_URL ?? "https://stillhome-ten.vercel.app";
 
@@ -53,18 +54,13 @@ export const metadata: Metadata = {
   manifest: "/site.webmanifest",
 };
 
-const themeInit = `
-try {
-  var t = localStorage.getItem("nolgic-theme");
-  if (t === "dark") document.documentElement.classList.add("dark");
-} catch (e) {}
-`;
+
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
-        <script dangerouslySetInnerHTML={{ __html: themeInit }} />
+        <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
         <link
