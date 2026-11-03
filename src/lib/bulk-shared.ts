@@ -153,17 +153,13 @@ export interface BulkView {
  * ₦100 cap would leave a large batch earning almost nothing after Flutterwave's 2% pay-in cost.
  * Defaults 1% / ₦20 / ₦500. Env: NEXT_PUBLIC_BULK_FEE_PCT / _MIN / _MAX.
  */
-export function bulkFeeSettings(): { pct: number; min: number; max: number } {
+export function bulkFee(total: number): number {
   const f = (v: string | undefined, d: number) => {
     const x = Number(v);
     return v !== undefined && v !== "" && Number.isFinite(x) && x >= 0 ? x : d;
   };
   const pct = f(process.env.NEXT_PUBLIC_BULK_FEE_PCT, 1);
   const min = f(process.env.NEXT_PUBLIC_BULK_FEE_MIN, 20);
-  return { pct, min, max: Math.max(min, f(process.env.NEXT_PUBLIC_BULK_FEE_MAX, 500)) };
-}
-
-export function bulkFee(total: number): number {
-  const { pct, min, max } = bulkFeeSettings();
+  const max = Math.max(min, f(process.env.NEXT_PUBLIC_BULK_FEE_MAX, 500));
   return Math.round(Math.min(max, Math.max(min, (total * pct) / 100)));
 }
