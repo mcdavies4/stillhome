@@ -3,10 +3,9 @@ import { supabaseAdmin } from "@/lib/supabase";
 import { rateLimit } from "@/lib/ratelimit";
 import { alertFounder } from "@/lib/alerts";
 import { normaliseEmail } from "@/lib/security";
-import { ngnPayProvider, flwPayConfigured, initializePayment as flwInitialize } from "@/lib/flwpay";
+import { ngnPayProvider, flwPayConfigured, flwPayIsTestMode, initializePayment as flwInitialize } from "@/lib/flwpay";
 import { paybetaConfigured } from "@/lib/paybeta";
-import { activeProvider } from "@/lib/bills";
-import { orderIsTest } from "@/lib/test-mode";
+import { activeProvider, billsTestMode } from "@/lib/bills";
 import { bulkEnabled, bulkTxRef, bulkPbReference } from "@/lib/bulk";
 import { checkRows, bulkFee, BULK_FIRST_CAP, type DraftRow } from "@/lib/bulk-shared";
 
@@ -59,7 +58,7 @@ export async function POST(req: Request) {
     .from("bulk_orders")
     .insert({
       email, ip, status: "pending_payment", recipients_count: checked.rows.length, amount_total: total, service_fee: fee,
-      payment_provider: "flutterwave", ...(orderIsTest("flutterwave") ? { is_test: true } : {}),
+      payment_provider: "flutterwave", is_test: billsTestMode() || flwPayIsTestMode(),
     })
     .select("id")
     .single();
