@@ -420,9 +420,10 @@ export async function pbPay(params: {
   }
 
   const r = await pb(path, { method: "POST", body, timeoutMs: 30000 });
-  const d = (r.data ?? {}) as Json;
+  // Education answers differently from the other products (status "success", fields possibly at the top level).
+  const d = ((kind === "education" ? eduData(r) : r.data) ?? {}) as Json;
 
-  if (r.ok) {
+  if (kind === "education" ? eduOk(r) : r.ok) {
     if (d.reference && String(d.reference) !== reference) {
       console.error(`[paybeta] vend reference echo differs: sent ${reference}, got ${String(d.reference)}`);
     }
@@ -617,14 +618,19 @@ export interface ExamItem {
 let examCache: { at: number; items: ExamItem[] } | null = null;
 let examInflight: Promise<ExamItem[]> | null = null;
 
-/** Exam list for one service. Paybeta's docs say POST {service}; its other lists answer GET, so try both. */
+/**
+ * Paybeta's education calls do not follow the usual envelope: the list answers status "success" (not "successful")
+ * with the rows in a top-level `products` field and no `data`. So here "ok" means HTTP 2xx, a readable body, and a
+ * success-looking status or `success: true`; the answer to read is `data` when present, otherwise the whole body.
+ */
+const eduOk = (r: PbResult) => r.http >= 200 && r.http < 300 && !r.unreadable && (/^success/i.test(r.status) || r.body?.success === true);
+const eduData = (r: PbResult) => (r.data !== undefined && r.data !== null ? r.data : r.body);
+
+/** Exam list for one service (POST {service}; the GET form is rejected by Paybeta). */
 async function pbExamList(service: string): Promise<any> {
   const p = await pb("/v2/education/list", { method: "POST", body: { service } });
-  if (p.ok) return p.data;
-  const g = await pb(`/v2/education/list?service=${encodeURIComponent(service)}`);
-  if (g.ok) return g.data;
-  const why = (r: PbResult) => `HTTP ${r.http}${r.message ? `: ${r.message}` : ""}`;
-  throw new FlwError(`exam list failed — POST ${why(p)} | GET ${why(g)}`, { post: p.body, get: g.body });
+  if (eduOk(p)) return eduData(p);
+  throw new FlwError(`exam list failed for ${service}: HTTP ${p.http}${p.message ? ` (${p.message})` : ""}`, p.body);
 }
 
 const KNOWN_EXAM_SERVICES = ["jamb", "waec-registration", "waec-result"]; // from Paybeta's own docs example
@@ -686,21 +692,32 @@ async function buildExamCatalogue(): Promise<ExamItem[]> {
 
 /** Founder diagnostic: what Paybeta really returns for the exam calls (shapes and short samples, no secrets). */
 export async function pbExamDebug(): Promise<unknown> {
-  const shape = (d: unknown): unknown => {
-    if (Array.isArray(d)) return { array: d.length, first: d[0] && typeof d[0] === "object" ? shape(d[0]) : d[0] };
-    if (d && typeof d === "object") return Object.fromEntries(Object.entries(d as Json).slice(0, 15).map(([k, v]) => [k, shape(v)]));
-    return typeof d === "string" ? d.slice(0, 60) : d;
-  };
-  const step = async (label: string, path: string, method: "GET" | "POST", body?: Record<string, unknown>) => {
+  const clip = (v: unknown) => (typeof v === "string" ? v.slice(0, 60) : v);
+  const out: Json[] = [];
+  let slugs: string[] = [];
+  try {
+    const r = await pb("/v2/education/providers");
+    const rows = arr(r.data ?? r.body?.providers ?? r.body?.products);
+    out.push({
+      step: "providers", http: r.http, status: r.status, message: r.message,
+      providers: rows.map((p) => ({ name: clip(p.name), slug: clip(p.slug), status: p.status, category: clip(p.category) })),
+      otherFields: Object.keys(r.body ?? {}),
+    });
+    slugs = rows.map((p) => String(p.slug ?? "").trim()).filter(Boolean);
+  } catch (e) { out.push({ step: "providers", error: String((e as any)?.message ?? e) }); }
+
+  // The slugs Paybeta itself lists first, then the spellings the docs and other apps use, in case they differ.
+  const tries = Array.from(new Set([...slugs, ...KNOWN_EXAM_SERVICES, "waec", "waec-result-checker", "waec-registration-pin", "waec_result", "waec_registration", "waec-checker", "neco"]));
+  for (const svc of tries) {
     try {
-      const r = await pb(path, { method, body });
-      return { label, path, method, http: r.http, status: r.status, message: r.message, data: shape(r.data ?? r.body) };
-    } catch (e) { return { label, path, method, error: String((e as any)?.message ?? e) }; }
-  };
-  const out: unknown[] = [await step("providers", "/v2/education/providers", "GET")];
-  for (const svc of KNOWN_EXAM_SERVICES) {
-    out.push(await step(`list ${svc} (POST)`, "/v2/education/list", "POST", { service: svc }));
-    out.push(await step(`list ${svc} (GET)`, `/v2/education/list?service=${svc}`, "GET"));
+      const r = await pb("/v2/education/list", { method: "POST", body: { service: svc } });
+      const rows = findRows(eduData(r));
+      out.push({
+        step: `list ${svc}`, fromProviders: slugs.includes(svc), http: r.http, status: r.status, message: r.message,
+        rows: rows.length, sample: rows.slice(0, 3).map((x) => Object.fromEntries(Object.entries(x).slice(0, 8).map(([k, v]) => [k, clip(v)]))),
+        topFields: Object.keys(r.body ?? {}),
+      });
+    } catch (e) { out.push({ step: `list ${svc}`, error: String((e as any)?.message ?? e) }); }
   }
   return out;
 }
