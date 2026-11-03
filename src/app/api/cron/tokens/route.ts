@@ -4,6 +4,7 @@ import { tryRecoverToken, expectsToken } from "@/lib/fulfilment";
 import { sendReconcileEmail } from "@/lib/reconcile";
 import { cronAuthorized } from "@/lib/security";
 import { sweepBulk } from "@/lib/bulk";
+import { sweepFollowups } from "@/lib/followup";
 
 // Daily backstop: recover tokens for fulfilled orders still missing one
 // (last 72h). Vercel Cron calls this with Authorization: Bearer CRON_SECRET.
@@ -18,6 +19,11 @@ export async function GET(req: Request) {
 
   // Bulk airtime safety net: nudge any batch that isn't finished (missed webhook, customer closed the page).
   try { await sweepBulk(); } catch (e) { console.error("[cron] bulk sweep failed", e); }
+
+  // Abandoned-order follow-ups: this daily run is the fallback. For faster emails (about an hour after the order is
+  // abandoned) call /api/cron/followups every 30 minutes from an outside scheduler (see FOLLOWUPS_SETUP.md).
+  let followups: unknown = null;
+  try { followups = await sweepFollowups(); } catch (e) { console.error("[cron] follow-up sweep failed", e); }
 
   const db = supabaseAdmin();
   const since = new Date(Date.now() - 72 * 3600 * 1000).toISOString();
@@ -44,5 +50,5 @@ export async function GET(req: Request) {
     reconcile = { error: String(e) };
   }
 
-  return NextResponse.json({ checked: orders?.length ?? 0, recovered, reconcile });
+  return NextResponse.json({ checked: orders?.length ?? 0, recovered, reconcile, followups });
 }
