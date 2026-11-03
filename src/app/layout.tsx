@@ -3,7 +3,6 @@ import "./globals.css";
 import ThemeToggle from "@/components/ThemeToggle";
 import Logo from "@/components/Logo";
 import RecentToast from "@/components/RecentToast";
-import SupportChat from "@/components/SupportChat";
 import { themeInitScript } from "@/lib/theme-time";
 
 const BASE = process.env.NEXT_PUBLIC_APP_URL ?? "https://stillhome-ten.vercel.app";
@@ -104,7 +103,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         </nav>
         {children}
         <RecentToast />
-        <SupportChat />
       </body>
     </html>
   );
