@@ -179,9 +179,10 @@ const AIRTIME: { match: RegExp; service: string; brand: string }[] = [
   { match: /9\s*mobile|etisalat/i, service: "9mobile_vtu", brand: "9mobile" },
 ];
 
-let cache: { at: number; items: BillerItem[] } | null = null;
+let cache: { at: number; ttl: number; items: BillerItem[] } | null = null;
 let inflight: Promise<BillerItem[]> | null = null;
 const CACHE_MS = 60 * 60 * 1000;
+const PARTIAL_CACHE_MS = 2 * 60 * 1000; // a catalogue missing a category is retried after two minutes, not an hour
 
 /** The docs spell data services both "mtn_data" and "mtn-data". Try each; remember the one that answers. */
 function dataServiceCandidates(p: Json): string[] {
@@ -190,119 +191,158 @@ function dataServiceCandidates(p: Json): string[] {
   return out.filter((s, i) => s && out.indexOf(s) === i);
 }
 
+type Spec = Parameters<typeof mk>[1];
+
+/** Run fn over list with at most `limit` in flight; results keep the list's order. */
+async function pool<T, R>(list: T[], limit: number, fn: (x: T) => Promise<R>): Promise<R[]> {
+  const out = new Array<R>(list.length);
+  let next = 0;
+  const worker = async () => {
+    while (next < list.length) { const i = next++; out[i] = await fn(list[i]); }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, list.length) }, worker));
+  return out;
+}
+
+// Each category returns its entries without ids (ids are handed out afterwards, in a fixed order), and throws if
+// the whole category is unavailable. The four run side by side, so the catalogue takes as long as the slowest one
+// instead of the sum of all of them.
+
+/** Airtime — one entry per network. */
+async function airtimeSpecs(): Promise<Spec[]> {
+  const provs = arr(await pbGet("/v2/airtime/providers")).filter(enabled);
+  const seen = new Set<string>();
+  const out: Spec[] = [];
+  for (const p of provs) {
+    const a = AIRTIME.find((x) => x.match.test(String(p.name ?? "")));
+    if (!a || seen.has(a.service)) continue;
+    seen.add(a.service);
+    out.push({
+      biller_code: a.service, item_code: "airtime",
+      name: `${a.brand} Airtime`, biller_name: `${a.brand} Airtime VTU`,
+      is_airtime: true, label_name: "Phone Number",
+    });
+  }
+  return out;
+}
+
+/** Electricity — every enabled DISCO (prepaid; postpaid only if PAYBETA_POSTPAID=1). */
+async function electricitySpecs(): Promise<Spec[]> {
+  const provs = arr(await pbGet("/v2/electricity/providers")).filter(enabled);
+  const kinds: ("prepaid" | "postpaid")[] = process.env.PAYBETA_POSTPAID === "1" ? ["prepaid", "postpaid"] : ["prepaid"];
+  const out: Spec[] = [];
+  for (const p of provs) {
+    const name = String(p.name ?? "").trim();
+    if (!name) continue;
+    const service = String(p.slug ?? slugify(name));
+    const biller_name = /electric/i.test(name) ? name : `${name} Electricity`;
+    for (const kind of kinds) {
+      out.push({
+        biller_code: service, item_code: kind,
+        name: `${name} — ${kind === "prepaid" ? "Prepaid" : "Postpaid"}`,
+        biller_name, label_name: "Meter Number",
+      });
+    }
+  }
+  return out;
+}
+
+/** Data bundles — fixed-price plans per network (networks fetched three at a time). */
+async function dataSpecs(): Promise<Spec[]> {
+  const provs = arr(await pbGet("/v2/data-bundle/providers")).filter(enabled);
+  const named = provs.filter((p) => String(p.name ?? "").trim());
+  const perProvider = await pool(named, 3, async (p): Promise<Spec[]> => {
+    const name = String(p.name ?? "").trim();
+    let service = "";
+    let pkgs: Json[] = [];
+    const why: string[] = [];
+    for (const cand of dataServiceCandidates(p)) {
+      try {
+        const d = await pbDataList(cand);
+        // docs show data.packages; also accept a bare array in case the sandbox differs
+        const list = arr(d?.packages ?? d?.bundles ?? d);
+        if (list.length) { service = cand; pkgs = list; break; }
+        why.push(`${cand}: answered but no plans (data keys: ${d && typeof d === "object" ? Object.keys(d).join(",") || "none" : typeof d})`);
+      } catch (e) { why.push(`${cand}: ${String((e as any)?.message ?? e).slice(0, 140)}`); }
+    }
+    if (!service) { console.error(`[paybeta] data plans unavailable for "${name}" — ${why.join(" | ")}`); return []; }
+    const seen = new Set<string>();
+    const out: Spec[] = [];
+    for (const k of pkgs) {
+      const code = String(k.code ?? "").trim();
+      const amount = Math.round(Number(k.price));
+      if (!code || !Number.isFinite(amount) || amount <= 0 || seen.has(code)) continue;
+      seen.add(code);
+      out.push({
+        biller_code: service, item_code: code,
+        name: String(k.description ?? code), biller_name: /data/i.test(name) ? name : `${name} Data`,
+        amount, label_name: "Phone Number",
+      });
+    }
+    return out;
+  });
+  return perProvider.flat();
+}
+
+/** Cable TV — DStv, GOtv, StarTimes bouquets (providers fetched three at a time). */
+async function cableSpecs(): Promise<Spec[]> {
+  const provs = arr(await pbGet("/v2/cable/providers")).filter(enabled);
+  const wanted = provs
+    .map((p) => {
+      const name = String(p.name ?? "").trim();
+      return { name, service: String(p.slug ?? name.toLowerCase().replace(/\s+/g, "")).trim() };
+    })
+    .filter((p) => p.name && p.service && !/showmax/i.test(p.name));
+  const perProvider = await pool(wanted, 3, async ({ name, service }): Promise<Spec[]> => {
+    let pkgs: Json[] = [];
+    try { pkgs = arr((await pbGet("/v2/cable/bouquet", "POST", { service }))?.packages); }
+    catch (e) { console.error(`[paybeta] bouquets for ${service} failed`, e); return []; }
+    const seen = new Set<string>();
+    const out: Spec[] = [];
+    for (const k of pkgs) {
+      const code = String(k.code ?? "").trim();
+      const amount = Math.round(Number(k.price));
+      if (!code || !Number.isFinite(amount) || amount <= 0 || seen.has(code)) continue;
+      seen.add(code);
+      out.push({
+        biller_code: service, item_code: code,
+        name: String(k.description ?? code), biller_name: name, amount, label_name: "Smartcard Number",
+      });
+    }
+    return out;
+  });
+  return perProvider.flat();
+}
+
+let lastPartial = false;
+/** True when the last catalogue build was missing a category (the billers route then lets the CDN keep it for minutes, not an hour). */
+export const pbCatalogueIsPartial = () => lastPartial;
+
 async function buildCatalogue(): Promise<BillerItem[]> {
+  const jobs: [string, () => Promise<Spec[]>][] = [
+    ["airtime", airtimeSpecs], ["electricity", electricitySpecs], ["data", dataSpecs], ["cable", cableSpecs],
+  ];
+  const results = await Promise.allSettled(jobs.map(([, run]) => run()));
   const items: BillerItem[] = [];
   let id = 1;
-  let okCategories = 0;
+  let ok = 0;
   let lastErr: unknown = null;
-
-  // Airtime — one entry per network.
-  try {
-    const provs = arr(await pbGet("/v2/airtime/providers")).filter(enabled);
-    const seen = new Set<string>();
-    for (const p of provs) {
-      const a = AIRTIME.find((x) => x.match.test(String(p.name ?? "")));
-      if (!a || seen.has(a.service)) continue;
-      seen.add(a.service);
-      items.push(mk(id++, {
-        biller_code: a.service, item_code: "airtime",
-        name: `${a.brand} Airtime`, biller_name: `${a.brand} Airtime VTU`,
-        is_airtime: true, label_name: "Phone Number",
-      }));
-    }
-    okCategories++;
-  } catch (e) { lastErr = e; console.error("[paybeta] airtime catalogue failed", e); }
-
-  // Electricity — every enabled DISCO (prepaid; postpaid only if PAYBETA_POSTPAID=1).
-  try {
-    const provs = arr(await pbGet("/v2/electricity/providers")).filter(enabled);
-    const kinds: ("prepaid" | "postpaid")[] = process.env.PAYBETA_POSTPAID === "1" ? ["prepaid", "postpaid"] : ["prepaid"];
-    for (const p of provs) {
-      const name = String(p.name ?? "").trim();
-      if (!name) continue;
-      const service = String(p.slug ?? slugify(name));
-      const biller_name = /electric/i.test(name) ? name : `${name} Electricity`;
-      for (const kind of kinds) {
-        items.push(mk(id++, {
-          biller_code: service, item_code: kind,
-          name: `${name} — ${kind === "prepaid" ? "Prepaid" : "Postpaid"}`,
-          biller_name, label_name: "Meter Number",
-        }));
-      }
-    }
-    okCategories++;
-  } catch (e) { lastErr = e; console.error("[paybeta] electricity catalogue failed", e); }
-
-  // Data bundles — fixed-price plans per network.
-  try {
-    const provs = arr(await pbGet("/v2/data-bundle/providers")).filter(enabled);
-    for (const p of provs) {
-      const name = String(p.name ?? "").trim();
-      if (!name) continue;
-      let service = "";
-      let pkgs: Json[] = [];
-      const why: string[] = [];
-      for (const cand of dataServiceCandidates(p)) {
-        try {
-          const d = await pbDataList(cand);
-          // docs show data.packages; also accept a bare array in case the sandbox differs
-          const list = arr(d?.packages ?? d?.bundles ?? d);
-          if (list.length) { service = cand; pkgs = list; break; }
-          why.push(`${cand}: answered but no plans (data keys: ${d && typeof d === "object" ? Object.keys(d).join(",") || "none" : typeof d})`);
-        } catch (e) { why.push(`${cand}: ${String((e as any)?.message ?? e).slice(0, 140)}`); }
-      }
-      if (!service) { console.error(`[paybeta] data plans unavailable for "${name}" — ${why.join(" | ")}`); continue; }
-      const seen = new Set<string>();
-      for (const k of pkgs) {
-        const code = String(k.code ?? "").trim();
-        const amount = Math.round(Number(k.price));
-        if (!code || !Number.isFinite(amount) || amount <= 0 || seen.has(code)) continue;
-        seen.add(code);
-        items.push(mk(id++, {
-          biller_code: service, item_code: code,
-          name: String(k.description ?? code), biller_name: /data/i.test(name) ? name : `${name} Data`,
-          amount, label_name: "Phone Number",
-        }));
-      }
-    }
-    okCategories++;
-  } catch (e) { lastErr = e; console.error("[paybeta] data catalogue failed", e); }
-
-  // Cable TV — DStv, GOtv, StarTimes bouquets.
-  try {
-    const provs = arr(await pbGet("/v2/cable/providers")).filter(enabled);
-    for (const p of provs) {
-      const name = String(p.name ?? "").trim();
-      const service = String(p.slug ?? name.toLowerCase().replace(/\s+/g, "")).trim();
-      if (!name || !service || /showmax/i.test(name)) continue;
-      let pkgs: Json[] = [];
-      try { pkgs = arr((await pbGet("/v2/cable/bouquet", "POST", { service }))?.packages); }
-      catch (e) { console.error(`[paybeta] bouquets for ${service} failed`, e); continue; }
-      const seen = new Set<string>();
-      for (const k of pkgs) {
-        const code = String(k.code ?? "").trim();
-        const amount = Math.round(Number(k.price));
-        if (!code || !Number.isFinite(amount) || amount <= 0 || seen.has(code)) continue;
-        seen.add(code);
-        items.push(mk(id++, {
-          biller_code: service, item_code: code,
-          name: String(k.description ?? code), biller_name: name, amount, label_name: "Smartcard Number",
-        }));
-      }
-    }
-    okCategories++;
-  } catch (e) { lastErr = e; console.error("[paybeta] cable catalogue failed", e); }
-
-  if (!okCategories) throw lastErr instanceof Error ? lastErr : new FlwError("Paybeta catalogue unavailable");
+  results.forEach((r, i) => {
+    if (r.status === "rejected") { lastErr = r.reason; console.error(`[paybeta] ${jobs[i][0]} catalogue failed`, r.reason); return; }
+    ok++;
+    for (const s of r.value) items.push(mk(id++, s));
+  });
+  if (!ok) throw lastErr instanceof Error ? lastErr : new FlwError("Paybeta catalogue unavailable");
+  lastPartial = ok < jobs.length;
   return items;
 }
 
 /** NG catalogue in the same shape as Flutterwave's BillerItem list. Cached for an hour. */
 export async function pbGetBillCategories(): Promise<BillerItem[]> {
-  if (cache && Date.now() - cache.at < CACHE_MS) return cache.items;
+  if (cache && Date.now() - cache.at < cache.ttl) return cache.items;
   if (!inflight) {
     inflight = buildCatalogue()
-      .then((items) => { if (items.length) cache = { at: Date.now(), items }; return items; })
+      .then((items) => { if (items.length) cache = { at: Date.now(), ttl: lastPartial ? PARTIAL_CACHE_MS : CACHE_MS, items }; return items; })
       .finally(() => { inflight = null; });
   }
   return inflight;
@@ -334,7 +374,25 @@ const NOT_VERIFIED: Omit<ValidateResult, "customer"> = {
 
 interface Verified { name: string; address: string; minimum: number }
 
+// A meter or smartcard that was just verified is remembered for ten minutes, so the lookup the customer sees on
+// the form, the one checkout runs and the one the vend runs are one Paybeta call, not three. Only a successful
+// answer is remembered: a failure is always asked again.
+const VERIFY_MEMO_MS = 10 * 60 * 1000;
+const verifyMemo = new Map<string, { at: number; v: Verified }>();
+/** (for tests) forget every remembered verification */
+export const pbClearVerifyMemo = () => verifyMemo.clear();
+
 async function verifyAccount(kind: "electricity" | "cable", billerCode: string, itemCode: string, identifier: string): Promise<Verified> {
+  const key = `${kind}|${billerCode}|${itemCode}|${identifier.trim()}`;
+  const hit = verifyMemo.get(key);
+  if (hit && Date.now() - hit.at < VERIFY_MEMO_MS) return hit.v;
+  const v = await verifyAccountLive(kind, billerCode, itemCode, identifier);
+  if (verifyMemo.size >= 500) verifyMemo.delete(verifyMemo.keys().next().value as string);
+  verifyMemo.set(key, { at: Date.now(), v });
+  return v;
+}
+
+async function verifyAccountLive(kind: "electricity" | "cable", billerCode: string, itemCode: string, identifier: string): Promise<Verified> {
   const r = kind === "electricity"
     ? await pb("/v2/electricity/validate", { method: "POST", body: { service: billerCode, meterNumber: identifier, meterType: itemCode === "postpaid" ? "postpaid" : "prepaid" } })
     : await pb("/v2/cable/validate", { method: "POST", body: { service: billerCode, smartCardNumber: identifier } });

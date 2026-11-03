@@ -39,9 +39,9 @@ export default function ExamOrderPage() {
           if (stop) return;
           setOrder(d);
           // Keep checking while the payment or the PIN is still on its way (about 5 minutes), then stop.
-          if (["paid", "pending_payment", "needs_review"].includes(d.status) && tries++ < 100) setTimeout(poll, 3000);
-        } else if (tries++ < 5) setTimeout(poll, 3000);
-      } catch { if (tries++ < 5) setTimeout(poll, 3000); }
+          if (["paid", "pending_payment", "needs_review"].includes(d.status) && tries++ < 100) setTimeout(poll, tries < 12 ? 1500 : 3000);
+        } else if (tries++ < 5) setTimeout(poll, tries < 12 ? 1500 : 3000);
+      } catch { if (tries++ < 5) setTimeout(poll, tries < 12 ? 1500 : 3000); }
     }
     poll();
     return () => { stop = true; };

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getBillCategories } from "@/lib/bills";
 import { isSupportedCountry, DEFAULT_COUNTRY } from "@/lib/countries";
+import { pbCatalogueIsPartial } from "@/lib/paybeta";
 
 // Always run on the server per request, and let the CDN keep a good answer for an hour.
 // (A failed answer is sent with no-store, so an outage can never get stuck in the cache.)
@@ -21,9 +22,11 @@ export async function GET(req: Request) {
       seen.add(key);
       return true;
     });
+    // A catalogue that is missing a category (one provider call failed) is only kept for two minutes.
+    const good = country === "NG" && pbCatalogueIsPartial() ? "public, s-maxage=120" : "public, s-maxage=3600, stale-while-revalidate=86400";
     return NextResponse.json(
       { country, items: deduped },
-      { headers: { "Cache-Control": deduped.length ? "public, s-maxage=3600, stale-while-revalidate=86400" : "no-store" } }
+      { headers: { "Cache-Control": deduped.length ? good : "no-store" } }
     );
   } catch (e: any) {
     console.error("[billers] catalogue failed:", e?.message ?? e);

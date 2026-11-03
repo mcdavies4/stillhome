@@ -80,10 +80,10 @@ export default function OrderPage() {
         // Keep polling briefly for a late electricity token (server re-queries
         // FLW on each poll) — up to ~1 minute, then the email/cron takes over.
         const awaitingToken =
-          d.status === "fulfilled" && !d.flw_token && expectsToken(d) && tokenPolls.current < 20;
+          d.status === "fulfilled" && !d.flw_token && expectsToken(d) && tokenPolls.current < 40;
         if (awaitingToken) tokenPolls.current += 1;
 
-        if (inFlight || awaitingToken) setTimeout(poll, 3000);
+        if (inFlight || awaitingToken) setTimeout(poll, 1500);
       }
     }
     poll();
