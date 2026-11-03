@@ -627,33 +627,82 @@ async function pbExamList(service: string): Promise<any> {
   throw new FlwError(`exam list failed — POST ${why(p)} | GET ${why(g)}`, { post: p.body, get: g.body });
 }
 
+const KNOWN_EXAM_SERVICES = ["jamb", "waec-registration", "waec-result"]; // from Paybeta's own docs example
+
+const money = (v: unknown): number => {
+  if (typeof v === "number") return Math.round(v);
+  if (typeof v === "string") { const n = Number(v.replace(/[^0-9.]/g, "")); return Number.isFinite(n) ? Math.round(n) : NaN; }
+  return NaN;
+};
+const firstOf = (o: Json, keys: string[]): unknown => { for (const k of keys) if (o[k] != null && o[k] !== "") return o[k]; return undefined; };
+
+/** The first array of objects inside an answer, wherever Paybeta put it (data, data.packages, data.exams ...). */
+function findRows(node: unknown, depth = 0): Json[] {
+  if (depth > 3 || node == null) return [];
+  if (Array.isArray(node)) return node.some((x) => x && typeof x === "object" && !Array.isArray(x)) ? (node as Json[]) : [];
+  if (typeof node !== "object") return [];
+  const o = node as Json;
+  for (const k of ["packages", "exams", "examTypes", "exam_types", "types", "items", "list", "plans", "variations", "products", "data"]) {
+    const r = findRows(o[k], depth + 1);
+    if (r.length) return r;
+  }
+  for (const v of Object.values(o)) { const r = findRows(v, depth + 1); if (r.length) return r; }
+  return [];
+}
+
+function parseExamRows(service: string, serviceName: string, data: unknown): ExamItem[] {
+  const out: ExamItem[] = [];
+  const seen = new Set<string>();
+  for (const k of findRows(data)) {
+    const code = String(firstOf(k, ["code", "examCode", "exam_code", "variation_code", "variationCode", "packageCode", "id", "slug"]) ?? "").trim();
+    const price = money(firstOf(k, ["price", "amount", "fee", "cost", "vendAmount", "sellingPrice", "selling_price", "variation_amount", "value"]));
+    if (!code || !Number.isFinite(price) || price <= 0 || seen.has(code)) continue;
+    seen.add(code);
+    out.push({ service, serviceName, code, name: String(firstOf(k, ["description", "name", "title", "exam", "label", "plan"]) ?? code).trim(), price });
+  }
+  return out;
+}
+
 async function buildExamCatalogue(): Promise<ExamItem[]> {
+  // Which services exist: Paybeta's own list, falling back to the three in its docs if that call fails or looks different.
+  let services: { slug: string; name: string }[] = [];
+  try {
+    services = arr(await pbGet("/v2/education/providers")).filter(enabled)
+      .map((p) => ({ slug: String(p.slug ?? slugify(String(p.name ?? ""))).trim(), name: String(p.name ?? "").trim() }))
+      .filter((x) => x.slug && isExamService(x.slug));
+  } catch (e) { console.error("[paybeta] education providers failed", (e as any)?.message ?? e); }
+  if (!services.length) services = KNOWN_EXAM_SERVICES.map((slug) => ({ slug, name: slug }));
+
   const items: ExamItem[] = [];
-  const provs = arr(await pbGet("/v2/education/providers")).filter(enabled);
-  for (const p of provs) {
-    const service = String(p.slug ?? slugify(String(p.name ?? ""))).trim();
-    const serviceName = String(p.name ?? service).trim();
-    if (!service || !isExamService(service)) continue;
-    let list: Json[] = [];
+  for (const sv of services) {
     try {
-      const d = await pbExamList(service);
-      // The docs show packages like cable ({code, description, price}); accept the other likely spellings too.
-      list = arr(d?.packages ?? d?.exams ?? d?.examTypes ?? d?.types ?? d);
-    } catch (e) {
-      console.error(`[paybeta] exam list for ${service} failed`, e);
-      continue;
-    }
-    const seen = new Set<string>();
-    for (const k of list) {
-      const code = String(k.code ?? k.examCode ?? k.slug ?? "").trim();
-      const price = Math.round(Number(k.price ?? k.amount ?? k.fee));
-      if (!code || !Number.isFinite(price) || price <= 0 || seen.has(code)) continue;
-      seen.add(code);
-      items.push({ service, serviceName, code, name: String(k.description ?? k.name ?? code).trim(), price });
-    }
-    if (!list.length) console.error(`[paybeta] exam list for ${service} came back empty`);
+      const rows = parseExamRows(sv.slug, sv.name || sv.slug, await pbExamList(sv.slug));
+      if (!rows.length) console.error(`[paybeta] exam list for ${sv.slug} had no rows with a code and a price`);
+      items.push(...rows);
+    } catch (e) { console.error(`[paybeta] exam list for ${sv.slug} failed`, (e as any)?.message ?? e); }
   }
   return items;
+}
+
+/** Founder diagnostic: what Paybeta really returns for the exam calls (shapes and short samples, no secrets). */
+export async function pbExamDebug(): Promise<unknown> {
+  const shape = (d: unknown): unknown => {
+    if (Array.isArray(d)) return { array: d.length, first: d[0] && typeof d[0] === "object" ? shape(d[0]) : d[0] };
+    if (d && typeof d === "object") return Object.fromEntries(Object.entries(d as Json).slice(0, 15).map(([k, v]) => [k, shape(v)]));
+    return typeof d === "string" ? d.slice(0, 60) : d;
+  };
+  const step = async (label: string, path: string, method: "GET" | "POST", body?: Record<string, unknown>) => {
+    try {
+      const r = await pb(path, { method, body });
+      return { label, path, method, http: r.http, status: r.status, message: r.message, data: shape(r.data ?? r.body) };
+    } catch (e) { return { label, path, method, error: String((e as any)?.message ?? e) }; }
+  };
+  const out: unknown[] = [await step("providers", "/v2/education/providers", "GET")];
+  for (const svc of KNOWN_EXAM_SERVICES) {
+    out.push(await step(`list ${svc} (POST)`, "/v2/education/list", "POST", { service: svc }));
+    out.push(await step(`list ${svc} (GET)`, `/v2/education/list?service=${svc}`, "GET"));
+  }
+  return out;
 }
 
 /** Everything buyable as an exam PIN, with Paybeta's own prices. Cached for an hour. Throws if Paybeta can't be reached. */
