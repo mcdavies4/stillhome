@@ -45,8 +45,7 @@ export function examService(slug: string, paybetaName?: string): { title: string
     idPattern: /^\d{10,14}$/,
     idError: "Enter the phone number with digits only, no spaces.",
   };
-  if (/^waec[-_]?reg/i.test(slug)) return { title: "WAEC registration PIN", ...phone };
-  if (/^waec/i.test(slug)) return { title: "WAEC result checker PIN", ...phone };
+  if (/^waec/i.test(slug)) return { title: "WAEC PIN", ...phone }; // one service: result checker + registration token
   if (/^neco/i.test(slug)) return { title: "NECO PIN", ...phone };
   return { title: paybetaName || slug.toUpperCase(), ...phone };
 }

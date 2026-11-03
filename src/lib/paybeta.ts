@@ -633,7 +633,7 @@ async function pbExamList(service: string): Promise<any> {
   throw new FlwError(`exam list failed for ${service}: HTTP ${p.http}${p.message ? ` (${p.message})` : ""}`, p.body);
 }
 
-const KNOWN_EXAM_SERVICES = ["jamb", "waec-registration", "waec-result"]; // from Paybeta's own docs example
+const KNOWN_EXAM_SERVICES = ["jamb", "waec"]; // what the list call really accepts (its provider list shows waec-registration / waec-result, which it rejects)
 
 const money = (v: unknown): number => {
   if (typeof v === "number") return Math.round(v);
@@ -669,8 +669,19 @@ function parseExamRows(service: string, serviceName: string, data: unknown): Exa
   return out;
 }
 
+/** "waec-result" and "waec-registration" are both the one "waec" service when listing and buying. */
+const examFamily = (slug: string) => slug.split(/[-_]/)[0].toLowerCase();
+
+async function tryList(slug: string, label: string): Promise<ExamItem[]> {
+  try {
+    const rows = parseExamRows(slug, label, await pbExamList(slug));
+    if (!rows.length) console.error(`[paybeta] exam list for ${slug} had no rows with a code and a price`);
+    return rows;
+  } catch (e) { console.error(`[paybeta] exam list for ${slug} failed`, (e as any)?.message ?? e); return []; }
+}
+
 async function buildExamCatalogue(): Promise<ExamItem[]> {
-  // Which services exist: Paybeta's own list, falling back to the three in its docs if that call fails or looks different.
+  // Which services exist: Paybeta's own list, falling back to the known ones if that call fails or looks different.
   let services: { slug: string; name: string }[] = [];
   try {
     services = arr(await pbGet("/v2/education/providers")).filter(enabled)
@@ -679,13 +690,22 @@ async function buildExamCatalogue(): Promise<ExamItem[]> {
   } catch (e) { console.error("[paybeta] education providers failed", (e as any)?.message ?? e); }
   if (!services.length) services = KNOWN_EXAM_SERVICES.map((slug) => ({ slug, name: slug }));
 
-  const items: ExamItem[] = [];
+  // One entry per family ("jamb", "waec"): try the family name first (what Paybeta accepts), then the slugs it listed.
+  const families = new Map<string, { names: string[]; label: string }>();
   for (const sv of services) {
-    try {
-      const rows = parseExamRows(sv.slug, sv.name || sv.slug, await pbExamList(sv.slug));
-      if (!rows.length) console.error(`[paybeta] exam list for ${sv.slug} had no rows with a code and a price`);
-      items.push(...rows);
-    } catch (e) { console.error(`[paybeta] exam list for ${sv.slug} failed`, (e as any)?.message ?? e); }
+    const f = examFamily(sv.slug);
+    const cur = families.get(f) ?? { names: [f], label: sv.name || f };
+    if (!cur.names.includes(sv.slug)) cur.names.push(sv.slug);
+    families.set(f, cur);
+  }
+
+  const items: ExamItem[] = [];
+  for (const fam of Array.from(families.values())) {
+    const [family, ...listed] = fam.names;
+    const got = await tryList(family, fam.label);
+    if (got.length) { items.push(...got); continue; }
+    // The family name was refused: fall back to each slug Paybeta listed (all of them, they may be separate services).
+    for (const slug of listed) items.push(...(await tryList(slug, fam.label)));
   }
   return items;
 }

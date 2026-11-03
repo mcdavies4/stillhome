@@ -62,7 +62,8 @@ export async function POST(req: Request) {
   }
 
   const testMode = billsTestMode() || (rail === "flutterwave" ? flwPayIsTestMode() : paystackIsTestMode());
-  const billerName = `${svc.title} — ${item.name}`.slice(0, 120);
+  // Paybeta's product names already say JAMB / WAEC ("JAMB UTME with Mock"), so only add the service title when they don't.
+  const billerName = (/\b(JAMB|WAEC|NECO|NABTEB)\b/i.test(item.name) ? item.name : `${svc.title} — ${item.name}`).slice(0, 120);
   const db = supabaseAdmin();
   const { data: order, error } = await db
     .from("orders")
