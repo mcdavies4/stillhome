@@ -25,6 +25,8 @@ export async function sendNgnReceiptEmail(
   const n = (v: number) => `₦${Number(v).toLocaleString("en-NG")}`;
   const ref = order.id.slice(0, 8); // the same order number the order page shows
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "https://www.nolgic.com";
+  // Exam PINs (JAMB / WAEC) are labelled as a PIN and link to the exam order page, not the meter-token page.
+  const isExam = /\b(JAMB|WAEC|NECO|NABTEB)\b/i.test(order.biller_name);
 
   const html = `
   <div style="font-family:system-ui,Arial,sans-serif;max-width:520px;margin:0 auto;color:#12151e">
@@ -32,17 +34,17 @@ export async function sendNgnReceiptEmail(
     <p style="color:#666;margin:0 0 16px">Order number ${ref}</p>
     <table style="width:100%;border-collapse:collapse;font-size:15px">
       <tr><td style="padding:6px 0;color:#666">Item</td><td style="text-align:right">${esc(order.biller_name)}</td></tr>
-      <tr><td style="padding:6px 0;color:#666">Account / meter</td><td style="text-align:right">${esc(order.identifier)}</td></tr>
+      <tr><td style="padding:6px 0;color:#666">${isExam ? "Details" : "Account / meter"}</td><td style="text-align:right">${esc(order.identifier)}</td></tr>
       ${order.customer_name ? `<tr><td style="padding:6px 0;color:#666">Name</td><td style="text-align:right">${esc(order.customer_name)}</td></tr>` : ""}
       <tr><td style="padding:6px 0;color:#666">Amount</td><td style="text-align:right">${n(order.amount_ngn)}</td></tr>
       ${fee > 0 ? `<tr><td style="padding:6px 0;color:#666">Service fee</td><td style="text-align:right">${n(fee)}</td></tr>` : ""}
       <tr><td style="padding:6px 0;color:#666">Total paid</td><td style="text-align:right;font-weight:600">${n(total)}</td></tr>
     </table>
     ${token ? `<div style="margin:18px 0;padding:14px;border:1px solid #e5c36a;background:#fff8e1;border-radius:10px">
-      <div style="font-size:12px;color:#8a6d00;letter-spacing:.1em">METER TOKEN</div>
+      <div style="font-size:12px;color:#8a6d00;letter-spacing:.1em">${isExam ? "YOUR PIN" : "METER TOKEN"}</div>
       <div style="font-size:20px;font-family:monospace;letter-spacing:.08em;margin-top:4px">${esc(token)}</div>
     </div>` : ""}
-    <p style="font-size:13px"><a href="${appUrl}/order/${order.id}">View your order</a></p>
+    <p style="font-size:13px"><a href="${appUrl}/${isExam ? "exams" : "order"}/${order.id}">View your order</a></p>
     <p style="color:#999;font-size:12px;margin-top:20px">Nolgic sells prepaid digital products. Questions: nolgichq@gmail.com</p>
   </div>`;
 

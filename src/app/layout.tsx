@@ -92,6 +92,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 Terms
               </a>
               {process.env.NEXT_PUBLIC_BULK_ENABLED === "1" && (<a href="/bulk" className="px-3 py-2 rounded-lg text-haze hover:text-paper"><span className="sm:hidden">Bulk</span><span className="hidden sm:inline">Bulk airtime</span></a>)}
+              {process.env.NEXT_PUBLIC_EXAMS_ENABLED === "1" && (<a href="/exams" className="px-3 py-2 rounded-lg text-haze hover:text-paper max-[389px]:hidden"><span className="sm:hidden">Exams</span><span className="hidden sm:inline">Exam PINs</span></a>)}
               <ThemeToggle />
               <a
                 href="/#pay"

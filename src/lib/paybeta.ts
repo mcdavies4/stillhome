@@ -12,6 +12,8 @@
 //   vend      POST /v2/airtime/purchase  /v2/data-bundle/purchase
 //                  /v2/cable/purchase    /v2/electricity/purchase
 //   wallet    GET  /v2/wallet/balance
+//   exams     GET  /v2/education/providers   POST /v2/education/list {service}   POST /v2/education/purchase
+//             (JAMB / WAEC PINs; kept OUT of the main catalogue, see pbExamCatalogue below)
 //
 // IMPORTANT — what Paybeta does NOT have: a transaction status ("requery") endpoint.
 // A vend that comes back "pending" (or never answers) is settled by Paybeta's WEBHOOK
@@ -313,8 +315,11 @@ export async function pbLookupItem(billerCode: string, itemCode: string): Promis
   return { item, min: 0, max: 0 }; // Paybeta publishes no per-product limits; electricity minimum comes from the meter lookup
 }
 
-type Kind = "airtime" | "electricity" | "data" | "cable";
+type Kind = "airtime" | "electricity" | "data" | "cable" | "education";
+/** Exam-PIN services. Their codes never overlap with electricity / data / cable service names. */
+export const isExamService = (billerCode: string) => /^(jamb|waec|neco|nabteb)([_-]|$)/i.test(billerCode);
 function kindOf(billerCode: string, itemCode: string): Kind {
+  if (isExamService(billerCode)) return "education";
   if (itemCode === "airtime") return "airtime";
   if (itemCode === "prepaid" || itemCode === "postpaid") return "electricity";
   if (/[_-]data$/i.test(billerCode)) return "data";
@@ -347,7 +352,7 @@ async function verifyAccount(kind: "electricity" | "cable", billerCode: string, 
 /** Account-name lookup. Electricity and cable support it; airtime/data return name=null. */
 export async function pbValidate(itemCode: string, billerCode: string, identifier: string): Promise<ValidateResult> {
   const kind = kindOf(billerCode, itemCode);
-  if (kind === "airtime" || kind === "data") return { ...NOT_VERIFIED, customer: identifier };
+  if (kind === "airtime" || kind === "data" || kind === "education") return { ...NOT_VERIFIED, customer: identifier };
   const v = await verifyAccount(kind, billerCode, itemCode, identifier);
   return { response_code: "00", response_message: "Verified", name: v.name, customer: identifier, minimum: v.minimum, maximum: 0, fee: 0 };
 }
@@ -393,6 +398,9 @@ export async function pbPay(params: {
       path = "/v2/data-bundle/purchase";
       body = { service: billerCode, amount, phoneNumber: phone, code: itemCode, reference };
     }
+  } else if (kind === "education") {
+    path = "/v2/education/purchase";
+    body = { service: billerCode, examCode: itemCode, customerId: identifier, amount, reference };
   } else {
     // Electricity and cable need the account holder's name (and the meter address) on the vend.
     // This lookup runs BEFORE any money moves, so any failure here is safe to refund.
@@ -418,6 +426,21 @@ export async function pbPay(params: {
     if (d.reference && String(d.reference) !== reference) {
       console.error(`[paybeta] vend reference echo differs: sent ${reference}, got ${String(d.reference)}`);
     }
+    if (kind === "education") {
+      // The customer is buying a PIN, so a "successful" answer with no PIN we can read must never be treated as delivered.
+      // In live mode it goes to review (NOT a refund: Paybeta may have issued the PIN, the founder can read it in the
+      // Paybeta console, and the webhook may still deliver it). In sandbox the docs show an empty answer, so use a test PIN.
+      const pins = pbExamPins(d);
+      if (!pins) {
+        if (paybetaIsSandbox()) {
+          return { amount: params.amountLocal, flw_ref: String(d.transactionId ?? ""), tx_ref: reference, reference, extra: "PIN: SANDBOX-TEST-PIN" };
+        }
+        const keys = d && typeof d === "object" ? Object.keys(d).slice(0, 12).join(",") || "none" : typeof d;
+        console.error(`[paybeta] education vend ok but no PIN found. data keys: ${keys}`);
+        throw new FlwError(`Paybeta exam vend succeeded but no PIN was readable (data keys: ${keys}). Read the PIN in the Paybeta console and send it to the customer.`, r.body);
+      }
+      return { amount: params.amountLocal, flw_ref: String(d.transactionId ?? ""), tx_ref: reference, reference, extra: pins };
+    }
     return {
       amount: params.amountLocal,
       flw_ref: String(d.transactionId ?? ""),
@@ -430,6 +453,11 @@ export async function pbPay(params: {
   // "Do not retry the purchase; wait for the final result on your webhook."
   if (r.http >= 200 && r.http < 300 && r.status === "pending") {
     throw new FlwError("Paybeta vend pending — waiting for webhook", r.body);
+  }
+  // A clear "that profile / candidate doesn't exist" rejection of an exam PIN means nothing was issued: safe to refund.
+  // (A message that also mentions the reference or a duplicate is NOT clear, and falls through to the check below.)
+  if (kind === "education" && r.status === "failed" && /(invalid|incorrect|not found|does not exist|doesn't exist|no (record|candidate|profile))/i.test(r.message) && !/reference|duplicate|already/i.test(r.message)) {
+    throw notVended(`Paybeta rejected the exam PIN request: ${r.message}`, r.body);
   }
   // Duplicate-reference style rejections mean an earlier attempt may exist: never refund on those.
   // (Checked BEFORE the generic "failed" below, which would otherwise mark them refundable.)
@@ -522,5 +550,125 @@ export function pbParseWebhook(payload: unknown): PbWebhook | null {
   else if (/^(failed|reversed|refunded|cancelled|canceled|declined)$/.test(raw)) state = "failed";
   else if (/^(pending|processing|initiated)$/.test(raw)) state = "pending";
   else recognised = false;
-  return { reference, state, recognised, token: pbToken(data) };
+  return { reference, state, recognised, token: pbToken(data) ?? (state === "success" ? pbExamPins(data) : null) };
+}
+
+// ───────────────────────── exam PINs (JAMB / WAEC) ─────────────────────────
+//
+// Paybeta's docs give the request shapes but NOT the PIN fields of the answer, so the reader below is deliberately wide:
+// it walks the answer for keys that look like a PIN / serial / voucher and shows what it finds. If it finds nothing on a
+// live purchase the order is held for review (see pbPay), never refunded and never marked delivered.
+
+const PIN_KEY = /^(e?pins?|pin_?(code|number|no|value)|card_?pin|voucher(_?(code|pin|number|no))?|serial(_?(number|no|num))?|token|scratch_?card(_?pin)?)$/i;
+const SERIAL_KEY = /^serial/i;
+
+function pinValue(v: unknown): string | null {
+  if (typeof v === "number" && Number.isFinite(v)) v = String(v);
+  if (typeof v !== "string") return null;
+  const s = v.replace(/^\s*(pin|serial|token)\s*(number|no)?\s*:?\s*/i, "").trim();
+  if (!s || s.length > 80 || /^(null|undefined|n\/a|none|0+)$/i.test(s)) return null;
+  return s;
+}
+
+/**
+ * "PIN: 1234567890 · Serial: AB12345" from a purchase / webhook `data` object, or null when nothing PIN-like is in it.
+ * Several PINs come out as "PIN: a · PIN: b". Never returns the reference or an exam code (those are not PINs).
+ */
+export function pbExamPins(data: unknown): string | null {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  const add = (label: "PIN" | "Serial", raw: unknown) => {
+    const v = pinValue(raw);
+    if (!v) return;
+    const k = `${label}:${v}`;
+    if (seen.has(k)) return;
+    seen.add(k);
+    out.push(`${label}: ${v}`);
+  };
+  const walk = (node: unknown, key: string, depth: number) => {
+    if (depth > 4 || node == null) return;
+    if (Array.isArray(node)) {
+      for (const n of node.slice(0, 20)) {
+        if (n && typeof n === "object") walk(n, "", depth + 1);
+        else if (PIN_KEY.test(key)) add(SERIAL_KEY.test(key) ? "Serial" : "PIN", n);
+      }
+      return;
+    }
+    if (typeof node === "object") {
+      for (const [k, v] of Object.entries(node as Json)) {
+        if (v && typeof v === "object") walk(v, k, depth + 1);
+        else if (PIN_KEY.test(k)) add(SERIAL_KEY.test(k) ? "Serial" : "PIN", v);
+      }
+      return;
+    }
+  };
+  walk(data, "", 0);
+  return out.length ? out.join(" · ").slice(0, 400) : null;
+}
+
+export interface ExamItem {
+  service: string; // "jamb" | "waec-registration" | "waec-result" …
+  serviceName: string; // "JAMB PIN Vending"
+  code: string; // examCode sent on purchase
+  name: string; // what the customer sees
+  price: number; // whole naira, from Paybeta
+}
+
+let examCache: { at: number; items: ExamItem[] } | null = null;
+let examInflight: Promise<ExamItem[]> | null = null;
+
+/** Exam list for one service. Paybeta's docs say POST {service}; its other lists answer GET, so try both. */
+async function pbExamList(service: string): Promise<any> {
+  const p = await pb("/v2/education/list", { method: "POST", body: { service } });
+  if (p.ok) return p.data;
+  const g = await pb(`/v2/education/list?service=${encodeURIComponent(service)}`);
+  if (g.ok) return g.data;
+  const why = (r: PbResult) => `HTTP ${r.http}${r.message ? `: ${r.message}` : ""}`;
+  throw new FlwError(`exam list failed — POST ${why(p)} | GET ${why(g)}`, { post: p.body, get: g.body });
+}
+
+async function buildExamCatalogue(): Promise<ExamItem[]> {
+  const items: ExamItem[] = [];
+  const provs = arr(await pbGet("/v2/education/providers")).filter(enabled);
+  for (const p of provs) {
+    const service = String(p.slug ?? slugify(String(p.name ?? ""))).trim();
+    const serviceName = String(p.name ?? service).trim();
+    if (!service || !isExamService(service)) continue;
+    let list: Json[] = [];
+    try {
+      const d = await pbExamList(service);
+      // The docs show packages like cable ({code, description, price}); accept the other likely spellings too.
+      list = arr(d?.packages ?? d?.exams ?? d?.examTypes ?? d?.types ?? d);
+    } catch (e) {
+      console.error(`[paybeta] exam list for ${service} failed`, e);
+      continue;
+    }
+    const seen = new Set<string>();
+    for (const k of list) {
+      const code = String(k.code ?? k.examCode ?? k.slug ?? "").trim();
+      const price = Math.round(Number(k.price ?? k.amount ?? k.fee));
+      if (!code || !Number.isFinite(price) || price <= 0 || seen.has(code)) continue;
+      seen.add(code);
+      items.push({ service, serviceName, code, name: String(k.description ?? k.name ?? code).trim(), price });
+    }
+    if (!list.length) console.error(`[paybeta] exam list for ${service} came back empty`);
+  }
+  return items;
+}
+
+/** Everything buyable as an exam PIN, with Paybeta's own prices. Cached for an hour. Throws if Paybeta can't be reached. */
+export async function pbExamCatalogue(): Promise<ExamItem[]> {
+  if (examCache && Date.now() - examCache.at < CACHE_MS) return examCache.items;
+  if (!examInflight) {
+    examInflight = buildExamCatalogue()
+      .then((items) => { if (items.length) examCache = { at: Date.now(), items }; return items; })
+      .finally(() => { examInflight = null; });
+  }
+  return examInflight;
+}
+
+/** Server-side truth for one exam product (price comes from here, never from the browser). */
+export async function pbExamLookup(service: string, code: string): Promise<ExamItem | null> {
+  const items = await pbExamCatalogue();
+  return items.find((i) => i.service === service && i.code === code) ?? null;
 }
