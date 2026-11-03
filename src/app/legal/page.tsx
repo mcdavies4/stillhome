@@ -68,6 +68,11 @@ export default function Legal() {
         We do not ask for your name, address, contacts, location, photos or files. We do not sell personal data, and we
         do not use it for advertising or tracking. The website and app have no advertising and no analytics SDKs.
       </p>
+      <p className={p}>
+        The website may show a small notice such as &ldquo;Someone bought &#8358;200 MTN airtime&rdquo;. It only describes
+        real, delivered orders, a few minutes after they happen, and shows nothing but the type of product, the amount and
+        roughly when. It never shows names, emails, account numbers or locations.
+      </p>
 
       <h2 className={h2}>Who we share data with</h2>
       <p className="text-haze mb-3">Only the services that help us deliver your purchase:</p>

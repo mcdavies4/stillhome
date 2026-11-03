@@ -3,7 +3,7 @@
 // fee = pct% of the bill amount, never below MIN, never above MAX (whole naira).
 // Paybeta pays us different commissions per product, so the fee is different too:
 //
-//   airtime and data  1%   min ₦20   max ₦100    (Paybeta commission 2.5% to 4%)
+//   airtime and data  1%   min ₦10   max ₦100    (Paybeta commission 2.5% to 4%)
 //   TV                1.5% min ₦50   max ₦300    (Paybeta commission 1.5%)
 //   electricity       1.5% min ₦100  max ₦500    (Paybeta commission 0.5% to 1.2%)
 //
@@ -38,7 +38,7 @@ export function feeSettingsFor(kind: FeeKind): FeeSettings {
   if (kind === "airtime_data") {
     return shape(
       num(process.env.NEXT_PUBLIC_NG_FEE_AIRTIME_PCT, 1),
-      num(process.env.NEXT_PUBLIC_NG_FEE_AIRTIME_MIN, 20),
+      num(process.env.NEXT_PUBLIC_NG_FEE_AIRTIME_MIN, 10),
       num(process.env.NEXT_PUBLIC_NG_FEE_AIRTIME_MAX, 100)
     );
   }

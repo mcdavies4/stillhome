@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 import ThemeToggle from "@/components/ThemeToggle";
 import Logo from "@/components/Logo";
+import RecentToast from "@/components/RecentToast";
+import { themeInitScript } from "@/lib/theme-time";
 
 const BASE = process.env.NEXT_PUBLIC_APP_URL ?? "https://stillhome-ten.vercel.app";
 
@@ -52,18 +54,13 @@ export const metadata: Metadata = {
   manifest: "/site.webmanifest",
 };
 
-const themeInit = `
-try {
-  var t = localStorage.getItem("nolgic-theme");
-  if (t === "dark") document.documentElement.classList.add("dark");
-} catch (e) {}
-`;
+
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
-        <script dangerouslySetInnerHTML={{ __html: themeInit }} />
+        <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
         <link
@@ -93,6 +90,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               <a href="/legal" className="hidden sm:block px-3 py-2 rounded-lg text-haze hover:text-paper">
                 Terms
               </a>
+              {process.env.NEXT_PUBLIC_BULK_ENABLED === "1" && (<a href="/bulk" className="px-3 py-2 rounded-lg text-haze hover:text-paper"><span className="sm:hidden">Bulk</span><span className="hidden sm:inline">Bulk airtime</span></a>)}
               <ThemeToggle />
               <a
                 href="/#pay"
@@ -104,6 +102,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           </div>
         </nav>
         {children}
+        <RecentToast />
       </body>
     </html>
   );

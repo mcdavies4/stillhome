@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { flwVerifyWebhook, parseFlwWebhook, orderIdFromFlwPayRef } from "@/lib/flwpay";
 import { confirmFlutterwavePayment } from "@/lib/flwpay-process";
+import { bulkIdFromTxRef, confirmBulkPayment } from "@/lib/bulk";
 
 // Flutterwave (₦) pay-in webhook — the twin of /api/paystack/webhook.
 //
@@ -32,6 +33,18 @@ export async function POST(req: Request) {
   const ev = parseFlwWebhook(payload);
   if (!ev) return NextResponse.json({ received: true, note: "no tx_ref" });
   if (ev.event && ev.event !== "charge.completed") return NextResponse.json({ received: true, note: `ignored ${ev.event}` });
+
+  // Bulk airtime batches use their own tx_ref prefix (NLGFB-).
+  const bulkId = bulkIdFromTxRef(ev.txRef);
+  if (bulkId) {
+    try {
+      const r = await confirmBulkPayment(bulkId, { transactionId: ev.id });
+      return NextResponse.json({ received: true, bulk: true, state: r.state });
+    } catch (e: any) {
+      console.error("[flutterwave-webhook] bulk verification failed", e?.message ?? e);
+      return NextResponse.json({ error: "Verification failed, retry" }, { status: 500 });
+    }
+  }
 
   const orderId = orderIdFromFlwPayRef(ev.txRef);
   if (!orderId) return NextResponse.json({ received: true, note: "not a Nolgic payment" });
