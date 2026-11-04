@@ -83,6 +83,31 @@ const CATEGORIES = [
   },
 ];
 
+// What each of the four main buttons says under its name.
+const TAB_HINT: Record<string, { title: string; hint: string }> = {
+  electricity: { title: "Light", hint: "Tokens" },
+  cable: { title: "TV", hint: "DStv, GOtv" },
+  airtime: { title: "Airtime", hint: "All networks" },
+  data: { title: "Data", hint: "Bundles" },
+};
+
+// The other things Nolgic does. Each one only appears when its own switch is on in Vercel,
+// so a feature that isn't open yet never shows a button.
+const EXTRAS = [
+  process.env.NEXT_PUBLIC_BULK_ENABLED === "1" && {
+    href: "/bulk", title: "Bulk airtime", text: "Top up many phone numbers in one go.",
+    icon: (<><rect x="3" y="7" width="9" height="14" rx="2" fill="none" stroke="currentColor" strokeWidth="2" /><rect x="12" y="3" width="9" height="14" rx="2" fill="none" stroke="currentColor" strokeWidth="2" /></>),
+  },
+  process.env.NEXT_PUBLIC_EXAMS_ENABLED === "1" && {
+    href: "/exams", title: "Exam PINs", text: "JAMB and WAEC PINs, delivered in seconds.",
+    icon: (<><path d="M6 3h8.5L19 7.5V21H6z" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" /><path d="M9.5 12.5h6M9.5 16.5h4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" /></>),
+  },
+  process.env.NEXT_PUBLIC_PAYFORME_ENABLED === "1" && {
+    href: "/ask", title: "Ask someone to pay", text: "Send a link. A friend or family member abroad pays by card.",
+    icon: (<><path d="M10 14a4 4 0 005.7 0l3-3a4 4 0 00-5.7-5.7l-1 1" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" /><path d="M14 10a4 4 0 00-5.7 0l-3 3a4 4 0 005.7 5.7l1-1" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" /></>),
+  },
+].filter(Boolean) as { href: string; title: string; text: string; icon: JSX.Element }[];
+
 const FAQS_DIASPORA = [
   { q: "Which countries does Nolgic support?", a: "Nigeria and Ghana today — electricity, TV subscriptions, airtime and data in both. We're building Nolgic as one tool for paying bills across Africa, and more countries are on the way. Pick the country at the top of the payment form." },
   { q: "How do I pay a NEPA / electricity bill in Nigeria from the UK?", a: "Pick the DisCo (EKEDC, IKEDC, EEDC and others), enter the meter number, and we show you the registered account name. Pay in pounds by card and the prepaid token is issued in seconds — we show it on screen, email it to you" + (WA_RECEIPTS ? ", and can send it to your family's phone." : ".") },
@@ -461,26 +486,45 @@ export default function Home() {
                 <SavedList ready={loaded && items.length > 0} onPick={applySaved} />
 
                 {/* Step 1 — what */}
-                <div className="mt-5" role="group" aria-label="What are you paying?">
-                  <div className="grid grid-cols-4 gap-2">
+                <div className="mt-5" role="group" aria-labelledby="what-label">
+                  <p id="what-label" className="text-sm font-medium mb-1.5">What are you paying for?</p>
+                  <div className="grid grid-cols-2 gap-2">
                     {TABS.map((t, n) => {
                       const on = tab === t.key;
+                      const hint = TAB_HINT[t.key];
                       return (
                         <button
                           key={t.key}
                           type="button"
                           aria-pressed={on}
                           onClick={() => chooseTab(t.key)}
-                          className={`flex flex-col items-center justify-center gap-1.5 rounded-2xl border h-[4.5rem] text-[13px] font-semibold transition-colors ${
-                            on ? "border-tungsten bg-cta/15 text-paper" : "border-line text-haze hover:text-paper hover:border-paper/30"
+                          className={`flex items-center gap-2.5 rounded-2xl border p-2.5 text-left min-h-[3.75rem] transition-colors ${
+                            on ? "border-tungsten bg-cta/15" : "border-line hover:border-paper/30"
                           }`}
                         >
-                          <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true" className={on ? "text-tungsten" : ""}>{CATEGORIES[n].icon}</svg>
-                          {t.label === "Electricity" ? "Light" : t.label === "Cable TV" ? "TV" : t.label}
+                          <span className={`shrink-0 w-9 h-9 rounded-xl flex items-center justify-center ${on ? "bg-cta text-oncta" : "bg-sunk text-tungsten"}`}>
+                            <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true">{CATEGORIES[n].icon}</svg>
+                          </span>
+                          <span className="min-w-0">
+                            <span className="block font-display font-bold text-[15px] leading-tight text-paper">{hint.title}</span>
+                            <span className="block text-xs text-haze leading-tight mt-0.5">{hint.hint}</span>
+                          </span>
                         </button>
                       );
                     })}
                   </div>
+
+                  {EXTRAS.length > 0 && (
+                    <div className="mt-2.5 flex flex-wrap items-center gap-1.5" aria-label="More services">
+                      {EXTRAS.map((x) => (
+                        <a key={x.href} href={x.href}
+                          className="inline-flex items-center gap-1.5 h-9 px-2.5 rounded-full border border-line text-[13px] font-semibold text-paper hover:border-paper/40 hover:bg-sunk">
+                          <svg width="15" height="15" viewBox="0 0 24 24" aria-hidden="true" className="text-tungsten">{x.icon}</svg>
+                          {x.title}
+                        </a>
+                      ))}
+                    </div>
+                  )}
 
                   <div className="mt-4">
                     <label htmlFor="provider">{LABELS[tab].provider}</label>
@@ -650,6 +694,26 @@ export default function Home() {
               </div>
             ))}
           </div>
+
+          {EXTRAS.length > 0 && (
+            <div className="mt-12 sm:mt-14">
+              <h3 className="font-display font-bold text-2xl">And more</h3>
+              <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                {EXTRAS.map((x) => (
+                  <a key={x.href} href={x.href}
+                    className="group flex gap-4 items-start rounded-2xl border border-line bg-night/40 p-4 sm:p-5 hover:border-paper/40">
+                    <span className="shrink-0 w-11 h-11 rounded-2xl bg-cta text-oncta flex items-center justify-center">
+                      <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true">{x.icon}</svg>
+                    </span>
+                    <span>
+                      <span className="block font-display font-bold text-lg leading-snug">{x.title}</span>
+                      <span className="block text-haze text-[15px] leading-relaxed mt-0.5">{x.text}</span>
+                    </span>
+                  </a>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       </section>
 
@@ -744,7 +808,7 @@ export default function Home() {
             <p className="font-semibold text-paper mb-3">Nolgic</p>
             <ul className="space-y-2">
               <li><a href="/#pay" className="hover:text-paper">Pay a bill</a></li>
-              {process.env.NEXT_PUBLIC_BULK_ENABLED === "1" && <li><a href="/bulk" className="hover:text-paper">Bulk airtime</a></li>}
+              {EXTRAS.map((x) => <li key={x.href}><a href={x.href} className="hover:text-paper">{x.title}</a></li>)}
               <li><a href="/#how" className="hover:text-paper">How it works</a></li>
               <li><a href="/#faq" className="hover:text-paper">FAQ</a></li>
               <li><GetOnPlay place="footer" variant="link" /></li>
