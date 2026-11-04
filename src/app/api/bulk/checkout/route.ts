@@ -1,4 +1,6 @@
 import { NextResponse } from "next/server";
+import { walletCovers } from "@/lib/capacity";
+import { BACK_SOON_MESSAGE } from "@/lib/back-soon";
 import { supabaseAdmin } from "@/lib/supabase";
 import { rateLimit } from "@/lib/ratelimit";
 import { alertFounder } from "@/lib/alerts";
@@ -35,6 +37,9 @@ export async function POST(req: Request) {
   if (ngnPayProvider() !== "flutterwave" || !flwPayConfigured() || activeProvider() !== "paybeta" || !paybetaConfigured()) {
     return NextResponse.json({ error: "Bulk airtime isn't available right now — please check back soon." }, { status: 503 });
   }
+
+  const cover = await walletCovers(checked.total, { context: `bulk airtime, ${checked.rows.length} numbers` });
+  if (!cover.ok) return NextResponse.json({ error: BACK_SOON_MESSAGE, busy: true }, { status: 503, headers: { "Retry-After": "120" } });
 
   const ip = (req.headers.get("x-forwarded-for") ?? "").split(",")[0].trim() || req.headers.get("x-real-ip") || "unknown";
   const db = supabaseAdmin();

@@ -9,6 +9,8 @@ import { paybetaConfigured, pbExamLookup } from "@/lib/paybeta";
 import { ngnPayProvider, flwPayConfigured, flwPayIsTestMode, initializePayment as flwInitialize } from "@/lib/flwpay";
 import { initializeTransaction, paystackConfigured, paystackIsTestMode } from "@/lib/paystack";
 import { examFee, examIdOk, examMaxOrder, examService } from "@/lib/exams-shared";
+import { walletCovers } from "@/lib/capacity";
+import { BACK_SOON_MESSAGE } from "@/lib/back-soon";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
@@ -49,6 +51,9 @@ export async function POST(req: Request) {
   catch { return NextResponse.json({ error: "Exam PINs are temporarily unavailable. Please try again in a few minutes." }, { status: 503 }); }
   if (!item) return NextResponse.json({ error: "That PIN isn't available right now. Please pick it again." }, { status: 400 });
   if (item.price > examMaxOrder()) return NextResponse.json({ error: "That PIN is above the order limit." }, { status: 400 });
+
+  const cover = await walletCovers(item.price, { context: item.name });
+  if (!cover.ok) return NextResponse.json({ error: BACK_SOON_MESSAGE, busy: true }, { status: 503, headers: { "Retry-After": "120" } });
 
   const fee = examFee(item.price);
   const total = item.price + fee;

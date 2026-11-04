@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import BackSoon, { isBackSoon } from "@/components/BackSoon";
 
 const ENABLED = process.env.NEXT_PUBLIC_EXAMS_ENABLED === "1";
 const naira = (n: number) => `₦${Math.round(n).toLocaleString("en-NG")}`;
@@ -137,7 +138,8 @@ export default function ExamsPage() {
                 </div>
               </div>
 
-              {error && <p className="text-bad mt-4" role="alert">{error}</p>}
+              {error && isBackSoon(error) && <BackSoon />}
+              {error && !isBackSoon(error) && <p className="text-bad mt-4" role="alert">{error}</p>}
               <button type="button" onClick={pay} disabled={busy}
                 className="mt-5 w-full h-14 px-8 rounded-2xl bg-cta text-oncta font-display font-bold text-lg disabled:opacity-50">
                 {busy ? "Opening secure checkout…" : `Pay ${naira(item.price + fee)}`}
@@ -147,7 +149,8 @@ export default function ExamsPage() {
               </p>
             </section>
           )}
-          {!item && error && <p className="text-bad mt-4" role="alert">{error}</p>}
+          {!item && error && isBackSoon(error) && <BackSoon />}
+          {!item && error && !isBackSoon(error) && <p className="text-bad mt-4" role="alert">{error}</p>}
         </>
       )}
     </main>

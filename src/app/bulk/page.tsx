@@ -5,6 +5,7 @@ import {
   NETWORKS, BULK_MIN_EACH, BULK_MAX_EACH, BULK_MAX_RECIPIENTS, BULK_MAX_TOTAL, BULK_FIRST_CAP,
   bulkFee, checkRows, localPhone, parseBulkText, type DraftRow,
 } from "@/lib/bulk-shared";
+import BackSoon, { isBackSoon } from "@/components/BackSoon";
 
 const ENABLED = process.env.NEXT_PUBLIC_BULK_ENABLED === "1";
 const naira = (n: number) => `₦${Math.round(n).toLocaleString("en-NG")}`;
@@ -163,7 +164,8 @@ export default function BulkPage() {
           <p className="text-sm text-haze mt-0.5">We send the receipt here, including anything refunded.</p>
           <input id="email" type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)}
             className="mt-2 w-full h-12 rounded-xl bg-sunk border border-line px-4 focus:outline-none focus:ring-2 focus:ring-cta/60" />
-          {error && <p className="text-bad mt-3" role="alert">{error}</p>}
+          {error && isBackSoon(error) && <BackSoon className="mt-3" />}
+          {error && !isBackSoon(error) && <p className="text-bad mt-3" role="alert">{error}</p>}
           <button type="button" onClick={pay} disabled={busy}
             className="mt-5 w-full sm:w-auto h-14 px-8 rounded-2xl bg-cta text-oncta font-display font-bold text-lg disabled:opacity-50">
             {busy ? "Opening secure checkout…" : `Pay ${naira(total + fee)}`}
@@ -174,7 +176,8 @@ export default function BulkPage() {
           </p>
         </section>
       )}
-      {!rows.length && error && <p className="text-bad mt-4" role="alert">{error}</p>}
+      {!rows.length && error && isBackSoon(error) && <BackSoon />}
+      {!rows.length && error && !isBackSoon(error) && <p className="text-bad mt-4" role="alert">{error}</p>}
     </main>
   );
 }

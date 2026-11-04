@@ -12,6 +12,8 @@ import { ngnPayProvider, flwPayConfigured, initializePayment as flwInitialize } 
 import { cap, normaliseEmail, normalisePhone, toInternationalPhone } from "@/lib/security";
 import { ngnServiceFee, ngnMaxOrder, feeKindOf } from "@/lib/ngn-fee";
 import { orderIsTest } from "@/lib/test-mode";
+import { walletCovers } from "@/lib/capacity";
+import { BACK_SOON_MESSAGE } from "@/lib/back-soon";
 
 // Creates the order row + a payment session:
 //   - default: Stripe Checkout in GBP (diaspora, any supported country)
@@ -96,6 +98,10 @@ export async function POST(req: Request) {
       const noValidate = /VTU|AIRTIME|DATA|BROADBAND|SURFLINE|POSTPAID PAYMENT/i.test(`${b.billerName} ${b.itemCode}`);
       if (!noValidate) throw err;
     }
+
+    // Can we deliver this right now? Asked before any payment link exists, so nobody pays for something we can't vend.
+    const cover = await walletCovers(Number(amountLocal), { context: `${b.billerName}` });
+    if (!cover.ok) return NextResponse.json({ error: BACK_SOON_MESSAGE, busy: true }, { status: 503, headers: { "Retry-After": "120" } });
 
     // ---- Naira path (Nigeria domestic, paid via Paystack) -----------------
     if (b.payIn === "ngn") {

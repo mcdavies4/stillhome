@@ -7,6 +7,7 @@ import { ngnFeeRange, ngnServiceFee, ngnMaxOrder, feeKindOf } from "@/lib/ngn-fe
 import GetOnPlay from "@/components/GetOnPlay";
 import SavedList from "@/components/SavedList";
 import { rememberCandidate, type Saved } from "@/lib/saved";
+import BackSoon, { isBackSoon } from "@/components/BackSoon";
 
 type BillerItem = {
   biller_code: string;
@@ -585,7 +586,8 @@ export default function Home() {
                   </div>
                 )}
 
-                {error && <div role="alert" className="mt-4 rounded-xl border border-bad/40 bg-bad/10 p-3.5 text-bad text-sm leading-relaxed">{error}</div>}
+                {error && isBackSoon(error) && <BackSoon />}
+                {error && !isBackSoon(error) && <div role="alert" className="mt-4 rounded-xl border border-bad/40 bg-bad/10 p-3.5 text-bad text-sm leading-relaxed">{error}</div>}
               </>)}
             </div>
 
