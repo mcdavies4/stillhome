@@ -13,6 +13,9 @@ It is **off** until you switch it on. While off, `/ask` and every Pay for Me API
 5. **Go live**: in Vercel set `NEXT_PUBLIC_PAYFORME_ENABLED=1` and **redeploy** (it is baked in at build time).
 6. **Tell people**: nothing links to `/ask` yet. When you want it found, add a button (for example next to "Find my order") that goes to `/ask`.
 
+### If you switch it on before running the SQL
+Nothing breaks. `/ask` shows "Ask someone to pay is opening soon", the API answers a calm "isn't open yet", and nobody can be asked to pay. The server log says `[pfm] NOT READY: run supabase/migrations/0023_pay_for_me.sql`. Run the SQL and it opens by itself within a few minutes (no redeploy). It checks both new tables and the new column on `orders`.
+
 ## How it works (so you can explain it)
 
 - The person asking fills `/ask`. Every item is checked with the provider (plan exists, price right, meter/smartcard owner name found), and the server works out the fees. The browser never sets a price.

@@ -45,6 +45,35 @@ const STUCK_AFTER_MS = 30 * 60_000;
 
 const db = () => supabaseAdmin();
 
+// ───────────────────────── 0. is the database set up? ─────────────────────────
+// The feature can be switched on (NEXT_PUBLIC_PAYFORME_ENABLED=1) before supabase/migrations/0023_pay_for_me.sql
+// has been run. Then nothing may start: no request is made and, above all, nobody is asked to pay. The answer is
+// remembered briefly so this costs one tiny query every few minutes, not one per visit.
+const NOT_READY_MSG = "Ask someone to pay isn't open yet. Please check back soon.";
+let readyCache: { ok: boolean; at: number } | null = null;
+
+export const isMissingSchema = (e: any) =>
+  !!e && (["PGRST205", "PGRST204", "42P01", "42703"].includes(String(e.code ?? "")) || /schema cache|does not exist|could not find the/i.test(String(e.message ?? "")));
+
+export function forgetPayForMeReady() { readyCache = null; }
+
+export async function payForMeReady(): Promise<boolean> {
+  if (readyCache && Date.now() - readyCache.at < (readyCache.ok ? 5 * 60_000 : 15_000)) return readyCache.ok;
+  let ok = false;
+  try {
+    const [a, b] = await Promise.all([
+      db().from("pay_requests").select("id").limit(1),
+      db().from("orders").select("pay_request_id").limit(1),
+    ]);
+    ok = !a.error && !b.error;
+    if (!ok) console.error("[pfm] NOT READY: run supabase/migrations/0023_pay_for_me.sql in the Supabase SQL editor.", a.error?.message ?? "", b.error?.message ?? "");
+  } catch (e: any) {
+    console.error("[pfm] readiness check failed", e?.message ?? e);
+  }
+  readyCache = { ok, at: Date.now() };
+  return ok;
+}
+
 // ───────────────────────── 1. making a request ─────────────────────────
 
 export type PfmDraft = { billerCode: string; itemCode: string; billerName: string; itemName: string; identifier: string; identifierLabel: string; amount: number };
@@ -65,6 +94,7 @@ async function pool<T, R>(xs: T[], n: number, fn: (x: T, i: number) => Promise<R
 }
 
 export async function createPayRequest(raw: any, ip: string): Promise<{ ok: true; id: string; key: string; total: number; count: number } | Fail> {
+  if (!(await payForMeReady())) return { ok: false, status: 503, error: NOT_READY_MSG };
   const rail = ngnPayProvider();
   if (rail === "flutterwave" ? !flwPayConfigured() : !paystackConfigured()) return { ok: false, status: 503, error: "This isn't available yet. Please check back soon." };
 
@@ -130,7 +160,11 @@ export async function createPayRequest(raw: any, ip: string): Promise<{ ok: true
     amount_ngn: amount, fee_ngn: fee, ip,
     expires_at: new Date(Date.now() + PFM_VALID_DAYS * 86400_000).toISOString(),
   }).select("id").single();
-  if (error || !req) { console.error("[pfm] create failed", error?.message); return { ok: false, status: 500, error: "Something went wrong. Please try again." }; }
+  if (error || !req) {
+    console.error("[pfm] create failed", error?.message);
+    if (isMissingSchema(error)) { readyCache = { ok: false, at: Date.now() }; return { ok: false, status: 503, error: NOT_READY_MSG }; }
+    return { ok: false, status: 500, error: "Something went wrong. Please try again." };
+  }
 
   const { error: itemErr } = await db().from("pay_request_items").insert(
     items.map((i, n) => ({
@@ -154,6 +188,7 @@ export async function startPayRequestPayment(id: string, body: any, ip: string):
   if (!email) return { ok: false, status: 400, error: "Enter a valid email address for your receipt." };
   const payerName = cap(body?.name, 60).replace(/\s+/g, " ") || null;
 
+  if (!(await payForMeReady())) return { ok: false, status: 503, error: NOT_READY_MSG };
   const rail = ngnPayProvider();
   if (rail === "flutterwave" ? !flwPayConfigured() : !paystackConfigured()) return { ok: false, status: 503, error: "Payments aren't available right now. Please check back soon." };
 
