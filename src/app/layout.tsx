@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import ThemeToggle from "@/components/ThemeToggle";
+import MoreMenu from "@/components/MoreMenu";
 import Logo from "@/components/Logo";
 import RecentToast from "@/components/RecentToast";
 import SupportChat from "@/components/SupportChat";
@@ -83,32 +84,27 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <AndroidBanner />
         <StatusBar />
         <RefCapture />
-        <nav className="sticky top-0 z-50 bg-night/85 backdrop-blur-md border-b border-line">
-          <div className="max-w-6xl mx-auto px-5 h-16 flex items-center justify-between">
+        <nav className="sticky top-0 z-50 bg-panel/95 backdrop-blur-md border-b border-line">
+          <div className="max-w-6xl mx-auto px-4 sm:px-5 h-16 flex items-center justify-between">
             <a href="/" className="flex items-center gap-2.5 min-h-11" aria-label="Nolgic home">
               <Logo />
             </a>
             <div className="flex items-center gap-1 sm:gap-2 text-sm">
-              <a href="/#how" className="hidden sm:block px-3 py-2 rounded-lg text-haze hover:text-paper">
-                How it works
-              </a>
-              <a href="/#faq" className="hidden sm:block px-3 py-2 rounded-lg text-haze hover:text-paper">
-                FAQ
-              </a>
-              <a href="/find-order" className="hidden md:block px-3 py-2 rounded-lg text-haze hover:text-paper">
-                Find my order
-              </a>
-              <a href="/legal" className="hidden sm:block px-3 py-2 rounded-lg text-haze hover:text-paper">
-                Terms
-              </a>
-              {process.env.NEXT_PUBLIC_BULK_ENABLED === "1" && (<a href="/bulk" className="px-3 py-2 rounded-lg text-haze hover:text-paper"><span className="sm:hidden">Bulk</span><span className="hidden sm:inline">Bulk airtime</span></a>)}
-              {process.env.NEXT_PUBLIC_EXAMS_ENABLED === "1" && (<a href="/exams" className="px-3 py-2 rounded-lg text-haze hover:text-paper max-[389px]:hidden"><span className="sm:hidden">Exams</span><span className="hidden sm:inline">Exam PINs</span></a>)}
-              {process.env.NEXT_PUBLIC_PAYFORME_ENABLED === "1" && (<a href="/ask" className="hidden lg:block px-3 py-2 rounded-lg text-haze hover:text-paper">Ask someone to pay</a>)}
-              <a href={playUrl("header")} target="_blank" rel="noopener" className="hidden md:block px-3 py-2 rounded-lg text-haze hover:text-paper">Get the app</a>
+              {/* The extra services: on a phone they are one tap away in the pay card, so the bar stays short. */}
+              {process.env.NEXT_PUBLIC_BULK_ENABLED === "1" && (<a href="/bulk" className="hidden sm:block px-3 py-2 rounded-lg text-haze hover:text-paper">Bulk airtime</a>)}
+              {process.env.NEXT_PUBLIC_EXAMS_ENABLED === "1" && (<a href="/exams" className="hidden sm:block px-3 py-2 rounded-lg text-haze hover:text-paper">Exam PINs</a>)}
+              {process.env.NEXT_PUBLIC_PAYFORME_ENABLED === "1" && (<a href="/ask" className="hidden md:block px-3 py-2 rounded-lg text-haze hover:text-paper">Ask someone to pay</a>)}
+              <MoreMenu items={[
+                { href: "/#how", label: "How it works" },
+                { href: "/#faq", label: "FAQ" },
+                { href: "/find-order", label: "Find my order or token" },
+                { href: playUrl("header"), label: "Get the Android app", external: true },
+                { href: "/legal", label: "Terms, refunds & privacy" },
+              ]} />
               <ThemeToggle />
               <a
                 href="/#pay"
-                className="ml-1 px-4 h-10 inline-flex items-center rounded-xl bg-cta text-oncta font-display font-bold hover:brightness-105 active:brightness-95"
+                className="ml-1 px-3.5 sm:px-4 h-10 inline-flex items-center whitespace-nowrap rounded-xl bg-cta text-oncta font-display font-bold hover:brightness-105 active:brightness-95"
               >
                 Pay a bill
               </a>

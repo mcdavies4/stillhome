@@ -701,7 +701,7 @@ export default function Home() {
               <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                 {EXTRAS.map((x) => (
                   <a key={x.href} href={x.href}
-                    className="group flex gap-4 items-start rounded-2xl border border-line bg-night/40 p-4 sm:p-5 hover:border-paper/40">
+                    className="group flex gap-3.5 items-center rounded-2xl border border-line bg-panel shadow-card p-3.5 sm:p-4 hover:border-paper/40">
                     <span className="shrink-0 w-11 h-11 rounded-2xl bg-cta text-oncta flex items-center justify-center">
                       <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true">{x.icon}</svg>
                     </span>
