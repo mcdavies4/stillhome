@@ -10,6 +10,7 @@ import RefBanner from "@/components/RefBanner";
 import { readRef } from "@/lib/referral-client";
 import { rememberCandidate, type Saved } from "@/lib/saved";
 import BackSoon, { isBackSoon } from "@/components/BackSoon";
+import { notPower } from "@/lib/not-power";
 
 type BillerItem = {
   biller_code: string;
@@ -44,8 +45,8 @@ const itemKey = (i: BillerItem) => `${i.biller_code}:${i.item_code}:${i.short_na
 
 // Country-agnostic category matchers (work for NG discos AND GH's ECG etc.)
 const TABS = [
-  { key: "electricity", label: "Electricity", match: (b: BillerItem) => /ELECTRIC|DISCO|PREPAID METER|EKEDC|IKEDC|EEDC|AEDC|IBEDC|PHED|KEDCO|BEDC|JED|YEDC|ABUJA|ENUGU DISCO|KANO DISCO|KADUNA|ECG|ELECTRICITY COMPANY/i.test(b.biller_name + " " + b.name) },
-  { key: "cable", label: "Cable TV", match: (b: BillerItem) => /DSTV|GOTV|STARTIMES|SHOWMAX/i.test(b.biller_name + " " + b.name) },
+  { key: "electricity", label: "Electricity", match: (b: BillerItem) => !notPower(b.biller_name + " " + b.name) && /ELECTRIC|DISCO|PREPAID METER|EKEDC|IKEDC|EEDC|AEDC|IBEDC|PHED|KEDCO|BEDC|JED|YEDC|ABUJA|ENUGU DISCO|KANO DISCO|KADUNA|ECG|ELECTRICITY COMPANY/i.test(b.biller_name + " " + b.name) },
+  { key: "cable", label: "Cable TV", match: (b: BillerItem) => /DSTV|GOTV|STARTIMES|SHOWMAX/i.test(b.biller_name + " " + b.name) && !/ELECTRIC/i.test(b.biller_name + " " + b.name) },
   { key: "airtime", label: "Airtime", match: (b: BillerItem) => b.is_airtime || /VTU|AIRTIME/i.test(b.biller_name + " " + b.name + " " + (b.short_name ?? "")) },
   { key: "data", label: "Data", match: (b: BillerItem) => /DATA|BROADBAND|SURFLINE|BUNDLE|POSTPAID PAYMENT/i.test(b.biller_name + " " + b.name) && !b.is_airtime },
 ];

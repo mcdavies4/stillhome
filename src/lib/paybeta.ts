@@ -25,6 +25,7 @@
 // Errors are thrown as FlwError (same class the rest of the app already understands).
 
 import { createHmac, timingSafeEqual } from "node:crypto";
+import { notPower } from "@/lib/not-power";
 import { FlwError } from "@/lib/flutterwave";
 import type { BillerItem, ValidateResult, BillPaymentResult } from "@/lib/flutterwave";
 import { toLocalPhone } from "@/lib/vtpass";
@@ -234,6 +235,7 @@ async function electricitySpecs(): Promise<Spec[]> {
   for (const p of provs) {
     const name = String(p.name ?? "").trim();
     if (!name) continue;
+    if (notPower(`${name} ${String(p.slug ?? "")}`)) { console.warn(`[paybeta] ignoring "${name}" in the electricity list: it is not an electricity company`); continue; }
     const service = String(p.slug ?? slugify(name));
     const biller_name = /electric/i.test(name) ? name : `${name} Electricity`;
     for (const kind of kinds) {
