@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import GetOnPlay from "@/components/GetOnPlay";
+import SaveAfterPay from "@/components/SaveAfterPay";
 
 type Order = {
   id: string;
@@ -216,6 +217,8 @@ export default function OrderPage() {
           </p>
         </div>
       )}
+
+      {order.status === "fulfilled" && <SaveAfterPay billerName={order.biller_name} identifier={order.identifier} />}
 
       {order.status === "fulfilled" && (
         <div className="mt-4 rounded-2xl border border-line p-5 flex flex-wrap items-center gap-x-5 gap-y-3">

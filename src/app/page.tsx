@@ -5,6 +5,8 @@ import { useEffect, useMemo, useState } from "react";
 import { allCountries, getCountry, type CountryCode } from "@/lib/countries";
 import { ngnFeeRange, ngnServiceFee, ngnMaxOrder, feeKindOf } from "@/lib/ngn-fee";
 import GetOnPlay from "@/components/GetOnPlay";
+import SavedList from "@/components/SavedList";
+import { rememberCandidate, type Saved } from "@/lib/saved";
 
 type BillerItem = {
   biller_code: string;
@@ -235,20 +237,35 @@ export default function Home() {
     document.getElementById("pay")?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
-  async function validate() {
-    if (!item || !identifier) return;
-    if (isNoValidate(item)) { setValidated({ name: null }); setError(null); return; }
+  // Arguments let a tap on a saved item check it straight away, before React has applied the state it just set.
+  async function validate(it: BillerItem | null = item, id: string = identifier) {
+    if (!it || !id) return;
+    if (isNoValidate(it)) { setValidated({ name: null }); setError(null); return; }
     setBusy("validate"); setError(null); setValidated(null);
     try {
       const r = await fetch("/api/validate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ itemCode: item.item_code, billerCode: item.biller_code, identifier }),
+        body: JSON.stringify({ itemCode: it.item_code, billerCode: it.biller_code, identifier: id }),
       });
       const d = await r.json();
       if (!d.ok) throw new Error(d.error);
       setValidated({ name: d.name });
     } catch (e: any) { setError(e.message); } finally { setBusy(null); }
+  }
+
+  // Tap on a saved item: select its category, provider and plan, fill the number, and check the name again.
+  function applySaved(sv: Saved) {
+    const found = items.find((i) => itemKey(i) === sv.itemKey) ?? items.find((i) => i.biller_code === sv.billerCode && i.item_code === sv.itemCode) ?? null;
+    setError(null);
+    setTab(TABS.some((t) => t.key === sv.tab) ? sv.tab : "electricity");
+    setProvider(found?.biller_name ?? sv.billerName);
+    setItem(found);
+    setIdentifier(sv.identifier);
+    setValidated(null);
+    if (!found) { setError("That one isn't on the list right now. Choose it again below."); return; }
+    validate(found, sv.identifier);
+    document.getElementById("pay")?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
   async function pay() {
@@ -273,6 +290,8 @@ export default function Home() {
       });
       const d = await r.json();
       if (d.error) throw new Error(d.error);
+      // Leave a short-lived note so the delivered page can offer to save this meter / smartcard / number.
+      rememberCandidate({ tab, billerCode: item.biller_code, billerName: item.biller_name, itemCode: item.item_code, itemKey: itemKey(item), itemName: item.name, identifier, label: item.label_name || "Account number", ownerName: validated.name, at: Date.now() });
       window.location.href = d.url;
     } catch (e: any) { setError(e.message); setBusy(null); }
   }
@@ -435,6 +454,8 @@ export default function Home() {
                   </div>
                 )}
 
+                <SavedList ready={loaded && items.length > 0} onPick={applySaved} />
+
                 {/* Step 1 — what */}
                 <div className="mt-5" role="group" aria-label="What are you paying?">
                   <div className="grid grid-cols-4 gap-2">
@@ -528,7 +549,7 @@ export default function Home() {
                       <p className="text-sm text-bad mt-2.5" role="status">The most you can pay in one go is {fmtLocal(ngnMax)}.</p>
                     )}
 
-                    <button onClick={validate} disabled={busy !== null || !identifier}
+                    <button onClick={() => validate()} disabled={busy !== null || !identifier}
                       className="mt-4 w-full h-12 rounded-xl border border-paper/25 font-semibold hover:bg-sunk disabled:opacity-40 disabled:hover:bg-transparent">
                       {busy === "validate" ? "Checking…" : isNoValidate(item) ? "Confirm number" : "Check account name"}
                     </button>
