@@ -1,6 +1,8 @@
 // src/lib/payforme-shared.ts
 // Pay for Me: the parts the browser and the server both need. No secrets, no database.
 
+import { notPower } from "@/lib/not-power";
+
 export const payForMeEnabled = () => process.env.NEXT_PUBLIC_PAYFORME_ENABLED === "1";
 
 export const PFM_MAX_ITEMS = 8;
@@ -22,8 +24,8 @@ export type PfmBiller = {
 
 /** The same four groups as the home page. */
 export const PFM_TABS: { key: PfmCategory; label: string; match: (b: PfmBiller) => boolean }[] = [
-  { key: "electricity", label: "Electricity", match: (b) => /ELECTRIC|DISCO|PREPAID METER|EKEDC|IKEDC|EEDC|AEDC|IBEDC|PHED|KEDCO|BEDC|JED|YEDC|ABUJA|ENUGU DISCO|KANO DISCO|KADUNA|ELECTRICITY COMPANY/i.test(b.biller_name + " " + b.name) },
-  { key: "cable", label: "Cable TV", match: (b) => /DSTV|GOTV|STARTIMES|SHOWMAX/i.test(b.biller_name + " " + b.name) },
+  { key: "electricity", label: "Electricity", match: (b) => !notPower(b.biller_name + " " + b.name) && /ELECTRIC|DISCO|PREPAID METER|EKEDC|IKEDC|EEDC|AEDC|IBEDC|PHED|KEDCO|BEDC|JED|YEDC|ABUJA|ENUGU DISCO|KANO DISCO|KADUNA|ELECTRICITY COMPANY/i.test(b.biller_name + " " + b.name) },
+  { key: "cable", label: "Cable TV", match: (b) => /DSTV|GOTV|STARTIMES|SHOWMAX/i.test(b.biller_name + " " + b.name) && !/ELECTRIC/i.test(b.biller_name + " " + b.name) },
   { key: "airtime", label: "Airtime", match: (b) => b.is_airtime || /VTU|AIRTIME/i.test(b.biller_name + " " + b.name + " " + (b.short_name ?? "")) },
   { key: "data", label: "Data", match: (b) => /DATA|BROADBAND|SURFLINE|BUNDLE|POSTPAID PAYMENT/i.test(b.biller_name + " " + b.name) && !b.is_airtime },
 ];
