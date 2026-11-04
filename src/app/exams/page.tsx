@@ -25,12 +25,12 @@ export default function ExamsPage() {
   useEffect(() => {
     if (!ENABLED) return;
     fetch("/api/exams").then((r) => r.json()).then((d: Cfg) => {
-      setCfg(d);
+      setCfg({ ...d, groups: Array.isArray(d?.groups) ? d.groups : [] }); // a malformed answer must never crash the page
       if (d.groups?.length === 1) setService(d.groups[0].service);
     }).catch(() => setCfg({ enabled: false, unavailable: true, fee: { pct: 0, min: 0, max: 0 }, groups: [] }));
   }, []);
 
-  const group = useMemo(() => cfg?.groups.find((g) => g.service === service) ?? null, [cfg, service]);
+  const group = useMemo(() => cfg?.groups?.find((g) => g.service === service) ?? null, [cfg, service]);
   const item = useMemo(() => group?.items.find((i) => i.code === code) ?? null, [group, code]);
   const fee = cfg && item ? feeFor(cfg, item.price) : 0;
   const idClean = id1.replace(/\s+/g, "");

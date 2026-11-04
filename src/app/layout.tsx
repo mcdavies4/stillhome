@@ -85,7 +85,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <RefCapture />
         <nav className="sticky top-0 z-50 bg-night/85 backdrop-blur-md border-b border-line">
           <div className="max-w-6xl mx-auto px-5 h-16 flex items-center justify-between">
-            <a href="/" className="flex items-center gap-2.5" aria-label="Nolgic home">
+            <a href="/" className="flex items-center gap-2.5 min-h-11" aria-label="Nolgic home">
               <Logo />
             </a>
             <div className="flex items-center gap-1 sm:gap-2 text-sm">

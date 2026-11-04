@@ -30,6 +30,7 @@ export async function GET(req: Request) {
     );
   } catch (e: any) {
     console.error("[billers] catalogue failed:", e?.message ?? e);
-    return NextResponse.json({ error: e?.message ?? "Catalogue unavailable" }, { status: 502, headers: { "Cache-Control": "no-store" } });
+    // Never pass a provider's own error text to the browser; it is in the server log above.
+    return NextResponse.json({ error: "We couldn’t load the list just now. Please try again in a moment." }, { status: 502, headers: { "Cache-Control": "no-store" } });
   }
 }

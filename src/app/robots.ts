@@ -4,7 +4,8 @@ const BASE = process.env.NEXT_PUBLIC_APP_URL ?? "https://stillhome-ten.vercel.ap
 
 export default function robots(): MetadataRoute.Robots {
   return {
-    rules: [{ userAgent: "*", allow: "/", disallow: ["/order/", "/api/", "/admin"] }],
+    // Private pages (one per order, reminder or feedback link) and the admin are never indexed.
+    rules: [{ userAgent: "*", allow: "/", disallow: ["/order/", "/bulk/", "/exams/", "/reminders/", "/feedback/", "/api/", "/admin"] }],
     sitemap: `${BASE}/sitemap.xml`,
   };
 }

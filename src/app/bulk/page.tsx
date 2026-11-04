@@ -107,7 +107,7 @@ export default function BulkPage() {
             className="h-11 px-5 rounded-xl bg-cta text-oncta font-display font-bold disabled:opacity-40">Add to list</button>
           <button type="button" onClick={() => fileRef.current?.click()}
             className="h-11 px-5 rounded-xl border border-line text-paper font-medium hover:bg-sunk">Upload a CSV or text file</button>
-          <input ref={fileRef} type="file" accept=".csv,.txt,text/csv,text/plain" className="hidden" onChange={(e) => onFile(e.target.files?.[0])} />
+          <input ref={fileRef} type="file" aria-label="Upload a CSV or text file of numbers" accept=".csv,.txt,text/csv,text/plain" className="hidden" onChange={(e) => onFile(e.target.files?.[0])} />
         </div>
         {notes.map((n, i) => <p key={i} className="text-sm text-tungsten mt-3" role="status">{n}</p>)}
       </section>
