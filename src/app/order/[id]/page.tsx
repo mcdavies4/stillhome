@@ -4,6 +4,9 @@ import { useEffect, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import GetOnPlay from "@/components/GetOnPlay";
 import SaveAfterPay from "@/components/SaveAfterPay";
+import ShareReceipt from "@/components/ShareReceipt";
+import ReferCard from "@/components/ReferCard";
+import { supportLink } from "@/lib/support-contact";
 
 type Order = {
   id: string;
@@ -116,6 +119,7 @@ export default function OrderPage() {
   const steps = track(order.status);
   const needsHelp = ["needs_review", "refund_failed", "failed_refunded"].includes(order.status);
   const orderNo = order.id.slice(0, 8);
+  const wa = supportLink({ orderNo, status: c.title, item: order.biller_name.replace(/\s+VTU$/i, "") });
 
   async function copyToken() {
     if (!order?.flw_token) return;
@@ -214,11 +218,18 @@ export default function OrderPage() {
             Missed it, or typed the wrong email? Write to{" "}
             <a className="text-tungsten underline underline-offset-2" href={`mailto:nolgichq@gmail.com?subject=${encodeURIComponent("Order " + orderNo)}`}>nolgichq@gmail.com</a>{" "}
             with order number <span className="font-mono text-paper">{orderNo}</span> and we&rsquo;ll send it again.
+            Or <a className="text-tungsten underline underline-offset-2" href="/find-order">get your orders emailed again</a>.
           </p>
+          {wa && <a href={wa} target="_blank" rel="noopener noreferrer" className="mt-3 inline-flex h-11 px-5 items-center rounded-xl border border-paper/25 font-semibold hover:bg-sunk">Message us on WhatsApp</a>}
         </div>
       )}
 
+      {order.status === "fulfilled" && (
+        <ShareReceipt order={{ biller_name: order.biller_name, identifier: order.identifier, identifier_label: order.identifier_label, amount_ngn: order.amount_ngn, flw_token: order.flw_token, customer_name: order.customer_name }} />
+      )}
+
       {order.status === "fulfilled" && <SaveAfterPay billerName={order.biller_name} identifier={order.identifier} />}
+      {order.status === "fulfilled" && <ReferCard orderId={order.id} />}
 
       {order.status === "fulfilled" && (
         <div className="mt-4 rounded-2xl border border-line p-5 flex flex-wrap items-center gap-x-5 gap-y-3">
@@ -237,6 +248,7 @@ export default function OrderPage() {
             Email <a className="text-tungsten underline underline-offset-2" href={`mailto:nolgichq@gmail.com?subject=${encodeURIComponent("Order " + orderNo)}`}>nolgichq@gmail.com</a> and
             quote order number <span className="font-mono text-paper">{orderNo}</span>.
           </p>
+          {wa && <a href={wa} target="_blank" rel="noopener noreferrer" className="mt-4 mr-2 inline-flex h-11 px-5 items-center rounded-xl border border-paper/25 font-semibold hover:bg-sunk">Message us on WhatsApp</a>}
           {order.status === "needs_review" && (
             <button type="button" onClick={() => window.location.reload()}
               className="mt-4 h-11 px-5 rounded-xl border border-paper/25 font-semibold hover:bg-sunk">

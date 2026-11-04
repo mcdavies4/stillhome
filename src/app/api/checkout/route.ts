@@ -14,6 +14,7 @@ import { ngnServiceFee, ngnMaxOrder, feeKindOf } from "@/lib/ngn-fee";
 import { orderIsTest } from "@/lib/test-mode";
 import { walletCovers } from "@/lib/capacity";
 import { BACK_SOON_MESSAGE } from "@/lib/back-soon";
+import { planFeeWaiver, commitFeeWaiver, cleanRef } from "@/lib/referral";
 
 // Creates the order row + a payment session:
 //   - default: Stripe Checkout in GBP (diaspora, any supported country)
@@ -56,6 +57,7 @@ export async function POST(req: Request) {
       payIn: cap(raw.payIn, 3),
       recipientWhatsapp,
       userId: null as string | null, // never trust a client-supplied user id
+      ref: cleanRef(raw.ref),
     };
     // amountLocal replaces amountNgn; accept both for backward-compat with any cached client.
     const amountLocal = raw.amountLocal ?? raw.amountNgn;
@@ -127,7 +129,9 @@ export async function POST(req: Request) {
           ? purchase.item
           : { biller_code: b.billerCode, item_code: b.itemCode, biller_name: b.billerName }
       );
-      const feeNgn = ngnServiceFee(amountNgn, feeKind);
+      // A friend’s invite or an earned credit can waive the service fee (only when referrals are switched on; otherwise this changes nothing).
+      const waiver = await planFeeWaiver({ email: b.email, ref: b.ref, feeNgn: ngnServiceFee(amountNgn, feeKind) });
+      const feeNgn = waiver.fee;
       const totalNgn = amountNgn + feeNgn;
 
       // Velocity check works in pence; approximate with the NGN rate (reference only).
@@ -172,6 +176,7 @@ export async function POST(req: Request) {
         .select("id")
         .single();
       if (errN) throw errN;
+      await commitFeeWaiver(waiver, b.email, orderN.id);
 
       const appUrlN = process.env.NEXT_PUBLIC_APP_URL!;
       if (rail === "flutterwave") {

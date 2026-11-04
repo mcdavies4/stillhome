@@ -5,6 +5,8 @@ import Logo from "@/components/Logo";
 import RecentToast from "@/components/RecentToast";
 import SupportChat from "@/components/SupportChat";
 import AndroidBanner from "@/components/AndroidBanner";
+import StatusBar from "@/components/StatusBar";
+import RefCapture from "@/components/RefCapture";
 import { playUrl } from "@/lib/app-links";
 import { themeInitScript } from "@/lib/theme-time";
 
@@ -79,6 +81,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           Skip to content
         </a>
         <AndroidBanner />
+        <StatusBar />
+        <RefCapture />
         <nav className="sticky top-0 z-50 bg-night/85 backdrop-blur-md border-b border-line">
           <div className="max-w-6xl mx-auto px-5 h-16 flex items-center justify-between">
             <a href="/" className="flex items-center gap-2.5" aria-label="Nolgic home">
@@ -90,6 +94,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               </a>
               <a href="/#faq" className="hidden sm:block px-3 py-2 rounded-lg text-haze hover:text-paper">
                 FAQ
+              </a>
+              <a href="/find-order" className="hidden md:block px-3 py-2 rounded-lg text-haze hover:text-paper">
+                Find my order
               </a>
               <a href="/legal" className="hidden sm:block px-3 py-2 rounded-lg text-haze hover:text-paper">
                 Terms

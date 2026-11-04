@@ -6,6 +6,8 @@ import { allCountries, getCountry, type CountryCode } from "@/lib/countries";
 import { ngnFeeRange, ngnServiceFee, ngnMaxOrder, feeKindOf } from "@/lib/ngn-fee";
 import GetOnPlay from "@/components/GetOnPlay";
 import SavedList from "@/components/SavedList";
+import RefBanner from "@/components/RefBanner";
+import { readRef } from "@/lib/referral-client";
 import { rememberCandidate, type Saved } from "@/lib/saved";
 import BackSoon, { isBackSoon } from "@/components/BackSoon";
 
@@ -287,6 +289,7 @@ export default function Home() {
           identifierLabel: item.label_name || "Account number",
           amountLocal: fixedAmount ? fixedLocal : Number(amountLocal),
           recipientWhatsapp: whatsapp || null,
+          ref: readRef(),
         }),
       });
       const d = await r.json();
@@ -573,6 +576,7 @@ export default function Home() {
                   <div className="mt-5 pt-5 border-t border-line stub-in">
                     <label htmlFor="email">Your email (we send your receipt and token here)</label>
                     <input id="email" value={email} onChange={(e) => setEmail(e.target.value.trim())} placeholder="you@example.com" type="email" inputMode="email" enterKeyHint="next" autoComplete="email" autoCapitalize="off" autoCorrect="off" spellCheck={false} />
+                    <RefBanner />
                     {WA_RECEIPTS && (
                     <div className="mt-3">
                       <label htmlFor="whatsapp">Their mobile number <span className="text-haze font-normal">(optional)</span></label>
@@ -749,6 +753,7 @@ export default function Home() {
           <div>
             <p className="font-semibold text-paper mb-3">Help</p>
             <ul className="space-y-2">
+              <li><a href="/find-order" className="hover:text-paper">Find my order or token</a></li>
               <li><a href="mailto:nolgichq@gmail.com" className="hover:text-paper">nolgichq@gmail.com</a></li>
               <li><a href="/legal" className="hover:text-paper">Terms, refunds &amp; privacy</a></li>
             </ul>
