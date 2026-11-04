@@ -6,6 +6,11 @@ import { cronAuthorized } from "@/lib/security";
 import { sweepBulk } from "@/lib/bulk";
 import { sweepFollowups } from "@/lib/followup";
 
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+// The daily check now calls the payment and bills providers, so give the run the full minute.
+export const maxDuration = 60;
+
 // Daily backstop: recover tokens for fulfilled orders still missing one
 // (last 72h). Vercel Cron calls this with Authorization: Bearer CRON_SECRET.
 //
