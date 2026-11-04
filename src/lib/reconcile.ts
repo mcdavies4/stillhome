@@ -17,6 +17,7 @@ import { flwBase, flwExtraHeaders } from "@/lib/flutterwave";
 import { flwPayConfigured, flwPayIsTestMode, flwPayReferenceFor, orderIdFromFlwPayRef, verifyByReference } from "@/lib/flwpay";
 import { paystackConfigured, paystackIsTestMode, paystackReferenceFor, verifyTransaction } from "@/lib/paystack";
 import { bulkTxRef } from "@/lib/bulk";
+import { parsePfmRef } from "@/lib/payforme-shared";
 import { buildReport, dayAfterIso, dayStartIso, fetchBulk, loadSettings, validYmd, watDay, productLabel, type BulkRow, type OrderRow, type Report } from "@/lib/finance";
 
 export type Flag = { level: "danger" | "warn"; msg: string };
@@ -154,13 +155,27 @@ export async function runReconcile(dateStr: string = yesterdayWAT(), deep = true
   checks.push({ name: "Orders and bulk batches", ran: true, note: `${naira.length} order${naira.length === 1 ? "" : "s"}, ${bulk.length} bulk batch${bulk.length === 1 ? "" : "es"} read` });
 
   // What each of our records expects from the payment side.
-  type Expect = { kind: "order" | "bulk"; id: string; provider: "flutterwave" | "paystack"; ref: string; ngn: number; status: string; paidExpected: boolean; label: string };
+  type Expect = { kind: "order" | "bulk" | "pfm"; id: string; provider: "flutterwave" | "paystack"; ref: string; ngn: number; status: string; paidExpected: boolean; label: string };
   const expects: Expect[] = [];
-  for (const o of naira) {
+  for (const o of naira.filter((x) => !x.pay_request_id)) { // items of a "Pay for Me" request share ONE payment: matched below
     const provider = o.payment_provider === "flutterwave" ? "flutterwave" : "paystack";
     expects.push({ kind: "order", id: o.id, provider, ref: provider === "flutterwave" ? flwPayReferenceFor(o.id) : paystackReferenceFor(o.id), ngn: num(o.amount_ngn) + num(o.service_fee_local), status: o.status, paidExpected: ORDER_PAID.has(o.status), label: `order ${short(o.id)} (${o.biller_name ?? "?"} ${ngn(num(o.amount_ngn))})` });
   }
   for (const b of bulk) expects.push({ kind: "bulk", id: b.id, provider: "flutterwave", ref: bulkTxRef(b.id), ngn: num(b.amount_total) + num(b.service_fee), status: b.status, paidExpected: BULK_PAID.has(b.status), label: `bulk batch ${short(b.id)} (${b.recipients_count ?? "?"} numbers, ${ngn(num(b.amount_total))})` });
+
+  // "Pay for Me": one payment covers a whole request, so it is matched to the request, not to its item orders.
+  const PFM_PAID = new Set(["paid", "settled", "needs_review"]);
+  let pfmCount = 0;
+  try {
+    const { data: reqs, error: pErr } = await db.from("pay_requests").select("*").gte("created_at", dayStartIso(dateStr)).lt("created_at", dayAfterIso(dateStr)).limit(500);
+    if (pErr) throw pErr;
+    for (const p of (reqs ?? []) as any[]) {
+      if (p.is_test || !p.pay_ref) continue;
+      pfmCount++;
+      expects.push({ kind: "pfm", id: p.id, provider: p.payment_provider === "flutterwave" ? "flutterwave" : "paystack", ref: p.pay_ref, ngn: num(p.amount_ngn) + num(p.fee_ngn), status: p.status, paidExpected: PFM_PAID.has(p.status) && !!p.paid_at, label: `Pay for Me request ${short(p.id)} (${ngn(num(p.amount_ngn))})` });
+    }
+  } catch { /* the Pay for Me tables don't exist yet: nothing to check */ }
+  if (pfmCount) checks.push({ name: "Pay for Me requests", ran: true, note: `${pfmCount} request${pfmCount === 1 ? "" : "s"} matched to their payments` });
 
   // ── 1. Money in ──
   // Ask each provider for a window one day either side so a payment made near midnight still finds its pair.
@@ -226,7 +241,7 @@ export async function runReconcile(dateStr: string = yesterdayWAT(), deep = true
   // 1b. Every successful payment in the day must belong to an order or bulk batch that agrees with it.
   const known = new Map(expects.map((e) => [e.ref, e] as const));
   const strangers = Array.from(byRef.values()).filter((t) => inDay(t.at) && t.currency === "NGN" && !known.has(t.ref));
-  const looksOurs = (ref: string) => /^(NLG|NLGFW|NLGFB)-/i.test(ref);
+  const looksOurs = (ref: string) => /^(NLG|NLGFW|NLGFB|NLGP|NLGFP)-/i.test(ref);
   const orderIds = new Set<string>(), bulkIds = new Set<string>();
   for (const t of strangers) {
     const m = /^NLG(?:FW)?-([0-9a-f-]{36})$/i.exec(t.ref); if (m) orderIds.add(m[1].toLowerCase());
@@ -235,7 +250,19 @@ export async function runReconcile(dateStr: string = yesterdayWAT(), deep = true
   const lateOrders = new Map<string, any>(), lateBulk = new Map<string, any>();
   if (orderIds.size) { const { data } = await db.from("orders").select("id,status,biller_name,amount_ngn,service_fee_local,is_test").in("id", Array.from(orderIds)); for (const o of data ?? []) lateOrders.set(String(o.id).toLowerCase(), o); }
   if (bulkIds.size) { const { data } = await db.from("bulk_orders").select("id,status,amount_total,service_fee,is_test").in("id", Array.from(bulkIds)); for (const b of data ?? []) lateBulk.set(String(b.id).toLowerCase(), b); }
+  const pfmIds = new Set<string>();
+  for (const t of strangers) { const m = parsePfmRef(t.ref); if (m) pfmIds.add(m.requestId); }
+  const latePfm = new Map<string, any>();
+  if (pfmIds.size) { try { const { data } = await db.from("pay_requests").select("id,status,is_test").in("id", Array.from(pfmIds)); for (const p of data ?? []) latePfm.set(String(p.id).toLowerCase(), p); } catch { /* table missing */ } }
   for (const t of strangers) {
+    const pm = parsePfmRef(t.ref);
+    if (pm) {
+      const rq = latePfm.get(pm.requestId);
+      if (rq?.is_test) continue;
+      if (!rq) flags.push({ level: "danger", msg: `Money received with no request: ${ngn(t.ngn)} (${t.ref.slice(0, 60)}). Someone paid a Pay for Me link and nothing exists on our side.` });
+      else if (!PFM_PAID.has(String(rq.status))) flags.push({ level: "danger", msg: `Money received but Pay for Me request ${short(rq.id)} is still "${rq.status}": ${ngn(t.ngn)} was paid and nothing was delivered.` });
+      continue; // (a paid request's other payments were refunded as duplicates: the alert email already said so)
+    }
     const o = lateOrders.get((/^NLG(?:FW)?-(.+)$/i.exec(t.ref)?.[1] ?? "").toLowerCase());
     const b = lateBulk.get((/^NLGFB-(.+)$/i.exec(t.ref)?.[1] ?? "").toLowerCase());
     const rec = o ?? b;

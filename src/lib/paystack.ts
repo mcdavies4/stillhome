@@ -63,8 +63,11 @@ export async function initializeTransaction(p: {
   amountNgn: number;
   orderId: string;
   callbackUrl: string;
+  /** Pay for Me: its own reference and metadata (one payment covers several orders). Everything else leaves these unset. */
+  reference?: string;
+  metadata?: Record<string, unknown>;
 }): Promise<{ authorizationUrl: string; reference: string }> {
-  const reference = paystackReferenceFor(p.orderId);
+  const reference = p.reference ?? paystackReferenceFor(p.orderId);
   const r = await ps<{ data: { authorization_url: string; reference: string } }>(
     "/transaction/initialize",
     {
@@ -76,7 +79,7 @@ export async function initializeTransaction(p: {
         reference,
         callback_url: p.callbackUrl,
         channels: ["card", "bank", "ussd", "bank_transfer"],
-        metadata: { order_id: p.orderId },
+        metadata: p.metadata ?? { order_id: p.orderId },
       }),
     }
   );
@@ -100,10 +103,13 @@ export async function verifyTransaction(reference: string): Promise<{
  * Paystack balance; if it can't cover it yet, the refund stays "pending" until it can.
  * Throws if Paystack rejects the request outright.
  */
-export async function refundTransaction(reference: string): Promise<{ status: string }> {
+export async function refundTransaction(reference: string, amountNgn?: number): Promise<{ status: string }> {
+  // No amount = refund everything. With an amount (whole or fractional naira) = a PARTIAL refund of that much
+  // (Pay for Me refunds one item of a multi-item payment).
+  if (amountNgn !== undefined && (!Number.isFinite(amountNgn) || amountNgn <= 0)) throw new PaystackError("Bad refund amount");
   const r = await ps<{ data: { status?: string } }>("/refund", {
     method: "POST",
-    body: JSON.stringify({ transaction: reference }),
+    body: JSON.stringify(amountNgn === undefined ? { transaction: reference } : { transaction: reference, amount: Math.round(amountNgn * 100) }),
   });
   return { status: r.data?.status ?? "unknown" };
 }

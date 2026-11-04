@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { flwVerifyWebhook, parseFlwWebhook, orderIdFromFlwPayRef } from "@/lib/flwpay";
 import { confirmFlutterwavePayment } from "@/lib/flwpay-process";
 import { bulkIdFromTxRef, confirmBulkPayment } from "@/lib/bulk";
+import { confirmPayRequest } from "@/lib/payforme";
+import { parsePfmRef } from "@/lib/payforme-shared";
 
 // Flutterwave (₦) pay-in webhook — the twin of /api/paystack/webhook.
 //
@@ -42,6 +44,18 @@ export async function POST(req: Request) {
       return NextResponse.json({ received: true, bulk: true, state: r.state });
     } catch (e: any) {
       console.error("[flutterwave-webhook] bulk verification failed", e?.message ?? e);
+      return NextResponse.json({ error: "Verification failed, retry" }, { status: 500 });
+    }
+  }
+
+  // "Pay for Me" payments (NLGFP-<request id>-<attempt>): one payment, several items.
+  const pfm = parsePfmRef(ev.txRef);
+  if (pfm && pfm.rail === "flutterwave") {
+    try {
+      const r = await confirmPayRequest(pfm.requestId, { ref: ev.txRef, transactionId: ev.id });
+      return NextResponse.json({ received: true, payForMe: true, state: r.state });
+    } catch (e: any) {
+      console.error("[flutterwave-webhook] pay-for-me verification failed", e?.message ?? e);
       return NextResponse.json({ error: "Verification failed, retry" }, { status: 500 });
     }
   }

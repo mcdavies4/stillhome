@@ -5,6 +5,8 @@ import { paystackIsTestMode, paystackReferenceFor, refundTransaction, verifyWebh
 import { fulfilClaimedOrder, type ClaimedOrder } from "@/lib/fulfil-order";
 import { billsTestMode } from "@/lib/bills";
 import { sendNgnReceiptEmail } from "@/lib/receipt-ngn";
+import { confirmPayRequest } from "@/lib/payforme";
+import { parsePfmRef } from "@/lib/payforme-shared";
 
 // Paystack (₦) payment pipeline — the naira twin of /api/stripe/webhook.
 //   charge.success
@@ -35,6 +37,18 @@ export async function POST(req: Request) {
   const data = event.data ?? {};
   const orderId: string | undefined = data.metadata?.order_id;
   const reference: string = String(data.reference ?? "");
+
+  // "Pay for Me" payments carry their own reference (NLGP-<request id>-<attempt>). One payment, several items.
+  const pfm = parsePfmRef(reference);
+  if (pfm && pfm.rail === "paystack") {
+    try {
+      const r = await confirmPayRequest(pfm.requestId, { ref: reference });
+      return NextResponse.json({ received: true, payForMe: true, state: r.state });
+    } catch (e: any) {
+      console.error("[paystack-webhook] pay-for-me verification failed", e?.message ?? e);
+      return NextResponse.json({ error: "Verification failed, retry" }, { status: 500 });
+    }
+  }
   if (!orderId) return NextResponse.json({ received: true, note: "no order_id (not a Nolgic payment)" });
 
   const db = supabaseAdmin();
