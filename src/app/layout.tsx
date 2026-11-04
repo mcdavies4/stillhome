@@ -4,6 +4,8 @@ import ThemeToggle from "@/components/ThemeToggle";
 import Logo from "@/components/Logo";
 import RecentToast from "@/components/RecentToast";
 import SupportChat from "@/components/SupportChat";
+import AndroidBanner from "@/components/AndroidBanner";
+import { playUrl } from "@/lib/app-links";
 import { themeInitScript } from "@/lib/theme-time";
 
 const BASE = process.env.NEXT_PUBLIC_APP_URL ?? "https://stillhome-ten.vercel.app";
@@ -76,6 +78,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         >
           Skip to content
         </a>
+        <AndroidBanner />
         <nav className="sticky top-0 z-50 bg-night/85 backdrop-blur-md border-b border-line">
           <div className="max-w-6xl mx-auto px-5 h-16 flex items-center justify-between">
             <a href="/" className="flex items-center gap-2.5" aria-label="Nolgic home">
@@ -93,6 +96,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               </a>
               {process.env.NEXT_PUBLIC_BULK_ENABLED === "1" && (<a href="/bulk" className="px-3 py-2 rounded-lg text-haze hover:text-paper"><span className="sm:hidden">Bulk</span><span className="hidden sm:inline">Bulk airtime</span></a>)}
               {process.env.NEXT_PUBLIC_EXAMS_ENABLED === "1" && (<a href="/exams" className="px-3 py-2 rounded-lg text-haze hover:text-paper max-[389px]:hidden"><span className="sm:hidden">Exams</span><span className="hidden sm:inline">Exam PINs</span></a>)}
+              <a href={playUrl("header")} target="_blank" rel="noopener" className="hidden md:block px-3 py-2 rounded-lg text-haze hover:text-paper">Get the app</a>
               <ThemeToggle />
               <a
                 href="/#pay"

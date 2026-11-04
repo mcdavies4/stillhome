@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useParams } from "next/navigation";
+import GetOnPlay from "@/components/GetOnPlay";
 
 type Order = {
   id: string;
@@ -80,10 +81,10 @@ export default function OrderPage() {
         // Keep polling briefly for a late electricity token (server re-queries
         // FLW on each poll) — up to ~1 minute, then the email/cron takes over.
         const awaitingToken =
-          d.status === "fulfilled" && !d.flw_token && expectsToken(d) && tokenPolls.current < 40;
+          d.status === "fulfilled" && !d.flw_token && expectsToken(d) && tokenPolls.current < 20;
         if (awaitingToken) tokenPolls.current += 1;
 
-        if (inFlight || awaitingToken) setTimeout(poll, 1500);
+        if (inFlight || awaitingToken) setTimeout(poll, 3000);
       }
     }
     poll();
@@ -213,6 +214,16 @@ export default function OrderPage() {
             <a className="text-tungsten underline underline-offset-2" href={`mailto:nolgichq@gmail.com?subject=${encodeURIComponent("Order " + orderNo)}`}>nolgichq@gmail.com</a>{" "}
             with order number <span className="font-mono text-paper">{orderNo}</span> and we&rsquo;ll send it again.
           </p>
+        </div>
+      )}
+
+      {order.status === "fulfilled" && (
+        <div className="mt-4 rounded-2xl border border-line p-5 flex flex-wrap items-center gap-x-5 gap-y-3">
+          <div className="flex-1 min-w-[12rem]">
+            <p className="font-display font-bold">Paying again next month?</p>
+            <p className="text-haze text-sm leading-relaxed mt-1">The Nolgic app keeps your order history and remembers your email.</p>
+          </div>
+          <GetOnPlay place="order" />
         </div>
       )}
 

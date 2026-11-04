@@ -4,6 +4,7 @@ import Logo from "@/components/Logo";
 import { useEffect, useMemo, useState } from "react";
 import { allCountries, getCountry, type CountryCode } from "@/lib/countries";
 import { ngnFeeRange, ngnServiceFee, ngnMaxOrder, feeKindOf } from "@/lib/ngn-fee";
+import GetOnPlay from "@/components/GetOnPlay";
 
 type BillerItem = {
   biller_code: string;
@@ -47,7 +48,7 @@ const TABS = [
 const CHECKS = [
   { title: "See the name first", text: "We look up the meter, smartcard or number and show who it belongs to before you pay." },
   { title: "Refunded if it fails", text: "If delivery doesn\u2019t go through, your money goes back to you automatically." },
-  { title: "No account needed", text: "Just an email address for your receipt. Nothing to download." },
+  { title: "No account needed", text: "Just an email address for your receipt. Use the website or the app." },
 ];
 
 const CATEGORIES = [
@@ -331,6 +332,13 @@ export default function Home() {
               </li>
             ))}
           </ul>
+
+          {DOMESTIC && (
+            <div className="mt-8 sm:mt-10 flex flex-wrap items-center gap-x-5 gap-y-3">
+              <GetOnPlay place="hero" />
+              <p className="text-haze text-sm max-w-[16rem] leading-snug">The Nolgic app for Android. Same checks, in two taps.</p>
+            </div>
+          )}
 
           <p className="hidden lg:block text-haze text-sm mt-10 max-w-[34rem] leading-relaxed">Works with {BRANDS}.</p>
         </div>
@@ -709,8 +717,10 @@ export default function Home() {
             <p className="font-semibold text-paper mb-3">Nolgic</p>
             <ul className="space-y-2">
               <li><a href="/#pay" className="hover:text-paper">Pay a bill</a></li>
+              {process.env.NEXT_PUBLIC_BULK_ENABLED === "1" && <li><a href="/bulk" className="hover:text-paper">Bulk airtime</a></li>}
               <li><a href="/#how" className="hover:text-paper">How it works</a></li>
               <li><a href="/#faq" className="hover:text-paper">FAQ</a></li>
+              <li><GetOnPlay place="footer" variant="link" /></li>
             </ul>
           </div>
           <div>
