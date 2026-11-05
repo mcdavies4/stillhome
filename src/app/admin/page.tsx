@@ -106,7 +106,7 @@ export default function Admin() {
 
   function login() {
     setErr(null);
-    try { sessionStorage.setItem("nolgic-admin", pass); } catch {}
+    try { sessionStorage.setItem("nolgic-admin", pass); window.dispatchEvent(new Event("nolgic-admin-auth")); } catch {}
     setAuthed(pass); setPass("");
   }
 
@@ -150,6 +150,7 @@ export default function Admin() {
         {tabBtn("orders", "Orders")}
         {tabBtn("health", "Health")}
       </div>
+
 
       {err && <p role="alert" className="text-bad text-sm mb-4">{err}</p>}
 

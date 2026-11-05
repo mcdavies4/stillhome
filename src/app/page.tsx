@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import Logo from "@/components/Logo";
 import { useEffect, useMemo, useState } from "react";
 import { allCountries, getCountry, type CountryCode } from "@/lib/countries";
@@ -807,20 +808,20 @@ export default function Home() {
           </div>
           <div>
             <p className="font-semibold text-paper mb-3">Nolgic</p>
-            <ul className="space-y-2">
-              <li><a href="/#pay" className="hover:text-paper">Pay a bill</a></li>
+            <ul className="[&_a]:inline-flex [&_a]:items-center [&_a]:min-h-[40px]">
+              <li><Link href="/#pay" className="hover:text-paper">Pay a bill</Link></li>
               {EXTRAS.map((x) => <li key={x.href}><a href={x.href} className="hover:text-paper">{x.title}</a></li>)}
-              <li><a href="/#how" className="hover:text-paper">How it works</a></li>
-              <li><a href="/#faq" className="hover:text-paper">FAQ</a></li>
+              <li><Link href="/#how" className="hover:text-paper">How it works</Link></li>
+              <li><Link href="/#faq" className="hover:text-paper">FAQ</Link></li>
               <li><GetOnPlay place="footer" variant="link" /></li>
             </ul>
           </div>
           <div>
             <p className="font-semibold text-paper mb-3">Help</p>
-            <ul className="space-y-2">
-              <li><a href="/find-order" className="hover:text-paper">Find my order or token</a></li>
+            <ul className="[&_a]:inline-flex [&_a]:items-center [&_a]:min-h-[40px]">
+              <li><Link href="/find-order" className="hover:text-paper">Find my order or token</Link></li>
               <li><a href="mailto:nolgichq@gmail.com" className="hover:text-paper">nolgichq@gmail.com</a></li>
-              <li><a href="/legal" className="hover:text-paper">Terms, refunds &amp; privacy</a></li>
+              <li><Link href="/legal" className="hover:text-paper">Terms, refunds &amp; privacy</Link></li>
             </ul>
           </div>
         </div>

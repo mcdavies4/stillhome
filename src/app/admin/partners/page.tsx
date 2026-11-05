@@ -7,6 +7,7 @@
 // sent as x-admin-secret on every request. Nothing persisted in the browser.
 
 import { useCallback, useEffect, useState } from "react";
+import AdminNav from "@/components/AdminNav";
 
 type Partner = {
   id: string;
@@ -158,8 +159,9 @@ export default function PartnersAdmin() {
 
   if (!unlocked) {
     return (
-      <main style={{ background: C.night, color: C.paper }} className="min-h-screen flex items-center justify-center p-6">
-        <div className="w-full max-w-sm space-y-4">
+      <main style={{ background: C.night, color: C.paper }} className="min-h-screen p-4 md:p-8">
+        <div className="max-w-6xl mx-auto"><AdminNav tone="night" /></div>
+        <div className="w-full max-w-sm space-y-4 mx-auto mt-16">
           <h1 className="text-xl font-semibold" style={{ color: C.tungsten }}>Nolgic · Partner Admin</h1>
           <input
             type="password"
@@ -187,6 +189,7 @@ export default function PartnersAdmin() {
   return (
     <main style={{ background: C.night, color: C.paper }} className="min-h-screen p-4 md:p-8">
       <div className="max-w-6xl mx-auto space-y-6">
+        <AdminNav tone="night" />
         <header className="flex items-center justify-between">
           <h1 className="text-2xl font-semibold">
             <span style={{ color: C.tungsten }}>Nolgic</span> Partners

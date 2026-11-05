@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 
 export type MoreItem = { href: string; label: string; external?: boolean };
@@ -36,18 +37,14 @@ export default function MoreMenu({ items }: { items: MoreItem[] }) {
       </button>
       {open && (
         <div role="menu" className="absolute right-4 sm:right-0 top-full mt-2 w-56 rounded-2xl border border-line bg-panel shadow-card p-1.5 z-50">
-          {items.map((i) => (
-            <a
-              key={i.href + i.label}
-              role="menuitem"
-              href={i.href}
-              {...(i.external ? { target: "_blank", rel: "noopener" } : {})}
-              onClick={() => setOpen(false)}
-              className="block rounded-xl px-3 py-2.5 text-[15px] text-paper hover:bg-sunk"
-            >
-              {i.label}
-            </a>
-          ))}
+          {items.map((i) => {
+            const cls = "block rounded-xl px-3 py-2.5 text-[15px] text-paper hover:bg-sunk";
+            return i.external ? (
+              <a key={i.href + i.label} role="menuitem" href={i.href} target="_blank" rel="noopener" onClick={() => setOpen(false)} className={cls}>{i.label}</a>
+            ) : (
+              <Link key={i.href + i.label} role="menuitem" href={i.href} onClick={() => setOpen(false)} className={cls}>{i.label}</Link>
+            );
+          })}
         </div>
       )}
     </div>

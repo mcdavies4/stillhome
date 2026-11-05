@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import GetOnPlay from "@/components/GetOnPlay";
@@ -72,28 +73,63 @@ export default function OrderPage() {
   const tokenPolls = useRef(0);
   const [copied, setCopied] = useState(false);
 
+  const [missing, setMissing] = useState(false);
+  const [slow, setSlow] = useState(false);
+
   useEffect(() => {
     let stop = false;
+    let fails = 0;
     async function poll() {
-      const r = await fetch(`/api/orders?id=${id}`);
-      if (r.ok) {
-        const d: Order = await r.json();
-        if (!stop) setOrder(d);
+      let r: Response;
+      try {
+        r = await fetch(`/api/orders?id=${id}`, { cache: "no-store" });
+      } catch {
+        // A dropped connection must not end the page: try again, and say so if it keeps failing.
         if (stop) return;
-
-        const inFlight = ["paid", "pending_payment"].includes(d.status);
-        // Keep polling briefly for a late electricity token (server re-queries
-        // FLW on each poll) — up to ~1 minute, then the email/cron takes over.
-        const awaitingToken =
-          d.status === "fulfilled" && !d.flw_token && expectsToken(d) && tokenPolls.current < 20;
-        if (awaitingToken) tokenPolls.current += 1;
-
-        if (inFlight || awaitingToken) setTimeout(poll, 3000);
+        fails += 1;
+        if (fails >= 3) setSlow(true);
+        setTimeout(poll, Math.min(3000 + fails * 1500, 10000));
+        return;
       }
+      if (stop) return;
+      if (r.status === 404 || r.status === 400) { setMissing(true); return; }
+      if (!r.ok) {
+        fails += 1;
+        if (fails >= 3) setSlow(true);
+        if (fails < 20) setTimeout(poll, Math.min(3000 + fails * 1500, 10000));
+        return;
+      }
+      const d: Order = await r.json().catch(() => null as any);
+      if (!d || typeof d.id !== "string") { setMissing(true); return; }
+      fails = 0; setSlow(false);
+      if (stop) return;
+      setOrder(d);
+
+      const inFlight = ["paid", "pending_payment"].includes(d.status);
+      // Keep polling briefly for a late electricity token (server re-queries
+      // FLW on each poll) — up to ~1 minute, then the email/cron takes over.
+      const awaitingToken =
+        d.status === "fulfilled" && !d.flw_token && expectsToken(d) && tokenPolls.current < 20;
+      if (awaitingToken) tokenPolls.current += 1;
+
+      if (inFlight || awaitingToken) setTimeout(poll, 3000);
     }
     poll();
     return () => { stop = true; };
   }, [id]);
+
+  if (!order && missing) {
+    return (
+      <main id="content" className="max-w-xl mx-auto px-5 pt-16 pb-24">
+        <h1 className="font-display text-3xl font-extrabold tracking-tight">We can&apos;t find this order</h1>
+        <p className="mt-3 text-haze">The link may be incomplete or mistyped. If you paid, your receipt email has the right link, or we can email your orders to you.</p>
+        <div className="mt-6 flex flex-wrap gap-3">
+          <Link href="/find-order" className="inline-flex items-center h-12 px-5 rounded-xl bg-cta text-oncta font-semibold">Find my order</Link>
+          <Link href="/" className="inline-flex items-center h-12 px-5 rounded-xl border border-line font-semibold">Back to Nolgic</Link>
+        </div>
+      </main>
+    );
+  }
 
   if (!order) {
     return (
@@ -103,6 +139,7 @@ export default function OrderPage() {
         <div className="h-4 w-full rounded bg-sunk mt-4" />
         <div className="h-4 w-2/3 rounded bg-sunk mt-2" />
         <p className="sr-only">Loading order…</p>
+        {slow ? <p role="status" className="mt-6 text-sm text-haze">Your connection looks slow. We are still trying.</p> : null}
       </main>
     );
   }
@@ -258,9 +295,9 @@ export default function OrderPage() {
         </div>
       )}
 
-      <a href="/" className="mt-10 h-12 flex items-center justify-center rounded-xl border border-paper/25 font-semibold hover:bg-sunk">
+      <Link href="/" className="mt-10 h-12 flex items-center justify-center rounded-xl border border-paper/25 font-semibold hover:bg-sunk">
         Make another payment
-      </a>
+      </Link>
     </main>
   );
 }
