@@ -1,5 +1,6 @@
 "use client";
 
+import { track } from "@/lib/track";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 
@@ -88,7 +89,7 @@ export default function SupportChat() {
   return (
     <>
       {!open && (
-        <button type="button" onClick={() => { setOpen(true); setTimeout(() => boxRef.current?.focus(), 50); }}
+        <button type="button" onClick={() => { track("support_open"); setOpen(true); setTimeout(() => boxRef.current?.focus(), 50); }}
           aria-label={unread ? `Open chat, ${unread} new repl${unread > 1 ? "ies" : "y"}` : "Open chat"}
           className="fixed right-4 bottom-20 sm:bottom-5 z-50 h-14 pl-4 pr-5 rounded-full bg-cta text-oncta font-display font-bold shadow-card flex items-center gap-2 hover:brightness-105 active:brightness-95">
           <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5.5A2.5 2.5 0 016.5 3h11A2.5 2.5 0 0120 5.5v8a2.5 2.5 0 01-2.5 2.5H11l-4.5 4v-4h0A2.5 2.5 0 014 13.5v-8z" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinejoin="round" /></svg>

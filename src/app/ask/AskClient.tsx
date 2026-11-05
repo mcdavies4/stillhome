@@ -1,5 +1,6 @@
 "use client";
 
+import { track } from "@/lib/track";
 import { useEffect, useMemo, useState } from "react";
 import { ngnMaxOrder, ngnServiceFee, feeKindOf } from "@/lib/ngn-fee";
 import { clearDraft, readDraft, writeDraft } from "@/lib/payforme-draft";
@@ -122,7 +123,7 @@ export default function AskClient() {
       });
       const d = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(d.error || "Something went wrong. Please try again.");
-      setDone(d); clearDraft();
+      setDone(d); clearDraft(); track("ask_created");
       const next = [{ id: d.id, key: d.key, name: name.trim(), total: d.total, at: Date.now() }, ...readSaved().filter((s) => s.id !== d.id)];
       writeSaved(next); setSaved(next);
     } catch (e: any) { setErr(e.message); } finally { setBusy(null); }

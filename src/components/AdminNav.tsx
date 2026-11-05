@@ -8,6 +8,7 @@ import { usePathname } from "next/navigation";
 // It reads the same sign-in (sessionStorage "nolgic-admin") the admin pages use; signed out, it simply shows no count.
 const ITEMS: { href: string; label: string }[] = [
   { href: "/admin", label: "Dashboard" },
+  { href: "/admin/analytics", label: "Visitors" },
   { href: "/admin/inbox", label: "Support inbox" },
   { href: "/admin/finance", label: "Finance" },
   { href: "/admin/growth", label: "Growth" },
