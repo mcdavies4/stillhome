@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { ngnMaxOrder, ngnServiceFee, feeKindOf } from "@/lib/ngn-fee";
+import { clearDraft, readDraft, writeDraft } from "@/lib/payforme-draft";
 import { PFM_MAX_ITEMS, PFM_NOTE_MAX, PFM_TABS, pfmMoney, pfmNoValidate, pfmTitle, requestShareText, waShareUrl, type PfmBiller } from "@/lib/payforme-shared";
 
 type Entry = { billerCode: string; itemCode: string; billerName: string; itemName: string; identifier: string; identifierLabel: string; amount: number; name: string | null; fee: number };
@@ -43,14 +44,30 @@ export default function AskClient() {
   const [done, setDone] = useState<{ id: string; key: string; total: number; count: number } | null>(null);
   const [copied, setCopied] = useState(false);
   const [saved, setSaved] = useState<Saved[]>([]);
+  const [ready, setReady] = useState(false);          // the saved draft has been read (don't overwrite it before that)
+  const [restored, setRestored] = useState(false);     // show "your list is still here" once
 
   useEffect(() => {
     setSaved(readSaved());
+    // Pick up the list where they left it. The fee is worked out again, so it is always today's fee.
+    const d = readDraft();
+    if (d) {
+      setName(d.name); setEmail(d.email); setNote(d.note);
+      setList(d.list.map((e) => ({ ...e, fee: ngnServiceFee(e.amount, feeKindOf({ biller_code: e.billerCode, item_code: e.itemCode, biller_name: e.billerName, name: e.itemName } as any)) })));
+      if (d.list.length) setRestored(true);
+    }
+    setReady(true);
     fetch("/api/billers?country=NG")
       .then(async (r) => ({ ok: r.ok, d: await r.json().catch(() => ({})) }))
       .then(({ ok, d }) => { setAll(d.items ?? []); setLoaded(true); if (!ok || !(d.items ?? []).length) setLoadErr("We couldn't load the list of services. Refresh the page to try again."); })
       .catch(() => { setLoaded(true); setLoadErr("We couldn't load the list of services. Refresh the page to try again."); });
   }, []);
+
+  // Keep the draft up to date as they type, add and remove. Nothing left = nothing saved.
+  useEffect(() => {
+    if (!ready || done) return;
+    writeDraft({ name, email, note, list: list.map(({ fee: _fee, ...e }) => e) });
+  }, [ready, done, name, email, note, list]);
 
   const providers = useMemo(() => {
     const t = PFM_TABS.find((x) => x.key === tab)!;
@@ -105,7 +122,7 @@ export default function AskClient() {
       });
       const d = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(d.error || "Something went wrong. Please try again.");
-      setDone(d);
+      setDone(d); clearDraft();
       const next = [{ id: d.id, key: d.key, name: name.trim(), total: d.total, at: Date.now() }, ...readSaved().filter((s) => s.id !== d.id)];
       writeSaved(next); setSaved(next);
     } catch (e: any) { setErr(e.message); } finally { setBusy(null); }
@@ -180,6 +197,12 @@ export default function AskClient() {
 
       <section className="mt-10" aria-labelledby="what">
         <h2 id="what" className="font-display font-bold text-xl">What do you need?</h2>
+        {list.length > 0 && (
+          <div className="mt-2 flex items-center justify-between gap-3">
+            <p className="text-sm text-haze" data-testid="saved-note">{restored ? "Welcome back. Your list is still here." : "Your list is saved on this device."}</p>
+            <button type="button" onClick={() => { setList([]); setRestored(false); }} className="shrink-0 text-sm font-semibold text-tungsten underline underline-offset-2">Clear list</button>
+          </div>
+        )}
         {list.length > 0 && (
           <ul className="mt-3 space-y-2" data-testid="list">
             {list.map((e, n) => (

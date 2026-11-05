@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useMemo, useRef, useState } from "react";
 import {
   NETWORKS, BULK_MIN_EACH, BULK_MAX_EACH, BULK_MAX_RECIPIENTS, BULK_MAX_TOTAL, BULK_FIRST_CAP,
@@ -71,7 +72,7 @@ export default function BulkPage() {
       <main id="content" className="max-w-xl mx-auto px-5 pt-16 pb-24">
         <h1 className="font-display font-bold text-3xl mt-10">Bulk airtime is opening soon</h1>
         <p className="text-haze mt-3 text-lg leading-relaxed">Top up many numbers in one payment. Check back shortly.</p>
-        <a href="/" className="inline-block mt-8 h-12 leading-[3rem] px-6 rounded-xl bg-cta text-oncta font-display font-bold">Back to Nolgic</a>
+        <Link href="/" className="inline-block mt-8 h-12 leading-[3rem] px-6 rounded-xl bg-cta text-oncta font-display font-bold">Back to Nolgic</Link>
       </main>
     );
   }

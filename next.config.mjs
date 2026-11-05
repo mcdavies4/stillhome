@@ -6,6 +6,9 @@ const securityHeaders = [
   { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
   { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=(), payment=()" },
   { key: "Cross-Origin-Opener-Policy", value: "same-origin" },
+  // Only the safe parts of a CSP (no one can frame the site, no plugins, no <base> tricks). Script/style rules are left
+  // out on purpose so the payment providers keep working.
+  { key: "Content-Security-Policy", value: "frame-ancestors 'none'; base-uri 'self'; object-src 'none'" },
 ];
 
 const nextConfig = {

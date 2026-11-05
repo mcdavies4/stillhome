@@ -1,3 +1,4 @@
+import Link from "next/link";
 import type { Metadata } from "next";
 import "./globals.css";
 import ThemeToggle from "@/components/ThemeToggle";
@@ -86,14 +87,14 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <RefCapture />
         <nav className="sticky top-0 z-50 bg-panel/95 backdrop-blur-md border-b border-line">
           <div className="max-w-6xl mx-auto px-4 sm:px-5 h-16 flex items-center justify-between">
-            <a href="/" className="flex items-center gap-2.5 min-h-11" aria-label="Nolgic home">
+            <Link href="/" className="flex items-center gap-2.5 min-h-11" aria-label="Nolgic home">
               <Logo />
-            </a>
+            </Link>
             <div className="flex items-center gap-1 sm:gap-2 text-sm">
               {/* The extra services: on a phone they are one tap away in the pay card, so the bar stays short. */}
-              {process.env.NEXT_PUBLIC_BULK_ENABLED === "1" && (<a href="/bulk" className="hidden sm:block px-3 py-2 rounded-lg text-haze hover:text-paper">Bulk airtime</a>)}
-              {process.env.NEXT_PUBLIC_EXAMS_ENABLED === "1" && (<a href="/exams" className="hidden sm:block px-3 py-2 rounded-lg text-haze hover:text-paper">Exam PINs</a>)}
-              {process.env.NEXT_PUBLIC_PAYFORME_ENABLED === "1" && (<a href="/ask" className="hidden md:block px-3 py-2 rounded-lg text-haze hover:text-paper">Ask someone to pay</a>)}
+              {process.env.NEXT_PUBLIC_BULK_ENABLED === "1" && (<Link href="/bulk" className="hidden sm:block px-3 py-2 rounded-lg text-haze hover:text-paper">Bulk airtime</Link>)}
+              {process.env.NEXT_PUBLIC_EXAMS_ENABLED === "1" && (<Link href="/exams" className="hidden sm:block px-3 py-2 rounded-lg text-haze hover:text-paper">Exam PINs</Link>)}
+              {process.env.NEXT_PUBLIC_PAYFORME_ENABLED === "1" && (<Link href="/ask" className="hidden md:block px-3 py-2 rounded-lg text-haze hover:text-paper">Ask someone to pay</Link>)}
               <MoreMenu items={[
                 { href: "/#how", label: "How it works" },
                 { href: "/#faq", label: "FAQ" },

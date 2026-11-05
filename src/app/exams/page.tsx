@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import BackSoon, { isBackSoon } from "@/components/BackSoon";
 
@@ -63,7 +64,7 @@ export default function ExamsPage() {
       <main id="content" className="max-w-xl mx-auto px-5 pt-16 pb-24">
         <h1 className="font-display font-bold text-3xl mt-10">{cfg?.unavailable ? "Exam PINs are unavailable right now" : "Exam PINs are opening soon"}</h1>
         <p className="text-haze mt-3 text-lg leading-relaxed">JAMB and WAEC PINs, paid in naira. Check back shortly.</p>
-        <a href="/" className="inline-block mt-8 h-12 leading-[3rem] px-6 rounded-xl bg-cta text-oncta font-display font-bold">Back to Nolgic</a>
+        <Link href="/" className="inline-block mt-8 h-12 leading-[3rem] px-6 rounded-xl bg-cta text-oncta font-display font-bold">Back to Nolgic</Link>
       </main>
     );
   }

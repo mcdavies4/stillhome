@@ -1,3 +1,4 @@
+import Link from "next/link";
 export const metadata = { title: "Terms, Refunds & Privacy", alternates: { canonical: "/legal" } };
 
 const h2 = "font-display font-bold text-xl mb-3";
@@ -117,7 +118,7 @@ export default function Legal() {
         Operator: {COMPANY_LINE}, Abuja, Nigeria.
       </p>
 
-      <a href="/" className="inline-block py-2 text-tungsten underline underline-offset-4">&larr; Back to Nolgic</a>
+      <Link href="/" className="inline-block py-2 text-tungsten underline underline-offset-4">&larr; Back to Nolgic</Link>
     </main>
   );
 }
