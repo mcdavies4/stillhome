@@ -1,5 +1,6 @@
 "use client";
 
+import { track } from "@/lib/track";
 import { useState } from "react";
 import { supportLink } from "@/lib/support-contact";
 
@@ -13,6 +14,7 @@ export default function FindOrder() {
   const wa = supportLink({});
 
   async function submit(e: React.FormEvent) {
+    track("find_order");
     e.preventDefault();
     if (state === "busy") return;
     setState("busy"); setError("");

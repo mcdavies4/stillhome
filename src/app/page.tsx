@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { track } from "@/lib/track";
 import Logo from "@/components/Logo";
 import { useEffect, useMemo, useState } from "react";
 import { allCountries, getCountry, type CountryCode } from "@/lib/countries";
@@ -251,6 +252,7 @@ export default function Home() {
   const stage = !item ? 0 : !validated ? 1 : 2;
 
   function chooseTab(key: string) {
+    track("tab", key);
     setTab(key); setProvider(""); setItem(null); setValidated(null); setError(null);
   }
   function chooseProvider(name: string) {
@@ -270,7 +272,7 @@ export default function Home() {
   // Arguments let a tap on a saved item check it straight away, before React has applied the state it just set.
   async function validate(it: BillerItem | null = item, id: string = identifier) {
     if (!it || !id) return;
-    if (isNoValidate(it)) { setValidated({ name: null }); setError(null); return; }
+    if (isNoValidate(it)) { setValidated({ name: null }); setError(null); track("lookup_ok", tab); return; }
     setBusy("validate"); setError(null); setValidated(null);
     try {
       const r = await fetch("/api/validate", {
@@ -281,6 +283,7 @@ export default function Home() {
       const d = await r.json();
       if (!d.ok) throw new Error(d.error);
       setValidated({ name: d.name });
+      track("lookup_ok", tab);
     } catch (e: any) { setError(e.message); } finally { setBusy(null); }
   }
 
@@ -300,6 +303,7 @@ export default function Home() {
 
   async function pay() {
     if (!item || !validated) return;
+    track("checkout_click", tab);
     setBusy("pay"); setError(null);
     try {
       const r = await fetch("/api/checkout", {
