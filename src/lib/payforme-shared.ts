@@ -6,6 +6,7 @@ import { notPower } from "@/lib/not-power";
 export const payForMeEnabled = () => process.env.NEXT_PUBLIC_PAYFORME_ENABLED === "1";
 
 export const PFM_MAX_ITEMS = 8;
+export const GIVEAWAY_MAX_ITEMS = 15; // a giveaway is one payment for many people, so it may be longer than an ask
 export const PFM_NOTE_MAX = 160;
 export const PFM_VALID_DAYS = 7;
 

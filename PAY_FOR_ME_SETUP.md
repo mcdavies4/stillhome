@@ -65,3 +65,18 @@ Do this on a Vercel Preview or after step 5, with small amounts:
 
 New: `0023_pay_for_me.sql`, `src/lib/payforme.ts`, `payforme-shared.ts`, `payforme-email.ts`, `src/app/ask/*`, `src/app/r/[id]/*`, `src/app/api/payforme/*`.
 Changed (small): `paystack.ts` (partial refunds, custom reference), both gateway webhooks (a Pay for Me branch ahead of the existing ones), `reconcile.ts` and `api/cron/reconcile` (match shared payments, daily sweep), `robots.ts`, `.env.example`.
+
+## Giveaway (`/giveaway`)
+
+The same engine, used the other way round: the person who makes the list also pays it. Someone picks what each person gets (light, airtime, data or TV), adds up to **15 people**, pays once, and every person is bought and tracked separately. The maker then sees each token on their own page and sends each person a ready-written WhatsApp message (their name, the maker's message, the token or confirmation). Airtime and data open WhatsApp straight to the person's number.
+
+- It switches on and off with Pay for Me (`NEXT_PUBLIC_PAYFORME_ENABLED`) and needs the same SQL (`0023`). Nothing new in the database, no new environment variable.
+- It is a normal Pay for Me request with `giveaway: true`, which only raises the item cap from 8 to 15. Everything else is unchanged: each item is checked with the provider first, one payment covers bills plus each item's normal fee, each item becomes an ordinary order, a failed item gets its own partial refund.
+- Per-request cap is still `PFM_MAX_TOTAL_NGN` (default ₦100,000). Raise it in Vercel if you want bigger giveaways.
+- The maker's page is `/r/<id>`. The secret key, the message and each person's name are kept **only in the maker's browser** (localStorage); the names never reach the server. If the maker clears their browser data they lose the tokens page, but the maker still gets the tokens by email (the email is required on `/giveaway`).
+- The page keeps buying while it is open (it polls); the existing reconcile cron finishes anything left. Tell people to keep the page open until every item says Delivered.
+
+### Test it (same test as Pay for Me)
+1. Make a ₦100 two-person giveaway to two of your own numbers.
+2. Pay it. Both should turn Delivered, and the two WhatsApp buttons should open with the right message.
+3. Break one number on purpose and confirm only that one is refunded.

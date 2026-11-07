@@ -31,7 +31,7 @@ import { fulfilClaimedOrder, type ClaimedOrder } from "@/lib/fulfil-order";
 import { expectsToken, tryRecoverToken } from "@/lib/fulfilment";
 import { ngnPayProvider, flwPayConfigured, flwPayIsTestMode, initializePayment as flwInit, verifyById, verifyByReference, refundTransaction as flwRefund, FlwPayError } from "@/lib/flwpay";
 import { paystackConfigured, paystackIsTestMode, initializeTransaction as psInit, verifyTransaction as psVerify, refundTransaction as psRefund, PaystackError } from "@/lib/paystack";
-import { PFM_MAX_ITEMS, PFM_NOTE_MAX, PFM_VALID_DAYS, itemStateOf, maskIdentifier, parsePfmRef, pfmMoney, pfmNoValidate, pfmRef, type PfmItemView, type PfmUiStatus, type PfmView } from "@/lib/payforme-shared";
+import { GIVEAWAY_MAX_ITEMS, PFM_MAX_ITEMS, PFM_NOTE_MAX, PFM_VALID_DAYS, itemStateOf, maskIdentifier, parsePfmRef, pfmMoney, pfmNoValidate, pfmRef, type PfmItemView, type PfmUiStatus, type PfmView } from "@/lib/payforme-shared";
 import { sendPayerSummary, sendReceiverSummary } from "@/lib/payforme-email";
 
 export { payForMeEnabled } from "@/lib/payforme-shared";
@@ -108,7 +108,9 @@ export async function createPayRequest(raw: any, ip: string): Promise<{ ok: true
   }
   const note = cap(raw.note, PFM_NOTE_MAX).replace(/\s+/g, " ") || null;
   if (!Array.isArray(raw.items) || raw.items.length < 1) return { ok: false, status: 400, error: "Add at least one thing to pay for." };
-  if (raw.items.length > PFM_MAX_ITEMS) return { ok: false, status: 400, error: `You can ask for up to ${PFM_MAX_ITEMS} things at a time.` };
+  // A giveaway is the same request, paid by the person who made it, and may carry more items.
+  const maxItems = raw.giveaway === true ? GIVEAWAY_MAX_ITEMS : PFM_MAX_ITEMS;
+  if (raw.items.length > maxItems) return { ok: false, status: 400, error: raw.giveaway === true ? `A giveaway can have up to ${maxItems} people. Split it into two.` : `You can ask for up to ${maxItems} things at a time.` };
 
   const country = getCountry("NG");
   const minNgn = country.minDomestic ?? country.minLocal;

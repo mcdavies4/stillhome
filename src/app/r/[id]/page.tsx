@@ -3,6 +3,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { pfmMoney, pfmTitle, tokenShareText, waShareUrl, type PfmItemState, type PfmView } from "@/lib/payforme-shared";
 import { supportLink } from "@/lib/support-contact";
+import { findPfmSaved, type PfmSaved } from "@/lib/payforme-saved";
+import { shareMessage, whatsappShareUrl } from "@/lib/share";
+import { waRecipient } from "@/lib/gift";
 
 // The page behind a Pay for Me link.
 //   Payer     /r/<id>            sees exactly what they are paying for, pays, watches it get delivered.
@@ -21,6 +24,7 @@ export default function RequestPage({ params }: { params: { id: string } }) {
   const [v, setV] = useState<PfmView | null>(null);
   const [state, setState] = useState<"loading" | "ok" | "missing" | "error">("loading");
   const [key, setKey] = useState<string | null>(null);
+  const [mine, setMine] = useState<PfmSaved | null>(null); // this browser made a giveaway with this id: its maker pays it and sends each winner their delivery
   const [returned, setReturned] = useState(false);
   const [email, setEmail] = useState("");
   const [payer, setPayer] = useState("");
@@ -47,8 +51,12 @@ export default function RequestPage({ params }: { params: { id: string } }) {
   useEffect(() => {
     alive.current = true;
     const sp = new URLSearchParams(window.location.search);
-    const k = sp.get("k");
-    setKey(k); setReturned(sp.get("paid") === "1");
+    // A giveaway's own key is kept on the device that made it, so coming back from the payment page still shows the maker's view.
+    const m = findPfmSaved(id);
+    const g = m && m.give ? m : null;
+    const k = sp.get("k") || (g ? g.key : null);
+    setKey(k); setReturned(sp.get("paid") === "1"); setMine(g);
+    if (g) { setEmail(g.email ?? ""); setPayer(g.name ?? ""); }
     const since = Date.now();
     let timer: ReturnType<typeof setTimeout>;
     const tick = async () => {
@@ -100,10 +108,18 @@ export default function RequestPage({ params }: { params: { id: string } }) {
   const payable = v.status === "open" || (v.status === "paying" && !returned);
   const confirming = v.status === "paying" && returned;
   const showTokens = v.owner && v.items.some((i) => i.state === "delivered");
+  const give = v.owner && !!mine;                // the maker of a giveaway, looking at their own giveaway
+  const host = (typeof window !== "undefined" ? window.location.host : "www.nolgic.com");
 
   return (
     <main id="content" className="max-w-xl mx-auto px-5 pt-12 pb-24">
-      {payable && (
+      {payable && give && (
+        <>
+          <h1 className="font-display font-extrabold text-3xl sm:text-4xl leading-tight tracking-tight" data-testid="give-title">Your giveaway: {pfmMoney(v.total)} for {v.items.length} {v.items.length === 1 ? "person" : "people"}</h1>
+          <p className="mt-3 text-haze leading-relaxed">This is exactly what your payment buys. Each person is delivered separately.</p>
+        </>
+      )}
+      {payable && !give && (
         <>
           <h1 className="font-display font-extrabold text-3xl sm:text-4xl leading-tight tracking-tight">{v.receiverName} is asking you to pay {pfmMoney(v.total)}</h1>
           {v.note && <p className="mt-3 text-lg leading-relaxed border-l-2 border-tungsten pl-4" data-testid="note">&ldquo;{v.note}&rdquo;</p>}
@@ -118,6 +134,8 @@ export default function RequestPage({ params }: { params: { id: string } }) {
       {v.status === "cancelled" && <><h1 className="font-display font-extrabold text-3xl leading-tight">{v.receiverName} cancelled this request</h1><p className="mt-3 text-haze text-lg">Nothing was charged.</p></>}
       {v.status === "expired" && <><h1 className="font-display font-extrabold text-3xl leading-tight">This request has expired</h1><p className="mt-3 text-haze text-lg leading-relaxed">Nothing was charged. Ask {v.receiverName} to send a new one.</p></>}
 
+      {give && v.status === "done" && showTokens && <p className="mt-3 text-haze leading-relaxed" data-testid="give-next">Now send each person their delivery. Each button opens your WhatsApp with their message already written.</p>}
+
       {(v.status !== "cancelled" && v.status !== "expired") && (
         <ul className="mt-7 space-y-2.5" data-testid="items">
           {v.items.map((i) => (
@@ -127,6 +145,7 @@ export default function RequestPage({ params }: { params: { id: string } }) {
                   <p className="font-semibold">{pfmTitle(i.billerName, i.itemName)}</p>
                   <p className="text-sm text-haze break-all">{i.label}: {i.identifier}</p>
                   {i.customerName && <p className="text-sm mt-0.5">For <span className="font-semibold">{i.customerName}</span></p>}
+                  {give && mine?.names?.[i.n - 1] && <p className="text-sm mt-0.5" data-testid="winner">Gift for <span className="font-semibold">{mine.names[i.n - 1]}</span></p>}
                 </div>
                 <div className="text-right shrink-0">
                   <p className="num font-semibold">{pfmMoney(i.amount)}</p>
@@ -142,7 +161,12 @@ export default function RequestPage({ params }: { params: { id: string } }) {
                     </>
                   ) : /ELECTRIC|DISCO|PREPAID/i.test(i.billerName) ? <p className="text-sm text-haze">The token is on its way. This page updates by itself.</p> : null}
                   <div className="mt-2 flex flex-wrap gap-2">
-                    <a href={waShareUrl(tokenShareText({ billerName: niceName(i.billerName), identifier: i.identifier, token: i.token, customerName: i.customerName }))} target="_blank" rel="noopener noreferrer" className="h-10 px-4 inline-flex items-center rounded-lg bg-[#25D366] text-[#0b2a16] text-sm font-bold hover:brightness-105">Send on WhatsApp</a>
+                    {give && mine ? (() => {
+                      const to = mine.names?.[i.n - 1] || "";
+                      const msg = shareMessage({ biller_name: niceName(i.billerName), identifier: i.identifier, identifier_label: i.label, amount_ngn: i.amount, flw_token: i.token }, `${host}/gift?utm_source=wa&utm_campaign=giveaway`, { from: mine.name, note: mine.note, to });
+                      const kindPhone = !i.token && /AIRTIME|VTU|DATA|BUNDLE|BROADBAND/i.test(i.billerName) ? waRecipient(i.identifier) : null;
+                      return <a href={whatsappShareUrl(msg, kindPhone)} target="_blank" rel="noopener noreferrer" data-testid={`send-${i.n}`} className="h-10 px-4 inline-flex items-center rounded-lg bg-[#25D366] text-[#0b2a16] text-sm font-bold hover:brightness-105">{to ? `Send to ${to} on WhatsApp` : kindPhone ? "Message them on WhatsApp" : "Send on WhatsApp"}</a>;
+                    })() : <a href={waShareUrl(tokenShareText({ billerName: niceName(i.billerName), identifier: i.identifier, token: i.token, customerName: i.customerName }))} target="_blank" rel="noopener noreferrer" className="h-10 px-4 inline-flex items-center rounded-lg bg-[#25D366] text-[#0b2a16] text-sm font-bold hover:brightness-105">Send on WhatsApp</a>}
                     {i.token && <button type="button" onClick={() => copy(i.token!, `t${i.n}`)} className="h-10 px-4 rounded-lg border border-paper/25 text-sm font-semibold hover:bg-sunk">{copied === `t${i.n}` ? "Copied" : "Copy token"}</button>}
                   </div>
                 </div>
@@ -163,11 +187,13 @@ export default function RequestPage({ params }: { params: { id: string } }) {
 
       {payable && (
         <>
+          {!give && (
           <div className="mt-6 rounded-xl border border-tungsten/40 bg-cta/10 p-4 text-sm leading-relaxed">
             <p className="font-semibold">Only pay if you know {v.receiverName} and expected this.</p>
             <p className="text-haze mt-1">What you buy goes straight to the meters and numbers above and can&rsquo;t be taken back once delivered. Anything we can&rsquo;t deliver is refunded automatically.</p>
           </div>
-          {v.owner ? (
+          )}
+          {v.owner && !give ? (
             <div className="mt-6 rounded-2xl border border-line p-5">
               <p className="font-display font-bold">This is your request</p>
               <p className="text-haze text-sm leading-relaxed mt-1.5">Nobody has paid yet. Send the link to the person who will pay. Your tokens appear on this page once they do.</p>
@@ -186,7 +212,7 @@ export default function RequestPage({ params }: { params: { id: string } }) {
                 className="mt-5 w-full h-12 rounded-xl bg-cta text-oncta font-display font-bold hover:brightness-105 active:brightness-95 disabled:opacity-50">
                 {busy ? "Taking you to the payment page…" : `Pay ${pfmMoney(v.total)} by card`}
               </button>
-              <p className="text-xs text-haze mt-2.5 leading-relaxed">UK and international cards work. You will be taken to a secure payment page. You pay in naira, and your bank shows the exchange rate.</p>
+              <p className="text-xs text-haze mt-2.5 leading-relaxed">{give ? "You will be taken to a secure payment page. Check every number first: once delivered, a token or top-up can’t be taken back." : "UK and international cards work. You will be taken to a secure payment page. You pay in naira, and your bank shows the exchange rate."}</p>
             </form>
           )}
         </>
