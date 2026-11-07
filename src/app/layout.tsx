@@ -99,6 +99,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               <MoreMenu items={[
                 { href: "/#how", label: "How it works" },
                 { href: "/#faq", label: "FAQ" },
+                { href: "/gift", label: "Send a gift" },
+                ...(process.env.NEXT_PUBLIC_PAYFORME_ENABLED === "1" ? [{ href: "/giveaway", label: "Run a giveaway" }] : []),
                 { href: "/find-order", label: "Find my order or token" },
                 { href: playUrl("header"), label: "Get the Android app", external: true },
                 { href: "/legal", label: "Terms, refunds & privacy" },
