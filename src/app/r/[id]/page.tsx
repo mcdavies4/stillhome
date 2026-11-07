@@ -6,6 +6,7 @@ import { supportLink } from "@/lib/support-contact";
 import { findPfmSaved, type PfmSaved } from "@/lib/payforme-saved";
 import { shareMessage, whatsappShareUrl } from "@/lib/share";
 import { waRecipient } from "@/lib/gift";
+import { isExamBiller, splitPins } from "@/lib/exams-shared";
 
 // The page behind a Pay for Me link.
 //   Payer     /r/<id>            sees exactly what they are paying for, pays, watches it get delivered.
@@ -155,19 +156,23 @@ export default function RequestPage({ params }: { params: { id: string } }) {
               {v.owner && i.state === "delivered" && (
                 <div className="mt-3 pt-3 border-t border-line">
                   {i.token ? (
+                    isExamBiller(i.billerName) ? splitPins(i.token).map((p) => (
+                      <div key={p.label + p.value} className="mb-1.5"><p className="text-xs text-haze">{p.label}</p><p className="font-mono text-lg tracking-wider break-all" data-testid="token">{p.value}</p></div>
+                    )) : (
                     <>
                       <p className="text-xs text-haze">Your token</p>
                       <p className="font-mono text-lg tracking-wider break-all" data-testid="token">{i.token}</p>
-                    </>
+                    </>)
                   ) : /ELECTRIC|DISCO|PREPAID/i.test(i.billerName) ? <p className="text-sm text-haze">The token is on its way. This page updates by itself.</p> : null}
                   <div className="mt-2 flex flex-wrap gap-2">
                     {give && mine ? (() => {
                       const to = mine.names?.[i.n - 1] || "";
                       const msg = shareMessage({ biller_name: niceName(i.billerName), identifier: i.identifier, identifier_label: i.label, amount_ngn: i.amount, flw_token: i.token }, `${host}/gift?utm_source=wa&utm_campaign=giveaway`, { from: mine.name, note: mine.note, to });
-                      const kindPhone = !i.token && /AIRTIME|VTU|DATA|BUNDLE|BROADBAND/i.test(i.billerName) ? waRecipient(i.identifier) : null;
+                      // Airtime and data: the number topped up is their phone. Anyone who joined through a giveaway link may also have given a WhatsApp number.
+                      const kindPhone = (!i.token && /AIRTIME|VTU|DATA|BUNDLE|BROADBAND/i.test(i.billerName) ? waRecipient(i.identifier) : null) ?? (mine.phones?.[i.n - 1] ?? null);
                       return <a href={whatsappShareUrl(msg, kindPhone)} target="_blank" rel="noopener noreferrer" data-testid={`send-${i.n}`} className="h-10 px-4 inline-flex items-center rounded-lg bg-[#25D366] text-[#0b2a16] text-sm font-bold hover:brightness-105">{to ? `Send to ${to} on WhatsApp` : kindPhone ? "Message them on WhatsApp" : "Send on WhatsApp"}</a>;
                     })() : <a href={waShareUrl(tokenShareText({ billerName: niceName(i.billerName), identifier: i.identifier, token: i.token, customerName: i.customerName }))} target="_blank" rel="noopener noreferrer" className="h-10 px-4 inline-flex items-center rounded-lg bg-[#25D366] text-[#0b2a16] text-sm font-bold hover:brightness-105">Send on WhatsApp</a>}
-                    {i.token && <button type="button" onClick={() => copy(i.token!, `t${i.n}`)} className="h-10 px-4 rounded-lg border border-paper/25 text-sm font-semibold hover:bg-sunk">{copied === `t${i.n}` ? "Copied" : "Copy token"}</button>}
+                    {i.token && <button type="button" onClick={() => copy(i.token!, `t${i.n}`)} className="h-10 px-4 rounded-lg border border-paper/25 text-sm font-semibold hover:bg-sunk">{copied === `t${i.n}` ? "Copied" : isExamBiller(i.billerName) ? "Copy PIN" : "Copy token"}</button>}
                   </div>
                 </div>
               )}

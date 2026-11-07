@@ -80,3 +80,52 @@ The same engine, used the other way round: the person who makes the list also pa
 1. Make a ₦100 two-person giveaway to two of your own numbers.
 2. Pay it. Both should turn Delivered, and the two WhatsApp buttons should open with the right message.
 3. Break one number on purpose and confirm only that one is refunded.
+
+## Giveaway links: "let them choose" (`/giveaway/link`)
+
+For when the giver doesn't have everyone's numbers. The giver shares **one link**; each person picks their own light, airtime, data or TV and enters their own meter / smartcard / phone number; the giver checks the list and **pays once** for everyone. Nobody pays anything until the giver closes the list, so Nolgic never holds money for people who haven't chosen yet.
+
+1. **Giver** (`/giveaway/link`): name, email (required), a message, what people may choose, the most each person can choose (e.g. ₦2,000) and how many people (up to 15). They get a link to share and a **private page**, which is also emailed to them.
+2. **Each person** (`/c/<id>`): sees who it's from and what's on offer, picks theirs (TV and data plans above the limit are hidden), enters their number, sees the name on the meter, adds their name and (optionally) their WhatsApp number, and joins. Nothing for them to pay.
+3. **Giver's private page** (`/c/<id>?k=<key>`): sees everyone who joined with the name on each meter, removes anyone they don't recognise, then taps **Close the list and pay**. Every choice is checked with the provider again, the list becomes an ordinary giveaway (same per-item delivery, refunds and safety rules as `/giveaway`), and they go straight to the payment page.
+4. **Each person** opens the same link on the same phone and sees their own delivery, including their **token**, without the giver having to forward it. The giver still gets every token and the one-tap WhatsApp buttons on the giveaway page; for people who gave a WhatsApp number, each button opens that person's chat directly.
+
+### Turn it on
+1. **Supabase**: run `supabase/migrations/0025_giveaway_links.sql` (needs 0023 first; safe to run twice).
+2. Push. It uses the same switch as Pay for Me (`NEXT_PUBLIC_PAYFORME_ENABLED=1`); no new environment variable.
+3. If you raise `PFM_MAX_TOTAL_NGN`, also set `NEXT_PUBLIC_PFM_MAX_TOTAL_NGN` to the same number so the giver's page shows the right limit.
+
+If the switch is on but 0025 hasn't been run, `/giveaway/link` shows "opening soon" and nothing can be created.
+
+### Rules built in
+- Limits are enforced in the database itself, inside one locked step: the number of people, the total (bills + fees must stay under `PFM_MAX_TOTAL_NGN`), the most each person can choose, what may be chosen, and one place per meter / number. Tested with 8 people joining at the same instant for 2 places: exactly 2 got in.
+- What a person picked is classified from the bills provider's own record, not from what their browser says.
+- Closing is claimed once: two taps (or two devices) at the same moment make one giveaway, never two. Closing again just returns the same giveaway.
+- If a choice fails its re-check at close, nothing is closed and the giver is told whose it was ("Ada's choice didn't pass the check… Remove Ada and close again.").
+- Nobody else sees the list: the public link shows only who it's from, what's on offer and how many places are taken. Each person's token is shown only on the device they joined from (a secret key kept on that phone).
+- Rate limits: 6 links per hour and 5 joins per hour per connection.
+- Unclosed links expire after 7 days (daily reconcile cron).
+- Removing a person frees their place; a removed person sees that they're off the list and may join again while it's open.
+
+### Test it
+1. Make a link with ₦100 airtime allowed, 2 people.
+2. Open the link on two phones, join with two of your own numbers.
+3. On your private page, remove one, re-join, then close and pay.
+4. Both phones should show Delivered. For a light token, check it shows on the phone that joined.
+
+### Not in this version
+- People can't change their choice after joining (the giver removes them, and they join again).
+- The list can't be reopened after it's closed. If the giver doesn't pay, the giveaway expires after 7 days and everyone sees "didn't go ahead".
+- Exam PINs aren't offered (same as Pay for Me).
+
+## Exam PINs in Pay for Me, giveaways and giveaway links
+
+JAMB and WAEC PINs (whatever `/exams` sells) can now go on an ask-to-pay list, a giveaway, and a giveaway link ("Exam PINs" in what people can choose).
+
+- **It follows the exam switches.** The Exam PINs tab only appears when `EXAMS_ENABLED=1` and `NEXT_PUBLIC_EXAMS_ENABLED=1` and Paybeta is the bills provider, the same rule as `/exams`. With the switches off, nothing changes and any exam item is refused.
+- **Prices and names come from Paybeta's own exam list on the server**, never from the browser. A changed price is refused ("That PIN's price has changed…").
+- **Checks:** JAMB needs the candidate's profile code (letters and numbers); WAEC needs a phone number. There's no name lookup for exam PINs (same as `/exams`), so the page asks people to check twice.
+- **Fee:** the normal exam fee (`NEXT_PUBLIC_EXAM_FEE_*`, default 2%, min ₦200, max ₦500), not the bill fee.
+- **Delivery:** each PIN becomes an ordinary exam order and goes through the same buying code as `/exams`. The PIN (and serial) shows on the giver's page, in the emails, and on the student's own phone if they joined through a giveaway link.
+- **Giveaway links:** the giver ticks "Exam PINs". If the amount each is below the cheapest PIN, the page warns them. Students choose the exact PIN; anything above the limit is hidden.
+- No database change: no new migration for this.
