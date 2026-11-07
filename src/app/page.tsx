@@ -11,6 +11,7 @@ import SavedList from "@/components/SavedList";
 import RefBanner from "@/components/RefBanner";
 import { readRef } from "@/lib/referral-client";
 import { rememberCandidate, type Saved } from "@/lib/saved";
+import { GIFTS, OCCASIONS, NOTE_MAX, NAME_MAX, cleanText, clearGift, isGiftKey, rememberGift } from "@/lib/gift";
 import BackSoon, { isBackSoon } from "@/components/BackSoon";
 import { notPower } from "@/lib/not-power";
 
@@ -97,6 +98,10 @@ const TAB_HINT: Record<string, { title: string; hint: string }> = {
 // The other things Nolgic does. Each one only appears when its own switch is on in Vercel,
 // so a feature that isn't open yet never shows a button.
 const EXTRAS = [
+  {
+    href: "/gift", title: "Send a gift", text: "Pay someone's light, airtime, data or TV before they ask, with your own message.",
+    icon: (<><rect x="3.5" y="8.5" width="17" height="4" rx="1" fill="none" stroke="currentColor" strokeWidth="2" /><path d="M5 12.5V20h14v-7.5M12 8.5V20M12 8.5C10 8.5 8 7.5 8 6a2 2 0 013-1.7c.7.5 1 1.7 1 4.2zM12 8.5c2 0 4-1 4-2.5a2 2 0 00-3-1.7c-.7.5-1 1.7-1 4.2z" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" /></>),
+  },
   process.env.NEXT_PUBLIC_BULK_ENABLED === "1" && {
     href: "/bulk", title: "Bulk airtime", text: "Top up many phone numbers in one go.",
     icon: (<><rect x="3" y="7" width="9" height="14" rx="2" fill="none" stroke="currentColor" strokeWidth="2" /><rect x="12" y="3" width="9" height="14" rx="2" fill="none" stroke="currentColor" strokeWidth="2" /></>),
@@ -108,6 +113,10 @@ const EXTRAS = [
   process.env.NEXT_PUBLIC_PAYFORME_ENABLED === "1" && {
     href: "/ask", title: "Ask someone to pay", text: "Send a link. A friend or family member abroad pays by card.",
     icon: (<><path d="M10 14a4 4 0 005.7 0l3-3a4 4 0 00-5.7-5.7l-1 1" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" /><path d="M14 10a4 4 0 00-5.7 0l-3 3a4 4 0 005.7 5.7l1-1" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" /></>),
+  },
+  process.env.NEXT_PUBLIC_PAYFORME_ENABLED === "1" && {
+    href: "/giveaway", title: "Run a giveaway", text: "Pay once for many people: light, airtime, data or TV, each delivered separately.",
+    icon: (<><circle cx="9" cy="8" r="3" fill="none" stroke="currentColor" strokeWidth="2" /><circle cx="17" cy="9.5" r="2.4" fill="none" stroke="currentColor" strokeWidth="2" /><path d="M3.5 19c0-3 2.5-5 5.5-5s5.5 2 5.5 5M15.5 14.3c3 0 5 1.6 5 4.2" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" /></>),
   },
 ].filter(Boolean) as { href: string; title: string; text: string; icon: JSX.Element }[];
 
@@ -190,6 +199,11 @@ export default function Home() {
   const [amountLocal, setAmountLocal] = useState("");
   const [email, setEmail] = useState("");
   const [whatsapp, setWhatsapp] = useState("");
+  // Gifting: arrives from /gift (?gift=electricity …). The message is written after the pay step is chosen and kept only in this browser.
+  const [giftMode, setGiftMode] = useState(false);
+  const [giftOpen, setGiftOpen] = useState(false);
+  const [giftNote, setGiftNote] = useState("");
+  const [giftFrom, setGiftFrom] = useState("");
   const [validated, setValidated] = useState<{ name: string | null } | null>(null);
   const [busy, setBusy] = useState<"validate" | "pay" | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -213,6 +227,13 @@ export default function Home() {
       })
       .catch(() => { setLoaded(true); setError("We couldn’t load the list of services. Refresh the page to try again."); });
   }, [country]);
+
+  useEffect(() => {
+    const g = new URLSearchParams(window.location.search).get("gift");
+    if (!isGiftKey(g)) return;
+    setGiftMode(true); setGiftOpen(true); setTab(g);
+    track("gift_start", g);
+  }, []);
 
   const tabItems = useMemo(() => {
     const t = TABS.find((t) => t.key === tab)!;
@@ -326,6 +347,9 @@ export default function Home() {
       const d = await r.json();
       if (d.error) throw new Error(d.error);
       // Leave a short-lived note so the delivered page can offer to save this meter / smartcard / number.
+      // A gift keeps its message in this browser so the delivered page can turn it into a WhatsApp message.
+      const gn = cleanText(giftNote, NOTE_MAX), gf = cleanText(giftFrom, NAME_MAX);
+      if (giftMode || gn || gf) { rememberGift({ identifier, from: gf, note: gn }); if (gn) track("gift_note", tab); } else clearGift();
       rememberCandidate({ tab, billerCode: item.biller_code, billerName: item.biller_name, itemCode: item.item_code, itemKey: itemKey(item), itemName: item.name, identifier, label: item.label_name || "Account number", ownerName: validated.name, at: Date.now() });
       window.location.href = d.url;
     } catch (e: any) { setError(e.message); setBusy(null); }
@@ -491,6 +515,17 @@ export default function Home() {
 
                 <SavedList ready={loaded && items.length > 0} onPick={applySaved} />
 
+                {giftMode && (
+                  <div className="mt-5 flex gap-3 items-start rounded-2xl bg-cta/15 border border-tungsten/40 p-3.5" role="status" data-testid="gift-banner">
+                    <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true" className="shrink-0 text-tungsten mt-0.5">{EXTRAS[0].icon}</svg>
+                    <p className="text-sm leading-relaxed flex-1">
+                      <span className="font-semibold">You&rsquo;re sending a gift{isGiftKey(tab) ? `: ${GIFTS[tab].label.toLowerCase()}` : ""}.</span>{" "}
+                      We show the name on the {isGiftKey(tab) && tab === "electricity" ? "meter" : "account"} before you pay. After you pay, you can send it on with your own message.{" "}
+                      <button type="button" onClick={() => { setGiftMode(false); setGiftOpen(false); setGiftNote(""); setGiftFrom(""); }} className="underline underline-offset-2 text-haze">Not a gift</button>
+                    </p>
+                  </div>
+                )}
+
                 {/* Step 1 — what */}
                 <div className="mt-5" role="group" aria-labelledby="what-label">
                   <p id="what-label" className="text-sm font-medium mb-1.5">What are you paying for?</p>
@@ -637,6 +672,26 @@ export default function Home() {
                       <p className="text-xs text-haze mt-1.5">We&rsquo;ll send them the receipt and token. A Nigerian number with a leading 0 is fine; we add +234 for you.</p>
                     </div>
                     )}
+                    <div className="mt-4" data-testid="gift-fields">
+                      {giftOpen ? (
+                        <div className="rounded-2xl border border-line p-3.5">
+                          <p className="text-sm font-semibold">A message for them <span className="text-haze font-normal">(optional)</span></p>
+                          <p className="text-xs text-haze mt-0.5 leading-relaxed">After you pay, it goes into a WhatsApp message with the token or receipt, ready to send. It stays on this device.</p>
+                          <div className="mt-2.5 flex flex-wrap gap-1.5">
+                            {OCCASIONS.map((o) => (
+                              <button key={o.key} type="button" onClick={() => setGiftNote(o.note)}
+                                className="h-8 px-3 rounded-full border border-line text-[13px] font-semibold hover:border-paper/40 hover:bg-sunk">{o.label}</button>
+                            ))}
+                          </div>
+                          <label htmlFor="gift-note-home" className="mt-3">Message</label>
+                          <input id="gift-note-home" value={giftNote} onChange={(e) => setGiftNote(cleanText(e.target.value, NOTE_MAX))} maxLength={NOTE_MAX} placeholder="Happy birthday! 🎂" autoComplete="off" />
+                          <label htmlFor="gift-from-home" className="mt-2.5">Your name</label>
+                          <input id="gift-from-home" value={giftFrom} onChange={(e) => setGiftFrom(cleanText(e.target.value, NAME_MAX))} maxLength={NAME_MAX} placeholder="Emeka" autoComplete="given-name" />
+                        </div>
+                      ) : (
+                        <button type="button" onClick={() => setGiftOpen(true)} className="text-sm font-semibold text-tungsten underline underline-offset-2">Is this a gift? Add a message</button>
+                      )}
+                    </div>
                   </div>
                 )}
 

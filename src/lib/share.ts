@@ -23,10 +23,24 @@ export function shareKind(o: ShareOrder): "light" | "tv" | "airtime" | "data" | 
   return "other";
 }
 
-export function shareMessage(o: ShareOrder, link = "nolgic.com"): string {
+// A gift: the buyer's own words go on top, and the receipt line speaks as the buyer ("I just paid…").
+export type ShareGift = { from?: string; note?: string; to?: string };
+
+export function shareMessage(o: ShareOrder, link = "nolgic.com", gift?: ShareGift | null): string {
   const amt = naira(o.amount_ngn);
   const name = clean(o.biller_name);
   const lines: string[] = [];
+  const g = gift ? { from: (gift.from ?? "").trim(), note: (gift.note ?? "").trim(), to: (gift.to ?? "").trim() } : null;
+  if (g) {
+    const kind = shareKind(o);
+    const what = kind === "light" ? `${amt} light` : kind === "tv" ? `${name} (${amt})` : kind === "data" ? `${name} data (${amt})` : kind === "airtime" ? `${amt} airtime` : `${name} (${amt})`;
+    if (g.to) lines.push(`Hi ${g.to} 👋`);
+    lines.push(`🎁 I just paid ${what} for you.`);
+    if (g.note) lines.push(`"${g.note}"`);
+    if (g.from) lines.push(`— ${g.from}`);
+    lines.push("");
+  }
+  const start = lines.length;
   switch (shareKind(o)) {
     case "light":
       lines.push(`✅ ${amt} light has been paid for.`);
@@ -48,8 +62,11 @@ export function shareMessage(o: ShareOrder, link = "nolgic.com"): string {
       lines.push(`✅ ${name}: ${amt} paid.`);
       lines.push(`${o.identifier_label || "Number"}: ${o.identifier}`);
   }
-  lines.push("", `Paid with Nolgic · ${link}`);
+  if (g && lines[start]?.startsWith("✅")) lines.splice(start, 1); // the 🎁 line above already says it
+  if (g && lines.length === start && lines[start - 1] === "") lines.pop();
+  lines.push("", g ? `Want to surprise someone too? ${link}` : `Paid with Nolgic · ${link}`);
   return lines.join("\n");
 }
 
-export const whatsappShareUrl = (text: string) => `https://wa.me/?text=${encodeURIComponent(text)}`;
+// With a number (digits, country code first) WhatsApp opens straight to that person; without, the sender picks who.
+export const whatsappShareUrl = (text: string, to?: string | null) => `https://wa.me/${to && /^[1-9]\d{7,14}$/.test(to) ? to : ""}?text=${encodeURIComponent(text)}`;
