@@ -7,8 +7,9 @@ import { whatsappShareUrl } from "@/lib/share";
 import { supportLink } from "@/lib/support-contact";
 import { forgetJoined, joinedKey, myLinkKey, rememberJoined, rememberMyLink } from "@/lib/payforme-collect-local";
 import { readPfmSaved, writePfmSaved } from "@/lib/payforme-saved";
+import { examIdOk, examService, isExamBiller, splitPins } from "@/lib/exams-shared";
 import {
-  PFM_TABS, pfcChoiceText, pfcShareText, pfmMoney, pfmNoValidate, pfmTitle,
+  PFM_TABS, examAsBillers, pfcChoiceText, pfcShareText, pfmIsExam, pfmMoney, pfmNoValidate, pfmTitle,
   type PfcEntryState, type PfcView, type PfmBiller, type PfmCategory,
 } from "@/lib/payforme-shared";
 
@@ -25,6 +26,7 @@ const LABELS: Record<string, { provider: string; plan: string }> = {
   cable: { provider: "TV provider", plan: "Package" },
   airtime: { provider: "Network", plan: "Amount" },
   data: { provider: "Network or provider", plan: "Data plan" },
+  exam: { provider: "Exam", plan: "PIN" },
 };
 const QUICK = [500, 1000, 2000, 5000, 10000];
 const btn = "h-11 px-5 inline-flex items-center rounded-xl font-display font-bold";
@@ -56,17 +58,24 @@ export default function CollectPage({ params }: { params: { id: string } }) {
   // Who is looking: the giver (key in the link, or this device made it), someone who joined from this device, or anyone.
   useEffect(() => {
     alive.current = true;
-    const k = new URLSearchParams(window.location.search).get("k") || myLinkKey(id);
+    const sp = new URLSearchParams(window.location.search);
+    const k = sp.get("k") || myLinkKey(id);
+    // The private link in their email carries their key, so they can open their token on any phone.
+    const fromLink = sp.get("e");
+    if (fromLink && /^[0-9a-f-]{36}$/i.test(fromLink)) rememberJoined(id, fromLink);
     const e = joinedKey(id);
     setOwnerKey(k); setEntryKey(e);
     let timer: ReturnType<typeof setTimeout>;
+    const since = Date.now();
     const tick = async () => {
       const d = await load(k, e);
       if (!alive.current) return;
       if (d?.owner && k && !myLinkKey(id)) rememberMyLink({ id, key: k, at: Date.now(), budget: d.budget, people: d.maxPeople });
       const s = d?.mine?.state;
+      const lateToken = s === "delivered" && !d?.mine?.token && !!d?.mine?.wantsToken && Date.now() - since < 30 * 60_000;
       const every = !d ? 8000
-        : s === "working" ? 4000
+        : s === "working" || s === "waiting" ? 4000
+        : lateToken ? 8000
         : s === "joined" || s === "waiting_payment" || s === "checking" ? 15000
         : d.owner && (d.status === "open" || d.status === "full") ? 10000
         : 0;
@@ -133,10 +142,13 @@ function Mine({ v, onReset }: { v: PfcView; onReset: () => void }) {
         <p className="num font-semibold mt-1">{pfmMoney(m.amount)}</p>
         {m.state === "delivered" && (m.token ? (
           <div className="mt-3 pt-3 border-t border-line">
+            {isExamBiller(m.billerName) ? splitPins(m.token).map((p) => (
+              <div key={p.label + p.value} className="mb-1.5"><p className="text-xs text-haze">{p.label}</p><p className="font-mono text-lg tracking-wider break-all" data-testid="token">{p.value}</p></div>
+            )) : (<>
             <p className="text-xs text-haze">Your token</p>
-            <p className="font-mono text-lg tracking-wider break-all" data-testid="token">{m.token}</p>
+            <p className="font-mono text-lg tracking-wider break-all" data-testid="token">{m.token}</p></>)}
             <button type="button" onClick={async () => { try { await navigator.clipboard.writeText(m.token!); } catch {} setCopied(true); setTimeout(() => setCopied(false), 1800); }}
-              className="mt-2 h-10 px-4 rounded-lg border border-paper/25 text-sm font-semibold hover:bg-sunk">{copied ? "Copied" : "Copy token"}</button>
+              className="mt-2 h-10 px-4 rounded-lg border border-paper/25 text-sm font-semibold hover:bg-sunk">{copied ? "Copied" : isExamBiller(m.billerName) ? "Copy PIN" : "Copy token"}</button>
           </div>
         ) : m.wantsToken ? <p className="text-sm text-haze mt-3">Your token is on its way. This page updates by itself.</p> : null)}
       </div>
@@ -153,8 +165,9 @@ function Join({ v, onJoined }: { v: PfcView; onJoined: (entryKey: string) => voi
   const [all, setAll] = useState<PfmBiller[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [loadErr, setLoadErr] = useState("");
-  const tabs = useMemo(() => PFM_TABS.filter((t) => v.categories.includes(t.key)), [v.categories]);
-  const [tab, setTab] = useState<PfmCategory>(tabs[0]?.key ?? "electricity");
+  // What this giveaway offers. Exam PINs only show if their list loaded (exams switched on).
+  const tabs = useMemo(() => PFM_TABS.filter((t) => v.categories.includes(t.key) && (t.key !== "exam" || all.some(t.match))), [v.categories, all]);
+  const [tab, setTab] = useState<PfmCategory>(v.categories.find((c) => c !== "exam") ?? v.categories[0] ?? "electricity");
   const [provider, setProvider] = useState("");
   const [item, setItem] = useState<PfmBiller | null>(null);
   const [identifier, setIdentifier] = useState("");
@@ -162,6 +175,7 @@ function Join({ v, onJoined }: { v: PfcView; onJoined: (entryKey: string) => voi
   const [checked, setChecked] = useState<{ name: string | null } | null>(null);
   const [who, setWho] = useState("");
   const [whatsapp, setWhatsapp] = useState("");
+  const [email, setEmail] = useState("");
   const [busy, setBusy] = useState<"check" | "join" | null>(null);
   const [err, setErr] = useState("");
 
@@ -170,9 +184,12 @@ function Join({ v, onJoined }: { v: PfcView; onJoined: (entryKey: string) => voi
     if (!open) return;
     fetch("/api/billers?country=NG")
       .then(async (r) => ({ ok: r.ok, d: await r.json().catch(() => ({})) }))
-      .then(({ ok, d }) => { setAll(d.items ?? []); setLoaded(true); if (!ok || !(d.items ?? []).length) setLoadErr("We couldn't load the list of services. Refresh the page to try again."); })
+      .then(({ ok, d }) => { setAll((a) => [...(d.items ?? []).filter((x: PfmBiller) => !pfmIsExam(x.biller_code)), ...a.filter((x) => pfmIsExam(x.biller_code))]); setLoaded(true); if (!ok || !(d.items ?? []).length) setLoadErr("We couldn't load the list of services. Refresh the page to try again."); })
       .catch(() => { setLoaded(true); setLoadErr("We couldn't load the list of services. Refresh the page to try again."); });
-  }, [open]);
+    if (v.categories.includes("exam")) {
+      fetch("/api/exams").then((r) => r.json()).then((d) => { if (d?.enabled && Array.isArray(d.groups) && d.groups.length) setAll((a) => [...a.filter((x) => !pfmIsExam(x.biller_code)), ...examAsBillers(d.groups)]); }).catch(() => {});
+    }
+  }, [open, v.categories]);
 
   // Only what this giveaway offers, and no fixed-price plan above what the giver allows.
   const providers = useMemo(() => {
@@ -190,7 +207,9 @@ function Join({ v, onJoined }: { v: PfcView; onJoined: (entryKey: string) => voi
     return g.every((i) => i.amount > 0) ? [...g].sort((a, b) => a.amount - b.amount) : g;
   }, [providers, provider]);
 
-  const phone = pfmNoValidate(item);
+  const exam = !!item && pfmIsExam(item.biller_code);
+  const jamb = exam && /^jamb/i.test(item!.biller_code);
+  const phone = !exam && pfmNoValidate(item);
   const fixed = !!item && item.amount > 0;
   const bill = fixed ? item!.amount : Number(amount || 0);
   const out = bill > v.budget || (bill > 0 && bill < 100);
@@ -201,6 +220,7 @@ function Join({ v, onJoined }: { v: PfcView; onJoined: (entryKey: string) => voi
 
   async function check() {
     if (!item || !identifier) return;
+    if (exam) { if (examIdOk(item.biller_code, identifier)) { setChecked({ name: null }); setErr(""); } else setErr(examService(item.biller_code).idError); return; }
     if (phone) { setChecked({ name: null }); setErr(""); return; }
     setBusy("check"); setErr(""); setChecked(null);
     try {
@@ -214,11 +234,12 @@ function Join({ v, onJoined }: { v: PfcView; onJoined: (entryKey: string) => voi
   async function join() {
     if (!item || !checked || out || bill <= 0 || who.trim().length < 2 || busy) return;
     if (whatsapp && !waRecipient(whatsapp)) { setErr("That WhatsApp number doesn't look like a Nigerian mobile number."); return; }
+    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) { setErr("That email address doesn't look right."); return; }
     setBusy("join"); setErr("");
     try {
       const r = await fetch(`/api/payforme/collect/${v.id}/join`, {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ who: who.trim(), whatsapp: whatsapp || undefined, billerCode: item.biller_code, itemCode: item.item_code, billerName: item.biller_name, itemName: item.name, identifier, identifierLabel: item.label_name || "Account number", amount: bill }),
+        body: JSON.stringify({ who: who.trim(), whatsapp: whatsapp || undefined, email: email.trim() || undefined, billerCode: item.biller_code, itemCode: item.item_code, billerName: item.biller_name, itemName: item.name, identifier, identifierLabel: item.label_name || "Account number", amount: bill }),
       });
       const d = await r.json().catch(() => ({}));
       if (!r.ok || !d.entryKey) throw new Error(d.error || "Something went wrong. Please try again.");
@@ -247,7 +268,7 @@ function Join({ v, onJoined }: { v: PfcView; onJoined: (entryKey: string) => voi
 
       <div className="mt-6 rounded-2xl border border-line p-4" role="group" aria-label="Choose yours">
         {tabs.length > 1 && (
-          <div className={`grid gap-2 ${tabs.length === 4 ? "grid-cols-4" : tabs.length === 3 ? "grid-cols-3" : "grid-cols-2"}`}>
+          <div className={`grid gap-2 ${tabs.length >= 5 ? "grid-cols-3 sm:grid-cols-5" : tabs.length === 4 ? "grid-cols-4" : tabs.length === 3 ? "grid-cols-3" : "grid-cols-2"}`}>
             {tabs.map((t) => (
               <button key={t.key} type="button" aria-pressed={tab === t.key} onClick={() => pickTab(t.key)}
                 className={`h-11 rounded-xl border text-sm font-semibold ${tab === t.key ? "bg-paper text-night border-paper" : "border-line text-haze hover:border-paper/40"}`}>{t.label}</button>
@@ -272,9 +293,10 @@ function Join({ v, onJoined }: { v: PfcView; onJoined: (entryKey: string) => voi
         )}
         {item && (
           <div className="mt-4 pt-4 border-t border-line">
-            <label htmlFor="pfc-id">{phone ? "Your phone number" : `Your ${(item.label_name || "account number").toLowerCase()}`}</label>
+            <label htmlFor="pfc-id">{phone ? "Your phone number" : exam ? `The candidate's ${/^jamb/i.test(item.biller_code) ? "JAMB profile code" : "phone number"}` : `Your ${(item.label_name || "account number").toLowerCase()}`}</label>
             <input id="pfc-id" value={identifier} onChange={(e) => { setIdentifier(clean(e.target.value, phone)); setChecked(null); }}
-              type={phone ? "tel" : "text"} inputMode={phone ? "tel" : "numeric"} placeholder={phone ? "08031234567" : "04123456789"} maxLength={phone ? 16 : 20} autoComplete="off" autoCorrect="off" spellCheck={false} />
+              type={phone ? "tel" : "text"} inputMode={phone ? "tel" : jamb ? "text" : "numeric"} placeholder={phone ? "08031234567" : jamb ? "Profile code" : exam ? "08031234567" : "04123456789"} maxLength={phone ? 16 : 20} autoComplete="off" autoCorrect="off" spellCheck={false} />
+            {exam && <p className="text-xs text-haze mt-1.5 leading-relaxed">{examService(item.biller_code).idHint}</p>}
             {!fixed && (
               <div className="mt-3">
                 <label htmlFor="pfc-amt">Amount (₦), up to {pfmMoney(v.budget)}</label>
@@ -289,11 +311,11 @@ function Join({ v, onJoined }: { v: PfcView; onJoined: (entryKey: string) => voi
             {!checked ? (
               <button type="button" onClick={check} disabled={busy !== null || !identifier || bill <= 0 || out}
                 className="mt-4 w-full h-12 rounded-xl border border-paper/25 font-semibold hover:bg-sunk disabled:opacity-40">
-                {busy === "check" ? "Checking…" : phone ? "Confirm number" : "Check account name"}
+                {busy === "check" ? "Checking…" : exam ? (/^jamb/i.test(item.biller_code) ? "Confirm JAMB profile code" : "Confirm phone number") : phone ? "Confirm number" : "Check account name"}
               </button>
             ) : (
               <div className="mt-4 rounded-xl border border-ok/30 bg-ok/10 p-3.5" role="status">
-                {checked.name ? <p className="text-sm text-haze">This {item.label_name?.toLowerCase() || "account"} belongs to</p> : <p className="text-sm text-haze">Number looks fine</p>}
+                {checked.name ? <p className="text-sm text-haze">This {item.label_name?.toLowerCase() || "account"} belongs to</p> : <p className="text-sm text-haze">{exam ? "Check it once more: a PIN bought for the wrong one can't be moved." : "Number looks fine"}</p>}
                 {checked.name && <p className="font-display font-bold text-lg">{checked.name}</p>}
                 <div className="mt-3">
                   <label htmlFor="pfc-who">Your name</label>
@@ -303,9 +325,14 @@ function Join({ v, onJoined }: { v: PfcView; onJoined: (entryKey: string) => voi
                   <div className="mt-3">
                     <label htmlFor="pfc-wa">Your WhatsApp number <span className="text-haze font-normal">(optional)</span></label>
                     <input id="pfc-wa" type="tel" inputMode="tel" value={whatsapp} onChange={(e) => setWhatsapp(clean(e.target.value, true))} maxLength={16} placeholder="08031234567" autoComplete="tel" />
-                    <p className="text-xs text-haze mt-1.5">So {v.makerName} can message you your token. It also shows on this page.</p>
+                    <p className="text-xs text-haze mt-1.5">So {v.makerName} can message you your {exam ? "PIN" : "token"}. It also shows on this page.</p>
                   </div>
                 )}
+                <div className="mt-3">
+                  <label htmlFor="pfc-email">Your email <span className="text-haze font-normal">(optional)</span></label>
+                  <input id="pfc-email" type="email" inputMode="email" value={email} onChange={(e) => setEmail(e.target.value.trim())} maxLength={120} placeholder="you@example.com" autoComplete="email" />
+                  <p className="text-xs text-haze mt-1.5">We&rsquo;ll email you {exam ? "your PIN" : phone ? "when it's done" : "your token"} and a private link to it, so you don&rsquo;t have to keep this page open.</p>
+                </div>
                 <button type="button" onClick={join} disabled={busy !== null || who.trim().length < 2}
                   className="mt-4 w-full h-12 rounded-xl bg-cta text-oncta font-display font-bold hover:brightness-105 disabled:opacity-50">
                   {busy === "join" ? "Joining…" : "Join the giveaway"}

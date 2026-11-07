@@ -33,6 +33,31 @@ import { ngnPayProvider, flwPayConfigured, flwPayIsTestMode, initializePayment a
 import { paystackConfigured, paystackIsTestMode, initializeTransaction as psInit, verifyTransaction as psVerify, refundTransaction as psRefund, PaystackError } from "@/lib/paystack";
 import { GIVEAWAY_MAX_ITEMS, PFM_MAX_ITEMS, PFM_NOTE_MAX, PFM_VALID_DAYS, itemStateOf, maskIdentifier, parsePfmRef, pfmMoney, pfmNoValidate, pfmRef, type PfmItemView, type PfmUiStatus, type PfmView } from "@/lib/payforme-shared";
 import { sendPayerSummary, sendReceiverSummary } from "@/lib/payforme-email";
+import { notifyCollectJoiners } from "@/lib/payforme-collect-notify";
+import { pfmIsExam } from "@/lib/payforme-shared";
+import { examFee, examIdOk, examMaxOrder, examService } from "@/lib/exams-shared";
+import { activeProvider } from "@/lib/bills";
+import { paybetaConfigured, pbExamLookup } from "@/lib/paybeta";
+
+/** Exam PINs are on only when the exam switches are on and Paybeta is the bills provider (the same rule as /exams). */
+export const examsOn = () => process.env.EXAMS_ENABLED === "1" && process.env.NEXT_PUBLIC_EXAMS_ENABLED === "1" && activeProvider() === "paybeta" && paybetaConfigured();
+
+/**
+ * Checks one exam PIN exactly like /exams checkout: the price and name come from Paybeta's own list, never the browser,
+ * and the candidate's number / profile code must have the right shape (there is no name lookup for exam PINs).
+ */
+export async function checkExamItem(d: { billerCode: string; itemCode: string; identifier: string; amount: number }):
+  Promise<{ ok: true; billerName: string; itemName: string; identifierLabel: string; fee: number } | { ok: false; error: string }> {
+  if (!examsOn()) return { ok: false, error: "Exam PINs aren't available right now." };
+  const svc = examService(d.billerCode);
+  if (!examIdOk(d.billerCode, d.identifier)) return { ok: false, error: svc.idError };
+  const item = await pbExamLookup(d.billerCode, d.itemCode);
+  if (!item) return { ok: false, error: "That PIN isn't available right now. Please pick it again." };
+  if (Math.round(item.price) !== Math.round(d.amount)) return { ok: false, error: "That PIN's price has changed. Please reload the page and pick it again." };
+  if (item.price > examMaxOrder()) return { ok: false, error: "That PIN is above the order limit." };
+  const billerName = (/\b(JAMB|WAEC|NECO|NABTEB)\b/i.test(item.name) ? item.name : `${svc.title} — ${item.name}`).slice(0, 120);
+  return { ok: true, billerName, itemName: item.name, identifierLabel: svc.idLabel, fee: examFee(item.price) };
+}
 
 export { payForMeEnabled } from "@/lib/payforme-shared";
 
@@ -123,6 +148,7 @@ export async function createPayRequest(raw: any, ip: string): Promise<{ ok: true
       identifier: cap(r?.identifier, 64), identifierLabel: cap(r?.identifierLabel, 60) || "Account number", amount: Math.round(Number(r?.amount)),
     };
     if (!d.billerCode || !d.itemCode || !d.billerName || !d.identifier) return { ok: false, status: 400, error: "One of the items is incomplete." };
+    if (pfmIsExam(d.billerCode)) { drafts.push(d); continue; } // its price is checked against Paybeta's list below
     if (!Number.isFinite(d.amount) || d.amount < minNgn || d.amount > maxNgn) {
       return { ok: false, status: 400, error: `Each amount must be between ${pfmMoney(minNgn)} and ${pfmMoney(maxNgn)}.` };
     }
@@ -134,11 +160,19 @@ export async function createPayRequest(raw: any, ip: string): Promise<{ ok: true
   type Checked = PfmDraft & { name: string | null; fee: number };
   const checked: (Checked | { err: string })[] = await pool(drafts, 3, async (d, i): Promise<Checked | { err: string }> => {
     try {
+      if (pfmIsExam(d.billerCode)) {
+        const ex = await checkExamItem(d);
+        if (!ex.ok) return { err: `Item ${i + 1}: ${ex.error}` };
+        return { ...d, billerName: ex.billerName, itemName: ex.itemName, identifierLabel: ex.identifierLabel, name: null, fee: ex.fee };
+      }
       const purchase = await checkPurchase(d.billerCode, d.itemCode, d.amount);
       if (!purchase.ok) return { err: `Item ${i + 1}: ${purchase.error}` };
       let name: string | null = null;
       try {
-        name = (await validateCustomer(d.itemCode, d.billerCode, d.identifier)).name ?? null;
+        const v = await validateCustomer(d.itemCode, d.billerCode, d.identifier);
+        name = v.name ?? null;
+        const min = Number(v.minimum ?? 0);
+        if (Number.isFinite(min) && min > d.amount) return { err: `Item ${i + 1}: this meter's smallest top-up is ${pfmMoney(min)}.` };
       } catch (e) {
         if (!pfmNoValidate({ biller_name: d.billerName, name: d.itemName, item_code: d.itemCode })) throw e;
       }
@@ -438,6 +472,8 @@ async function settleIfDone(id: string): Promise<void> {
   }));
   try { await sendPayerSummary(req, lines); } catch (e) { console.error("[pfm] payer email failed", e); }
   try { if (req.receiver_email) await sendReceiverSummary(req, lines); } catch (e) { console.error("[pfm] receiver email failed", e); }
+  // A giveaway link: email each person who left an email their own delivery (and a private link to their token).
+  try { await notifyCollectJoiners(id); } catch (e) { console.error("[pfm] joiner emails failed", e); }
 
   const refunded = lines.filter((l) => l.state === "refunded").length;
   const checking = lines.filter((l) => l.state === "checking").length;

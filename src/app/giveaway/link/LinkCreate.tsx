@@ -9,7 +9,8 @@ import { readMyLinks, rememberMyLink, type PfcMine } from "@/lib/payforme-collec
 import { PFC_BUDGETS, PFC_CATEGORIES, PFC_CATEGORY_LABEL, PFC_MAX_PEOPLE, PFM_NOTE_MAX, pfcShareText, pfmMoney, type PfmCategory } from "@/lib/payforme-shared";
 import { whatsappShareUrl } from "@/lib/share";
 
-const CAT_TITLE: Record<PfmCategory, string> = { electricity: "Electricity", cable: "Cable TV", airtime: "Airtime", data: "Data" };
+const CAT_TITLE: Record<PfmCategory, string> = { electricity: "Electricity", cable: "Cable TV", airtime: "Airtime", data: "Data", exam: "Exam PINs" };
+const BASIC: PfmCategory[] = ["electricity", "cable", "airtime", "data"];
 // A guide only: the server applies the real cap (PFM_MAX_TOTAL_NGN). If you raise that, set NEXT_PUBLIC_PFM_MAX_TOTAL_NGN to match.
 const MAX_TOTAL = Number(process.env.NEXT_PUBLIC_PFM_MAX_TOTAL_NGN) > 0 ? Number(process.env.NEXT_PUBLIC_PFM_MAX_TOTAL_NGN) : 100000;
 
@@ -17,7 +18,9 @@ export default function LinkCreate() {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [note, setNote] = useState("");
-  const [cats, setCats] = useState<PfmCategory[]>([...PFC_CATEGORIES]);
+  const [cats, setCats] = useState<PfmCategory[]>([...BASIC]);
+  const [examsOn, setExamsOn] = useState(false);
+  const [examMin, setExamMin] = useState(0); // the cheapest PIN, so the giver knows what budget covers one
   const [budget, setBudget] = useState("2000");
   const [people, setPeople] = useState("10");
   const [busy, setBusy] = useState(false);
@@ -26,7 +29,13 @@ export default function LinkCreate() {
   const [copied, setCopied] = useState<string | null>(null);
   const [mine, setMine] = useState<PfcMine[]>([]);
 
-  useEffect(() => { setMine(readMyLinks()); }, []);
+  useEffect(() => {
+    setMine(readMyLinks());
+    fetch("/api/exams").then((r) => r.json()).then((d) => {
+      const prices = (d?.groups ?? []).flatMap((g: any) => (g.items ?? []).map((i: any) => Number(i.price))).filter((n: number) => n > 0);
+      if (d?.enabled && prices.length) { setExamsOn(true); setExamMin(Math.min(...prices)); }
+    }).catch(() => {});
+  }, []);
 
   const b = Number(budget || 0);
   const n = Number(people || 0);
@@ -125,13 +134,15 @@ export default function LinkCreate() {
 
       <section className="mt-10" aria-labelledby="what">
         <h2 id="what" className="font-display font-bold text-xl">What can they choose?</h2>
-        <div className="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-2" role="group" aria-label="What people can choose">
-          {PFC_CATEGORIES.map((c) => (
+        <div className={`mt-3 grid grid-cols-2 gap-2 ${examsOn ? "sm:grid-cols-5" : "sm:grid-cols-4"}`} role="group" aria-label="What people can choose">
+          {PFC_CATEGORIES.filter((c) => c !== "exam" || examsOn).map((c) => (
             <button key={c} type="button" aria-pressed={cats.includes(c)} onClick={() => toggle(c)}
               className={`h-11 rounded-xl border text-sm font-semibold ${cats.includes(c) ? "bg-paper text-night border-paper" : "border-line text-haze hover:border-paper/40"}`}>{CAT_TITLE[c]}</button>
           ))}
         </div>
         {!cats.length && <p className="text-sm text-bad mt-2" role="status">Pick at least one.</p>}
+        {cats.includes("exam") && examMin > 0 && b < examMin && <p className="text-sm text-bad mt-2" role="status">The cheapest exam PIN is {pfmMoney(examMin)}. Raise the amount each, or nobody will be able to pick one.</p>}
+        {cats.includes("exam") && <p className="text-xs text-haze mt-2">Students enter the candidate&rsquo;s JAMB profile code or phone number. PINs show on their own phone once you pay.</p>}
 
         <div className="mt-5">
           <label htmlFor="pfc-budget">Up to how much each? (₦)</label>

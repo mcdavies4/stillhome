@@ -48,6 +48,9 @@ create table if not exists pay_collect_entries (
   created_at       timestamptz not null default now()
 );
 
+-- Optional: where the person wants their token emailed when the giveaway is done.
+alter table pay_collect_entries add column if not exists email text;
+
 create index if not exists pay_collect_entries_collect_idx on pay_collect_entries(collect_id, created_at);
 -- One place per meter / number in each giveaway (a removed entry frees it again).
 create unique index if not exists pay_collect_entries_one_each on pay_collect_entries(collect_id, identifier) where status = 'active';

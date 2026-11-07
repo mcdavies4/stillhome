@@ -2,6 +2,8 @@
 // Pay for Me: the parts the browser and the server both need. No secrets, no database.
 
 import { notPower } from "@/lib/not-power";
+import { examFee } from "@/lib/exams-shared";
+import { feeKindOf, ngnServiceFee } from "@/lib/ngn-fee";
 
 export const payForMeEnabled = () => process.env.NEXT_PUBLIC_PAYFORME_ENABLED === "1";
 
@@ -10,7 +12,15 @@ export const GIVEAWAY_MAX_ITEMS = 15; // a giveaway is one payment for many peop
 export const PFM_NOTE_MAX = 160;
 export const PFM_VALID_DAYS = 7;
 
-export type PfmCategory = "electricity" | "cable" | "airtime" | "data";
+export type PfmCategory = "electricity" | "cable" | "airtime" | "data" | "exam";
+
+/** JAMB / WAEC / NECO / NABTEB PIN services (the same rule as the bills provider uses). */
+export const pfmIsExam = (billerCode: string | null | undefined) => /^(jamb|waec|neco|nabteb)([_-]|$)/i.test(String(billerCode ?? ""));
+
+/** The service fee for one item: exam PINs have their own fee, everything else the normal per-kind fee. */
+export function pfmItemFee(i: { biller_code: string; item_code?: string; biller_name?: string; name?: string }, amount: number): number {
+  return pfmIsExam(i.biller_code) ? examFee(amount) : ngnServiceFee(amount, feeKindOf(i as any));
+}
 
 export type PfmBiller = {
   biller_code: string;
@@ -25,11 +35,22 @@ export type PfmBiller = {
 
 /** The same four groups as the home page. */
 export const PFM_TABS: { key: PfmCategory; label: string; match: (b: PfmBiller) => boolean }[] = [
-  { key: "electricity", label: "Electricity", match: (b) => !notPower(b.biller_name + " " + b.name) && /ELECTRIC|DISCO|PREPAID METER|EKEDC|IKEDC|EEDC|AEDC|IBEDC|PHED|KEDCO|BEDC|JED|YEDC|ABUJA|ENUGU DISCO|KANO DISCO|KADUNA|ELECTRICITY COMPANY/i.test(b.biller_name + " " + b.name) },
-  { key: "cable", label: "Cable TV", match: (b) => /DSTV|GOTV|STARTIMES|SHOWMAX/i.test(b.biller_name + " " + b.name) && !/ELECTRIC/i.test(b.biller_name + " " + b.name) },
-  { key: "airtime", label: "Airtime", match: (b) => b.is_airtime || /VTU|AIRTIME/i.test(b.biller_name + " " + b.name + " " + (b.short_name ?? "")) },
-  { key: "data", label: "Data", match: (b) => /DATA|BROADBAND|SURFLINE|BUNDLE|POSTPAID PAYMENT/i.test(b.biller_name + " " + b.name) && !b.is_airtime },
+  { key: "electricity", label: "Electricity", match: (b) => !pfmIsExam(b.biller_code) && !notPower(b.biller_name + " " + b.name) && /ELECTRIC|DISCO|PREPAID METER|EKEDC|IKEDC|EEDC|AEDC|IBEDC|PHED|KEDCO|BEDC|JED|YEDC|ABUJA|ENUGU DISCO|KANO DISCO|KADUNA|ELECTRICITY COMPANY/i.test(b.biller_name + " " + b.name) },
+  { key: "cable", label: "Cable TV", match: (b) => !pfmIsExam(b.biller_code) && /DSTV|GOTV|STARTIMES|SHOWMAX/i.test(b.biller_name + " " + b.name) && !/ELECTRIC/i.test(b.biller_name + " " + b.name) },
+  { key: "airtime", label: "Airtime", match: (b) => !pfmIsExam(b.biller_code) && (b.is_airtime || /VTU|AIRTIME/i.test(b.biller_name + " " + b.name + " " + (b.short_name ?? ""))) },
+  { key: "data", label: "Data", match: (b) => !pfmIsExam(b.biller_code) && /DATA|BROADBAND|SURFLINE|BUNDLE|POSTPAID PAYMENT/i.test(b.biller_name + " " + b.name) && !b.is_airtime },
+  // Exam PINs are not in the bills list; the pages add them from /api/exams (biller_code = the exam service).
+  { key: "exam", label: "Exam PINs", match: (b) => pfmIsExam(b.biller_code) },
 ];
+
+/** An exam group from /api/exams, shaped like a bill so the same picker can show it. */
+export function examAsBillers(groups: { service: string; title: string; idLabel: string; items: { code: string; name: string; price: number }[] }[]): PfmBiller[] {
+  return groups.flatMap((g) => g.items.map((i) => ({
+    biller_code: g.service, item_code: i.code, name: i.name,
+    biller_name: /\b(JAMB|WAEC|NECO|NABTEB)\b/i.test(i.name) ? i.name : `${g.title} — ${i.name}`,
+    short_name: i.code, amount: i.price, is_airtime: false, label_name: g.idLabel,
+  })));
+}
 
 /** Airtime, data and broadband have no name lookup: the phone number IS the account. */
 export const pfmNoValidate = (i: { is_airtime?: boolean | null; biller_name?: string | null; name?: string | null; item_code?: string | null } | null | undefined) =>
@@ -140,8 +161,8 @@ export function parsePfmRef(ref: string): { rail: "paystack" | "flutterwave"; re
 export const PFC_MAX_PEOPLE = GIVEAWAY_MAX_ITEMS;   // a closed link becomes one giveaway, so the same cap applies
 export const PFC_VALID_DAYS = PFM_VALID_DAYS;
 export const PFC_BUDGETS = [1000, 2000, 5000, 10000];
-export const PFC_CATEGORIES: PfmCategory[] = ["electricity", "cable", "airtime", "data"];
-export const PFC_CATEGORY_LABEL: Record<PfmCategory, string> = { electricity: "light", cable: "TV", airtime: "airtime", data: "data" };
+export const PFC_CATEGORIES: PfmCategory[] = ["electricity", "cable", "airtime", "data", "exam"];
+export const PFC_CATEGORY_LABEL: Record<PfmCategory, string> = { electricity: "light", cable: "TV", airtime: "airtime", data: "data", exam: "an exam PIN" };
 
 /** Which of the four groups a bill belongs to, using the same rules as the tabs. */
 export function pfmCategoryOf(b: Pick<PfmBiller, "biller_name" | "name"> & Partial<PfmBiller>): PfmCategory | null {

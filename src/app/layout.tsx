@@ -96,11 +96,17 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               {process.env.NEXT_PUBLIC_BULK_ENABLED === "1" && (<Link href="/bulk" className="hidden sm:block px-3 py-2 rounded-lg text-haze hover:text-paper">Bulk airtime</Link>)}
               {process.env.NEXT_PUBLIC_EXAMS_ENABLED === "1" && (<Link href="/exams" className="hidden sm:block px-3 py-2 rounded-lg text-haze hover:text-paper">Exam PINs</Link>)}
               {process.env.NEXT_PUBLIC_PAYFORME_ENABLED === "1" && (<Link href="/ask" className="hidden md:block px-3 py-2 rounded-lg text-haze hover:text-paper">Ask someone to pay</Link>)}
+              {process.env.NEXT_PUBLIC_PAYFORME_ENABLED === "1" && (<Link href="/giveaway/link" className="hidden lg:block px-3 py-2 rounded-lg text-haze hover:text-paper">Giveaways</Link>)}
               <MoreMenu items={[
                 { href: "/#how", label: "How it works" },
                 { href: "/#faq", label: "FAQ" },
                 { href: "/gift", label: "Send a gift" },
-                ...(process.env.NEXT_PUBLIC_PAYFORME_ENABLED === "1" ? [{ href: "/giveaway", label: "Run a giveaway" }] : []),
+                ...(process.env.NEXT_PUBLIC_PAYFORME_ENABLED === "1" ? [
+                  { href: "/ask", label: "Ask someone to pay" },
+                  { href: "/giveaway/link", label: "Giveaway link: let them choose" },
+                  { href: "/giveaway", label: "Run a giveaway" },
+                ] : []),
+                ...(process.env.NEXT_PUBLIC_EXAMS_ENABLED === "1" ? [{ href: "/exams", label: "JAMB & WAEC PINs" }] : []),
                 { href: "/find-order", label: "Find my order or token" },
                 { href: playUrl("header"), label: "Get the Android app", external: true },
                 { href: "/legal", label: "Terms, refunds & privacy" },

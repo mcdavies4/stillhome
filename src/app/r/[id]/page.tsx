@@ -6,6 +6,7 @@ import { supportLink } from "@/lib/support-contact";
 import { findPfmSaved, type PfmSaved } from "@/lib/payforme-saved";
 import { shareMessage, whatsappShareUrl } from "@/lib/share";
 import { waRecipient } from "@/lib/gift";
+import { isExamBiller, splitPins } from "@/lib/exams-shared";
 
 // The page behind a Pay for Me link.
 //   Payer     /r/<id>            sees exactly what they are paying for, pays, watches it get delivered.
@@ -62,7 +63,9 @@ export default function RequestPage({ params }: { params: { id: string } }) {
     const tick = async () => {
       const d = await load(k);
       if (!alive.current) return;
-      const live = d && (d.status === "working" || (d.status === "paying" && sp.get("paid") === "1") || d.status === "checking");
+      // A light token can land a few minutes after "Delivered" (the provider confirms it later): keep looking for it.
+      const lateToken = !!d && d.owner && d.items.some((i) => i.state === "delivered" && !i.token && /ELECTRIC|DISCO|PREPAID/i.test(i.billerName)) && Date.now() - since < 30 * 60_000;
+      const live = d && (d.status === "working" || (d.status === "paying" && sp.get("paid") === "1") || d.status === "checking" || lateToken);
       if (Date.now() - since > 60_000) setSlow(true);
       if (live || !d) timer = setTimeout(tick, d ? 3000 : 6000);
     };
@@ -155,10 +158,13 @@ export default function RequestPage({ params }: { params: { id: string } }) {
               {v.owner && i.state === "delivered" && (
                 <div className="mt-3 pt-3 border-t border-line">
                   {i.token ? (
+                    isExamBiller(i.billerName) ? splitPins(i.token).map((p) => (
+                      <div key={p.label + p.value} className="mb-1.5"><p className="text-xs text-haze">{p.label}</p><p className="font-mono text-lg tracking-wider break-all" data-testid="token">{p.value}</p></div>
+                    )) : (
                     <>
                       <p className="text-xs text-haze">Your token</p>
                       <p className="font-mono text-lg tracking-wider break-all" data-testid="token">{i.token}</p>
-                    </>
+                    </>)
                   ) : /ELECTRIC|DISCO|PREPAID/i.test(i.billerName) ? <p className="text-sm text-haze">The token is on its way. This page updates by itself.</p> : null}
                   <div className="mt-2 flex flex-wrap gap-2">
                     {give && mine ? (() => {
@@ -168,7 +174,7 @@ export default function RequestPage({ params }: { params: { id: string } }) {
                       const kindPhone = (!i.token && /AIRTIME|VTU|DATA|BUNDLE|BROADBAND/i.test(i.billerName) ? waRecipient(i.identifier) : null) ?? (mine.phones?.[i.n - 1] ?? null);
                       return <a href={whatsappShareUrl(msg, kindPhone)} target="_blank" rel="noopener noreferrer" data-testid={`send-${i.n}`} className="h-10 px-4 inline-flex items-center rounded-lg bg-[#25D366] text-[#0b2a16] text-sm font-bold hover:brightness-105">{to ? `Send to ${to} on WhatsApp` : kindPhone ? "Message them on WhatsApp" : "Send on WhatsApp"}</a>;
                     })() : <a href={waShareUrl(tokenShareText({ billerName: niceName(i.billerName), identifier: i.identifier, token: i.token, customerName: i.customerName }))} target="_blank" rel="noopener noreferrer" className="h-10 px-4 inline-flex items-center rounded-lg bg-[#25D366] text-[#0b2a16] text-sm font-bold hover:brightness-105">Send on WhatsApp</a>}
-                    {i.token && <button type="button" onClick={() => copy(i.token!, `t${i.n}`)} className="h-10 px-4 rounded-lg border border-paper/25 text-sm font-semibold hover:bg-sunk">{copied === `t${i.n}` ? "Copied" : "Copy token"}</button>}
+                    {i.token && <button type="button" onClick={() => copy(i.token!, `t${i.n}`)} className="h-10 px-4 rounded-lg border border-paper/25 text-sm font-semibold hover:bg-sunk">{copied === `t${i.n}` ? "Copied" : isExamBiller(i.billerName) ? "Copy PIN" : "Copy token"}</button>}
                   </div>
                 </div>
               )}

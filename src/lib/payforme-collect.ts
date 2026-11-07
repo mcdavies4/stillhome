@@ -25,9 +25,9 @@ import { paystackConfigured } from "@/lib/paystack";
 import { expectsToken, tryRecoverToken } from "@/lib/fulfilment";
 import { appUrl, button, esc, naira, sendMail, shell } from "@/lib/mailer";
 import { waRecipient } from "@/lib/gift";
-import { createPayRequest, isMissingSchema, payForMeReady, syncPayRequest } from "@/lib/payforme";
+import { checkExamItem, createPayRequest, isMissingSchema, payForMeReady, syncPayRequest } from "@/lib/payforme";
 import {
-  PFC_CATEGORIES, PFC_MAX_PEOPLE, PFC_VALID_DAYS, PFM_NOTE_MAX, itemStateOf, maskIdentifier, pfcChoiceText, pfmCategoryOf, pfmMoney, pfmNoValidate,
+  PFC_CATEGORIES, PFC_MAX_PEOPLE, PFC_VALID_DAYS, PFM_NOTE_MAX, itemStateOf, pfmIsExam, maskIdentifier, pfcChoiceText, pfmCategoryOf, pfmMoney, pfmNoValidate,
   type PfcEntryState, type PfcEntryView, type PfcStatus, type PfcView, type PfmCategory,
 } from "@/lib/payforme-shared";
 
@@ -161,6 +161,11 @@ export async function joinCollect(id: string, raw: any, ip: string): Promise<{ o
 
   const who = cap(raw.who, 30).replace(/[\u0000-\u001f\u007f<>]/g, " ").replace(/\s+/g, " ").trim();
   if (who.length < 2) return { ok: false, status: 400, error: "Enter your name, so they know it's you." };
+  let email: string | null = null;
+  if (raw.email) {
+    email = normaliseEmail(raw.email);
+    if (!email) return { ok: false, status: 400, error: "That email address doesn't look right." };
+  }
   let whatsapp: string | null = null;
   if (raw.whatsapp) {
     whatsapp = waRecipient(String(raw.whatsapp));
@@ -183,7 +188,18 @@ export async function joinCollect(id: string, raw: any, ip: string): Promise<{ o
   let customerName: string | null = null;
   let fee: number;
   let category: PfmCategory | null;
-  try {
+  if (pfmIsExam(d.billerCode)) {
+    // Exam PINs: price and name from Paybeta's own list, the profile code / phone number checked for shape.
+    if (!(col.categories as string[]).includes("exam")) return { ok: false, ...JOIN_ERRORS.PFC_CATEGORY };
+    try {
+      const ex = await checkExamItem(d);
+      if (!ex.ok) return { ok: false, status: 400, error: ex.error };
+      d.billerName = ex.billerName; d.itemName = ex.itemName; d.identifierLabel = ex.identifierLabel;
+      fee = ex.fee; category = "exam";
+    } catch (e: any) {
+      return { ok: false, status: 400, error: "Exam PINs are temporarily unavailable. Please try again in a few minutes." };
+    }
+  } else try {
     const purchase = await checkPurchase(d.billerCode, d.itemCode, d.amount);
     if (!purchase.ok) return { ok: false, status: 400, error: purchase.error };
     // Decide what kind of bill this is from the provider's own record when we have it, never only from the browser.
@@ -193,7 +209,15 @@ export async function joinCollect(id: string, raw: any, ip: string): Promise<{ o
     // Not on offer in this giveaway: stop before asking the provider anything.
     if (!category || !(col.categories as string[]).includes(category)) return { ok: false, ...JOIN_ERRORS.PFC_CATEGORY };
     try {
-      customerName = (await validateCustomer(d.itemCode, d.billerCode, d.identifier)).name ?? null;
+      const v = await validateCustomer(d.itemCode, d.billerCode, d.identifier);
+      customerName = v.name ?? null;
+      // Many electricity companies have a smallest purchase per meter. Catch it now, not as a failed vend after payment.
+      const min = Number(v.minimum ?? 0);
+      if (Number.isFinite(min) && min > d.amount) {
+        return { ok: false, status: 400, error: min > budget
+          ? `This meter's smallest top-up is ${pfmMoney(min)}, which is more than this giveaway allows (${pfmMoney(budget)}).`
+          : `This meter's smallest top-up is ${pfmMoney(min)}. Choose ${pfmMoney(min)} or more.` };
+      }
     } catch (e) {
       if (!pfmNoValidate({ biller_name: d.billerName, name: d.itemName, item_code: d.itemCode, is_airtime: it?.is_airtime })) throw e;
     }
@@ -203,7 +227,7 @@ export async function joinCollect(id: string, raw: any, ip: string): Promise<{ o
   }
   if (!category) return { ok: false, ...JOIN_ERRORS.PFC_CATEGORY };
   // Airtime and data go to a phone: use it for WhatsApp too unless they gave another number.
-  if (!whatsapp && (category === "airtime" || category === "data")) whatsapp = waRecipient(d.identifier);
+  if (!whatsapp && (category === "airtime" || category === "data" || category === "exam")) whatsapp = waRecipient(d.identifier); // a JAMB profile code is never a phone, so it stays empty
 
   const { data: rows, error } = await db().rpc("pfc_add_entry", {
     p_collect: id, p_max_total: MAX_TOTAL(),
@@ -222,6 +246,7 @@ export async function joinCollect(id: string, raw: any, ip: string): Promise<{ o
   }
   const row = Array.isArray(rows) ? rows[0] : rows;
   if (!row?.entry_key) return { ok: false, status: 500, error: "Something went wrong. Please try again." };
+  if (email) await db().from("pay_collect_entries").update({ email }).eq("id", row.entry_id);
   return { ok: true, entryKey: String(row.entry_key) };
 }
 

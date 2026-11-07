@@ -91,7 +91,7 @@ For when the giver doesn't have everyone's numbers. The giver shares **one link*
 4. **Each person** opens the same link on the same phone and sees their own delivery, including their **token**, without the giver having to forward it. The giver still gets every token and the one-tap WhatsApp buttons on the giveaway page; for people who gave a WhatsApp number, each button opens that person's chat directly.
 
 ### Turn it on
-1. **Supabase**: run `supabase/migrations/0025_giveaway_links.sql` (needs 0023 first; safe to run twice).
+1. **Supabase**: run `supabase/migrations/0025_giveaway_links.sql` (needs 0023 first; safe to run twice). **If you ran it before 7 Nov 16:30, run it again**: it now also adds the optional email column.
 2. Push. It uses the same switch as Pay for Me (`NEXT_PUBLIC_PAYFORME_ENABLED=1`); no new environment variable.
 3. If you raise `PFM_MAX_TOTAL_NGN`, also set `NEXT_PUBLIC_PFM_MAX_TOTAL_NGN` to the same number so the giver's page shows the right limit.
 
@@ -107,6 +107,16 @@ If the switch is on but 0025 hasn't been run, `/giveaway/link` shows "opening so
 - Unclosed links expire after 7 days (daily reconcile cron).
 - Removing a person frees their place; a removed person sees that they're off the list and may join again while it's open.
 
+### How each person finds out
+- **On their phone:** the link page they joined from updates by itself ("You're in" → "Paid, buying yours now" → "It's done" with their token or PIN). If a light token lands a few minutes after the purchase (Paybeta sometimes confirms by webhook), the page keeps looking for up to 30 minutes and shows it when it arrives.
+- **By email (optional):** if they gave an email when joining, they get one email when the giveaway is done: what they got, their token / PIN if it's ready, and a private link (`/c/<id>?e=<their key>`) that opens their token on any phone. Sent once.
+- **From you on WhatsApp:** your giveaway page still has a "Send on WhatsApp" button per person with their token written in. It opens their chat directly if they gave a WhatsApp number (or for airtime/data).
+
+### Electricity
+- Each meter is checked with Paybeta when the person joins (the name on the meter shows to them and to you), and again when you close.
+- **The meter's smallest top-up is checked at join** (Paybeta returns it in the meter lookup). If it's above what the person picked, they're told to pick more; if it's above your limit per person, they're told it doesn't fit this giveaway. The same check now also runs on ask-to-pay lists and ordinary giveaways.
+- Tip: for light, set the amount each to at least ₦2,000. Some meters won't accept less.
+
 ### Test it
 1. Make a link with ₦100 airtime allowed, 2 people.
 2. Open the link on two phones, join with two of your own numbers.
@@ -117,3 +127,15 @@ If the switch is on but 0025 hasn't been run, `/giveaway/link` shows "opening so
 - People can't change their choice after joining (the giver removes them, and they join again).
 - The list can't be reopened after it's closed. If the giver doesn't pay, the giveaway expires after 7 days and everyone sees "didn't go ahead".
 - Exam PINs aren't offered (same as Pay for Me).
+
+## Exam PINs in Pay for Me, giveaways and giveaway links
+
+JAMB and WAEC PINs (whatever `/exams` sells) can now go on an ask-to-pay list, a giveaway, and a giveaway link ("Exam PINs" in what people can choose).
+
+- **It follows the exam switches.** The Exam PINs tab only appears when `EXAMS_ENABLED=1` and `NEXT_PUBLIC_EXAMS_ENABLED=1` and Paybeta is the bills provider, the same rule as `/exams`. With the switches off, nothing changes and any exam item is refused.
+- **Prices and names come from Paybeta's own exam list on the server**, never from the browser. A changed price is refused ("That PIN's price has changed…").
+- **Checks:** JAMB needs the candidate's profile code (letters and numbers); WAEC needs a phone number. There's no name lookup for exam PINs (same as `/exams`), so the page asks people to check twice.
+- **Fee:** the normal exam fee (`NEXT_PUBLIC_EXAM_FEE_*`, default 2%, min ₦200, max ₦500), not the bill fee.
+- **Delivery:** each PIN becomes an ordinary exam order and goes through the same buying code as `/exams`. The PIN (and serial) shows on the giver's page, in the emails, and on the student's own phone if they joined through a giveaway link.
+- **Giveaway links:** the giver ticks "Exam PINs". If the amount each is below the cheapest PIN, the page warns them. Students choose the exact PIN; anything above the limit is hidden.
+- No database change: no new migration for this.
