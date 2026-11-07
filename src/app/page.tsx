@@ -14,6 +14,7 @@ import { rememberCandidate, type Saved } from "@/lib/saved";
 import { GIFTS, OCCASIONS, NOTE_MAX, NAME_MAX, cleanText, clearGift, isGiftKey, rememberGift } from "@/lib/gift";
 import BackSoon, { isBackSoon } from "@/components/BackSoon";
 import { notPower } from "@/lib/not-power";
+import FeatureShowcase, { NewStrip } from "@/components/FeatureShowcase";
 
 type BillerItem = {
   biller_code: string;
@@ -143,7 +144,20 @@ const FAQS_DOMESTIC = [
   { q: "What does it cost?", a: `The price shown at checkout is everything — the amount you're buying plus a small service fee, shown before you pay. It is a small percentage of the amount: from ₦${FEE_RANGE.from.toLocaleString()} on airtime up to ₦${FEE_RANGE.to.toLocaleString()} on a large electricity token.` },
 ];
 
-const FAQS = DOMESTIC ? FAQS_DOMESTIC : FAQS_DIASPORA;
+const PFM_ON = process.env.NEXT_PUBLIC_PAYFORME_ENABLED === "1";
+const EXAMS_ON = process.env.NEXT_PUBLIC_EXAMS_ENABLED === "1";
+// Questions about the features beyond one bill, so people who search for them find them.
+const FAQS_MORE = [
+  ...(PFM_ON ? [
+    { q: "Can someone abroad pay my bills for me?", a: "Yes. Use \"Ask someone to pay\": list what you need (light, TV, airtime, data" + (EXAMS_ON ? ", exam PINs" : "") + "), and send the one link it gives you on WhatsApp. They see exactly what it's for, with the name on each meter, and pay by card from anywhere. Your tokens and top-ups arrive in seconds." },
+    { q: "How do I run a giveaway for many people?", a: "If you have everyone's numbers, add them on the giveaway page and pay once. If you don't, make a giveaway link: share it, each person picks their own light, airtime, data or TV and enters their own number, then you check the list, remove anyone you don't know, and pay once. Each person is delivered separately and sees their own token." },
+  ] : []),
+  ...(EXAMS_ON ? [
+    { q: "Can I buy JAMB or WAEC PINs?", a: "Yes. Pick the PIN, enter the candidate's JAMB profile code or phone number, and the PIN arrives in seconds." + (PFM_ON ? " A parent or sponsor can also pay for it with \"Ask someone to pay\", and a school or sponsor can cover many students with one giveaway link." : "") },
+  ] : []),
+];
+
+const FAQS = [...(DOMESTIC ? FAQS_DOMESTIC : FAQS_DIASPORA).slice(0, 4), ...FAQS_MORE, ...(DOMESTIC ? FAQS_DOMESTIC : FAQS_DIASPORA).slice(4)];
 
 const STEPS = [
   { n: "1", title: "Pick the bill", text: "Electricity token, DSTV, GOTV, airtime or data — for any meter, decoder or phone number." },
@@ -388,6 +402,7 @@ export default function Home() {
       {/* ───────── HERO + PAY FORM ───────── */}
       <section className="max-w-6xl mx-auto px-5 pt-8 sm:pt-14 pb-16 sm:pb-24 grid lg:grid-cols-[1fr_28rem] xl:grid-cols-[1fr_30rem] gap-10 lg:gap-16 items-start">
         <div className="lg:pt-8">
+          <NewStrip />
           <h1 className="font-display font-extrabold text-[2.5rem] sm:text-6xl lg:text-[4.25rem] leading-[1.03] tracking-tight max-w-[14ch] sm:max-w-[16ch]">
             {DOMESTIC ? "Light, TV, airtime and data, paid in seconds." : "The bills back home, paid in seconds."}
           </h1>
@@ -731,6 +746,9 @@ export default function Home() {
         </div>
       </section>
 
+      {/* ───────── MORE THAN ONE BILL: ask to pay, giveaways, exam PINs ───────── */}
+      <FeatureShowcase />
+
       {/* ───────── WHAT YOU CAN PAY ───────── */}
       <section className="border-y border-line bg-panel">
         <div className="max-w-6xl mx-auto px-5 py-16 sm:py-24">
@@ -756,25 +774,6 @@ export default function Home() {
             ))}
           </div>
 
-          {EXTRAS.length > 0 && (
-            <div className="mt-12 sm:mt-14">
-              <h3 className="font-display font-bold text-2xl">And more</h3>
-              <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                {EXTRAS.map((x) => (
-                  <a key={x.href} href={x.href}
-                    className="group flex gap-3.5 items-center rounded-2xl border border-line bg-panel shadow-card p-3.5 sm:p-4 hover:border-paper/40">
-                    <span className="shrink-0 w-11 h-11 rounded-2xl bg-cta text-oncta flex items-center justify-center">
-                      <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true">{x.icon}</svg>
-                    </span>
-                    <span>
-                      <span className="block font-display font-bold text-lg leading-snug">{x.title}</span>
-                      <span className="block text-haze text-[15px] leading-relaxed mt-0.5">{x.text}</span>
-                    </span>
-                  </a>
-                ))}
-              </div>
-            </div>
-          )}
         </div>
       </section>
 
