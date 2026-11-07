@@ -206,6 +206,7 @@ export default function AskClient({ mode = "ask" }: { mode?: "ask" | "giveaway" 
       <p className="mt-3 text-haze text-lg leading-relaxed">{give
         ? "Pick what each person gets: light, airtime, data or TV. Pay once. Every person is delivered separately, and you send each one their token or confirmation on WhatsApp."
         : "Make a list of what you need. Send one link. A friend or relative pays by card from anywhere, and your tokens and top-ups arrive in seconds."}</p>
+      {give && <p className="mt-2 text-sm text-haze">Don&rsquo;t have everyone&rsquo;s numbers? <a href="/giveaway/link" className="text-tungsten underline underline-offset-2" data-testid="to-link">Send one link and let them choose</a>.</p>}
 
       {saved.filter((x) => !!x.give === give).length > 0 && (
         <div className="mt-6 rounded-2xl border border-line p-4">

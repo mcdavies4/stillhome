@@ -132,3 +132,67 @@ export function parsePfmRef(ref: string): { rail: "paystack" | "flutterwave"; re
   if (!m) return null;
   return { rail: m[1].toUpperCase() === "NLGFP" ? "flutterwave" : "paystack", requestId: m[2].toLowerCase(), attempt: Number(m[3]) };
 }
+
+// ───────────────────────── Giveaway links ("let them choose") ─────────────────────────
+// The giver shares one link; each person picks their own bill and enters their own number; the giver reviews the
+// list and pays for everyone at once. Nothing is paid until the giver closes the link.
+
+export const PFC_MAX_PEOPLE = GIVEAWAY_MAX_ITEMS;   // a closed link becomes one giveaway, so the same cap applies
+export const PFC_VALID_DAYS = PFM_VALID_DAYS;
+export const PFC_BUDGETS = [1000, 2000, 5000, 10000];
+export const PFC_CATEGORIES: PfmCategory[] = ["electricity", "cable", "airtime", "data"];
+export const PFC_CATEGORY_LABEL: Record<PfmCategory, string> = { electricity: "light", cable: "TV", airtime: "airtime", data: "data" };
+
+/** Which of the four groups a bill belongs to, using the same rules as the tabs. */
+export function pfmCategoryOf(b: Pick<PfmBiller, "biller_name" | "name"> & Partial<PfmBiller>): PfmCategory | null {
+  const x: PfmBiller = { biller_code: "", item_code: "", short_name: "", amount: 0, is_airtime: false, label_name: "", ...b } as PfmBiller;
+  return PFM_TABS.find((t) => t.match(x))?.key ?? null;
+}
+
+/** "light, airtime or TV" */
+export function pfcChoiceText(cats: PfmCategory[]): string {
+  const w = PFC_CATEGORIES.filter((c) => cats.includes(c)).map((c) => PFC_CATEGORY_LABEL[c]);
+  return w.length <= 1 ? (w[0] ?? "") : `${w.slice(0, -1).join(", ")} or ${w[w.length - 1]}`;
+}
+
+export type PfcStatus = "open" | "full" | "closed" | "cancelled" | "expired";
+export type PfcEntryState = "joined" | "waiting_payment" | PfmItemState | "not_paid" | "removed";
+
+/** One person on the giver's own page. */
+export type PfcEntryView = {
+  id: string; who: string; whatsapp: string | null; category: PfmCategory | null;
+  billerName: string; itemName: string | null; identifier: string; label: string; customerName: string | null;
+  amount: number; fee: number; at: string;
+};
+
+export type PfcView = {
+  id: string;
+  makerName: string;
+  note: string | null;
+  budget: number;
+  categories: PfmCategory[];
+  maxPeople: number;
+  count: number;              // people in so far (everyone may see the number, never the names)
+  status: PfcStatus;
+  expiresAt: string;
+  // only for the giver (?k=)
+  owner: boolean;
+  entries?: PfcEntryView[];
+  amount?: number;
+  fee?: number;
+  requestId?: string | null;
+  requestKey?: string | null;
+  makerEmail?: string;
+  // only for a person who joined (?e=)
+  mine?: { who: string; billerName: string; itemName: string | null; identifier: string; label: string; customerName: string | null; amount: number; state: PfcEntryState; token: string | null; wantsToken: boolean } | null;
+};
+
+/** The WhatsApp message the giver sends with the link. */
+export function pfcShareText(p: { makerName: string; budget: number; categories: PfmCategory[]; link: string; note?: string | null }): string {
+  return [
+    `${p.makerName} is giving away up to ${money(p.budget)} of ${pfcChoiceText(p.categories)} on Nolgic 🎁`,
+    p.note ? `"${p.note}"` : "",
+    `Open the link, choose what you want and enter your number. Nothing for you to pay:`,
+    p.link,
+  ].filter(Boolean).join("\n");
+}
