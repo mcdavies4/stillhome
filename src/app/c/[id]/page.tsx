@@ -58,17 +58,24 @@ export default function CollectPage({ params }: { params: { id: string } }) {
   // Who is looking: the giver (key in the link, or this device made it), someone who joined from this device, or anyone.
   useEffect(() => {
     alive.current = true;
-    const k = new URLSearchParams(window.location.search).get("k") || myLinkKey(id);
+    const sp = new URLSearchParams(window.location.search);
+    const k = sp.get("k") || myLinkKey(id);
+    // The private link in their email carries their key, so they can open their token on any phone.
+    const fromLink = sp.get("e");
+    if (fromLink && /^[0-9a-f-]{36}$/i.test(fromLink)) rememberJoined(id, fromLink);
     const e = joinedKey(id);
     setOwnerKey(k); setEntryKey(e);
     let timer: ReturnType<typeof setTimeout>;
+    const since = Date.now();
     const tick = async () => {
       const d = await load(k, e);
       if (!alive.current) return;
       if (d?.owner && k && !myLinkKey(id)) rememberMyLink({ id, key: k, at: Date.now(), budget: d.budget, people: d.maxPeople });
       const s = d?.mine?.state;
+      const lateToken = s === "delivered" && !d?.mine?.token && !!d?.mine?.wantsToken && Date.now() - since < 30 * 60_000;
       const every = !d ? 8000
-        : s === "working" ? 4000
+        : s === "working" || s === "waiting" ? 4000
+        : lateToken ? 8000
         : s === "joined" || s === "waiting_payment" || s === "checking" ? 15000
         : d.owner && (d.status === "open" || d.status === "full") ? 10000
         : 0;
@@ -168,6 +175,7 @@ function Join({ v, onJoined }: { v: PfcView; onJoined: (entryKey: string) => voi
   const [checked, setChecked] = useState<{ name: string | null } | null>(null);
   const [who, setWho] = useState("");
   const [whatsapp, setWhatsapp] = useState("");
+  const [email, setEmail] = useState("");
   const [busy, setBusy] = useState<"check" | "join" | null>(null);
   const [err, setErr] = useState("");
 
@@ -226,11 +234,12 @@ function Join({ v, onJoined }: { v: PfcView; onJoined: (entryKey: string) => voi
   async function join() {
     if (!item || !checked || out || bill <= 0 || who.trim().length < 2 || busy) return;
     if (whatsapp && !waRecipient(whatsapp)) { setErr("That WhatsApp number doesn't look like a Nigerian mobile number."); return; }
+    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) { setErr("That email address doesn't look right."); return; }
     setBusy("join"); setErr("");
     try {
       const r = await fetch(`/api/payforme/collect/${v.id}/join`, {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ who: who.trim(), whatsapp: whatsapp || undefined, billerCode: item.biller_code, itemCode: item.item_code, billerName: item.biller_name, itemName: item.name, identifier, identifierLabel: item.label_name || "Account number", amount: bill }),
+        body: JSON.stringify({ who: who.trim(), whatsapp: whatsapp || undefined, email: email.trim() || undefined, billerCode: item.biller_code, itemCode: item.item_code, billerName: item.biller_name, itemName: item.name, identifier, identifierLabel: item.label_name || "Account number", amount: bill }),
       });
       const d = await r.json().catch(() => ({}));
       if (!r.ok || !d.entryKey) throw new Error(d.error || "Something went wrong. Please try again.");
@@ -319,6 +328,11 @@ function Join({ v, onJoined }: { v: PfcView; onJoined: (entryKey: string) => voi
                     <p className="text-xs text-haze mt-1.5">So {v.makerName} can message you your {exam ? "PIN" : "token"}. It also shows on this page.</p>
                   </div>
                 )}
+                <div className="mt-3">
+                  <label htmlFor="pfc-email">Your email <span className="text-haze font-normal">(optional)</span></label>
+                  <input id="pfc-email" type="email" inputMode="email" value={email} onChange={(e) => setEmail(e.target.value.trim())} maxLength={120} placeholder="you@example.com" autoComplete="email" />
+                  <p className="text-xs text-haze mt-1.5">We&rsquo;ll email you {exam ? "your PIN" : phone ? "when it's done" : "your token"} and a private link to it, so you don&rsquo;t have to keep this page open.</p>
+                </div>
                 <button type="button" onClick={join} disabled={busy !== null || who.trim().length < 2}
                   className="mt-4 w-full h-12 rounded-xl bg-cta text-oncta font-display font-bold hover:brightness-105 disabled:opacity-50">
                   {busy === "join" ? "Joining…" : "Join the giveaway"}

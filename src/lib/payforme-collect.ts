@@ -161,6 +161,11 @@ export async function joinCollect(id: string, raw: any, ip: string): Promise<{ o
 
   const who = cap(raw.who, 30).replace(/[\u0000-\u001f\u007f<>]/g, " ").replace(/\s+/g, " ").trim();
   if (who.length < 2) return { ok: false, status: 400, error: "Enter your name, so they know it's you." };
+  let email: string | null = null;
+  if (raw.email) {
+    email = normaliseEmail(raw.email);
+    if (!email) return { ok: false, status: 400, error: "That email address doesn't look right." };
+  }
   let whatsapp: string | null = null;
   if (raw.whatsapp) {
     whatsapp = waRecipient(String(raw.whatsapp));
@@ -204,7 +209,15 @@ export async function joinCollect(id: string, raw: any, ip: string): Promise<{ o
     // Not on offer in this giveaway: stop before asking the provider anything.
     if (!category || !(col.categories as string[]).includes(category)) return { ok: false, ...JOIN_ERRORS.PFC_CATEGORY };
     try {
-      customerName = (await validateCustomer(d.itemCode, d.billerCode, d.identifier)).name ?? null;
+      const v = await validateCustomer(d.itemCode, d.billerCode, d.identifier);
+      customerName = v.name ?? null;
+      // Many electricity companies have a smallest purchase per meter. Catch it now, not as a failed vend after payment.
+      const min = Number(v.minimum ?? 0);
+      if (Number.isFinite(min) && min > d.amount) {
+        return { ok: false, status: 400, error: min > budget
+          ? `This meter's smallest top-up is ${pfmMoney(min)}, which is more than this giveaway allows (${pfmMoney(budget)}).`
+          : `This meter's smallest top-up is ${pfmMoney(min)}. Choose ${pfmMoney(min)} or more.` };
+      }
     } catch (e) {
       if (!pfmNoValidate({ biller_name: d.billerName, name: d.itemName, item_code: d.itemCode, is_airtime: it?.is_airtime })) throw e;
     }
@@ -233,6 +246,7 @@ export async function joinCollect(id: string, raw: any, ip: string): Promise<{ o
   }
   const row = Array.isArray(rows) ? rows[0] : rows;
   if (!row?.entry_key) return { ok: false, status: 500, error: "Something went wrong. Please try again." };
+  if (email) await db().from("pay_collect_entries").update({ email }).eq("id", row.entry_id);
   return { ok: true, entryKey: String(row.entry_key) };
 }
 

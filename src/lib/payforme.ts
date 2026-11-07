@@ -33,6 +33,7 @@ import { ngnPayProvider, flwPayConfigured, flwPayIsTestMode, initializePayment a
 import { paystackConfigured, paystackIsTestMode, initializeTransaction as psInit, verifyTransaction as psVerify, refundTransaction as psRefund, PaystackError } from "@/lib/paystack";
 import { GIVEAWAY_MAX_ITEMS, PFM_MAX_ITEMS, PFM_NOTE_MAX, PFM_VALID_DAYS, itemStateOf, maskIdentifier, parsePfmRef, pfmMoney, pfmNoValidate, pfmRef, type PfmItemView, type PfmUiStatus, type PfmView } from "@/lib/payforme-shared";
 import { sendPayerSummary, sendReceiverSummary } from "@/lib/payforme-email";
+import { notifyCollectJoiners } from "@/lib/payforme-collect-notify";
 import { pfmIsExam } from "@/lib/payforme-shared";
 import { examFee, examIdOk, examMaxOrder, examService } from "@/lib/exams-shared";
 import { activeProvider } from "@/lib/bills";
@@ -168,7 +169,10 @@ export async function createPayRequest(raw: any, ip: string): Promise<{ ok: true
       if (!purchase.ok) return { err: `Item ${i + 1}: ${purchase.error}` };
       let name: string | null = null;
       try {
-        name = (await validateCustomer(d.itemCode, d.billerCode, d.identifier)).name ?? null;
+        const v = await validateCustomer(d.itemCode, d.billerCode, d.identifier);
+        name = v.name ?? null;
+        const min = Number(v.minimum ?? 0);
+        if (Number.isFinite(min) && min > d.amount) return { err: `Item ${i + 1}: this meter's smallest top-up is ${pfmMoney(min)}.` };
       } catch (e) {
         if (!pfmNoValidate({ biller_name: d.billerName, name: d.itemName, item_code: d.itemCode })) throw e;
       }
@@ -468,6 +472,8 @@ async function settleIfDone(id: string): Promise<void> {
   }));
   try { await sendPayerSummary(req, lines); } catch (e) { console.error("[pfm] payer email failed", e); }
   try { if (req.receiver_email) await sendReceiverSummary(req, lines); } catch (e) { console.error("[pfm] receiver email failed", e); }
+  // A giveaway link: email each person who left an email their own delivery (and a private link to their token).
+  try { await notifyCollectJoiners(id); } catch (e) { console.error("[pfm] joiner emails failed", e); }
 
   const refunded = lines.filter((l) => l.state === "refunded").length;
   const checking = lines.filter((l) => l.state === "checking").length;

@@ -63,7 +63,9 @@ export default function RequestPage({ params }: { params: { id: string } }) {
     const tick = async () => {
       const d = await load(k);
       if (!alive.current) return;
-      const live = d && (d.status === "working" || (d.status === "paying" && sp.get("paid") === "1") || d.status === "checking");
+      // A light token can land a few minutes after "Delivered" (the provider confirms it later): keep looking for it.
+      const lateToken = !!d && d.owner && d.items.some((i) => i.state === "delivered" && !i.token && /ELECTRIC|DISCO|PREPAID/i.test(i.billerName)) && Date.now() - since < 30 * 60_000;
+      const live = d && (d.status === "working" || (d.status === "paying" && sp.get("paid") === "1") || d.status === "checking" || lateToken);
       if (Date.now() - since > 60_000) setSlow(true);
       if (live || !d) timer = setTimeout(tick, d ? 3000 : 6000);
     };
