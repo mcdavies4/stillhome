@@ -2,12 +2,11 @@
 
 import { track } from "@/lib/track";
 import { useEffect, useMemo, useState } from "react";
-import { ngnMaxOrder } from "@/lib/ngn-fee";
-import { examIdOk, examService } from "@/lib/exams-shared";
+import { ngnMaxOrder, ngnServiceFee, feeKindOf } from "@/lib/ngn-fee";
 import { DRAFT_KEY, GIVEAWAY_DRAFT_KEY, clearDraft, readDraft, writeDraft } from "@/lib/payforme-draft";
 import { GIVEAWAY_NOTES, cleanText } from "@/lib/gift";
 import { readPfmSaved, writePfmSaved, type PfmSaved } from "@/lib/payforme-saved";
-import { GIVEAWAY_MAX_ITEMS, PFM_MAX_ITEMS, PFM_NOTE_MAX, PFM_TABS, examAsBillers, pfmIsExam, pfmItemFee, pfmMoney, pfmNoValidate, pfmTitle, requestShareText, waShareUrl, type PfmBiller } from "@/lib/payforme-shared";
+import { GIVEAWAY_MAX_ITEMS, PFM_MAX_ITEMS, PFM_NOTE_MAX, PFM_TABS, pfmMoney, pfmNoValidate, pfmTitle, requestShareText, waShareUrl, type PfmBiller } from "@/lib/payforme-shared";
 
 type Entry = { billerCode: string; itemCode: string; billerName: string; itemName: string; identifier: string; identifierLabel: string; amount: number; name: string | null; fee: number; who?: string };
 type Saved = PfmSaved;
@@ -20,7 +19,6 @@ const LABELS: Record<string, { provider: string; plan: string }> = {
   cable: { provider: "TV provider", plan: "Package" },
   airtime: { provider: "Network", plan: "Amount" },
   data: { provider: "Network or provider", plan: "Data plan" },
-  exam: { provider: "Exam", plan: "PIN" },
 };
 const QUICK = [500, 1000, 2000, 5000];
 
@@ -64,16 +62,14 @@ export default function AskClient({ mode = "ask" }: { mode?: "ask" | "giveaway" 
     const d = readDraft(DKEY, MAX);
     if (d) {
       setName(d.name); setEmail(d.email); setNote(d.note);
-      setList(d.list.map((e) => ({ ...e, who: e.who ?? "", fee: pfmItemFee({ biller_code: e.billerCode, item_code: e.itemCode, biller_name: e.billerName, name: e.itemName }, e.amount) })));
+      setList(d.list.map((e) => ({ ...e, who: e.who ?? "", fee: ngnServiceFee(e.amount, feeKindOf({ biller_code: e.billerCode, item_code: e.itemCode, biller_name: e.billerName, name: e.itemName } as any)) })));
       if (d.list.length) setRestored(true);
     }
     setReady(true);
     fetch("/api/billers?country=NG")
       .then(async (r) => ({ ok: r.ok, d: await r.json().catch(() => ({})) }))
-      .then(({ ok, d }) => { setAll((a) => [...(d.items ?? []).filter((x: PfmBiller) => !pfmIsExam(x.biller_code)), ...a.filter((x) => pfmIsExam(x.biller_code))]); setLoaded(true); if (!ok || !(d.items ?? []).length) setLoadErr("We couldn't load the list of services. Refresh the page to try again."); })
+      .then(({ ok, d }) => { setAll(d.items ?? []); setLoaded(true); if (!ok || !(d.items ?? []).length) setLoadErr("We couldn't load the list of services. Refresh the page to try again."); })
       .catch(() => { setLoaded(true); setLoadErr("We couldn't load the list of services. Refresh the page to try again."); });
-    // Exam PINs come from their own list, and only when exams are switched on.
-    fetch("/api/exams").then((r) => r.json()).then((d) => { if (d?.enabled && Array.isArray(d.groups) && d.groups.length) setAll((a) => [...a.filter((x) => !pfmIsExam(x.biller_code)), ...examAsBillers(d.groups)]); }).catch(() => {});
   }, []);
 
   // Keep the draft up to date as they type, add and remove. Nothing left = nothing saved.
@@ -93,9 +89,7 @@ export default function AskClient({ mode = "ask" }: { mode?: "ask" | "giveaway" 
     return g.every((i) => i.amount > 0) ? [...g].sort((a, b) => a.amount - b.amount) : g;
   }, [providers, provider]);
 
-  const exam = !!item && pfmIsExam(item.biller_code);
-  const phone = !exam && pfmNoValidate(item);
-  const tabs = PFM_TABS.filter((x) => x.key !== "exam" || all.some(x.match));
+  const phone = pfmNoValidate(item);
   const fixed = !!item && item.amount > 0;
   const billAmount = fixed ? item!.amount : Number(amount || 0);
   const max = ngnMaxOrder(500000);
@@ -109,7 +103,6 @@ export default function AskClient({ mode = "ask" }: { mode?: "ask" | "giveaway" 
 
   async function check() {
     if (!item || !identifier) return;
-    if (exam) { if (examIdOk(item.biller_code, identifier)) { setChecked({ name: null }); setErr(""); } else setErr(examService(item.biller_code).idError); return; }
     if (phone) { setChecked({ name: null }); setErr(""); return; }
     setBusy("check"); setErr(""); setChecked(null);
     try {
@@ -122,7 +115,7 @@ export default function AskClient({ mode = "ask" }: { mode?: "ask" | "giveaway" 
 
   function addToList() {
     if (!item || !checked || out || billAmount <= 0 || list.length >= MAX) return;
-    const fee = pfmItemFee(item, billAmount);
+    const fee = ngnServiceFee(billAmount, feeKindOf(item));
     setList([...list, { billerCode: item.biller_code, itemCode: item.item_code, billerName: item.biller_name, itemName: item.name, identifier, identifierLabel: item.label_name || "Account number", amount: billAmount, name: checked.name, fee, who: cleanText(who, 30) }]);
     setIdentifier(""); setWho(""); setAmount(""); setChecked(null); setErr("");
     if (plans.length > 1) setItem(null);
@@ -213,7 +206,6 @@ export default function AskClient({ mode = "ask" }: { mode?: "ask" | "giveaway" 
       <p className="mt-3 text-haze text-lg leading-relaxed">{give
         ? "Pick what each person gets: light, airtime, data or TV. Pay once. Every person is delivered separately, and you send each one their token or confirmation on WhatsApp."
         : "Make a list of what you need. Send one link. A friend or relative pays by card from anywhere, and your tokens and top-ups arrive in seconds."}</p>
-      {give && <p className="mt-2 text-sm text-haze">Don&rsquo;t have everyone&rsquo;s numbers? <a href="/giveaway/link" className="text-tungsten underline underline-offset-2" data-testid="to-link">Send one link and let them choose</a>.</p>}
 
       {saved.filter((x) => !!x.give === give).length > 0 && (
         <div className="mt-6 rounded-2xl border border-line p-4">
@@ -273,8 +265,8 @@ export default function AskClient({ mode = "ask" }: { mode?: "ask" | "giveaway" 
 
         {list.length < MAX ? (
           <div className="mt-4 rounded-2xl border border-line p-4" role="group" aria-label="Add something to the list">
-            <div className={`grid gap-2 ${tabs.length > 4 ? "grid-cols-3 sm:grid-cols-5" : "grid-cols-4"}`}>
-              {tabs.map((t) => (
+            <div className="grid grid-cols-4 gap-2">
+              {PFM_TABS.map((t) => (
                 <button key={t.key} type="button" aria-pressed={tab === t.key} onClick={() => pickTab(t.key)}
                   className={`h-11 rounded-xl border text-sm font-semibold ${tab === t.key ? "bg-paper text-night border-paper" : "border-line text-haze hover:border-paper/40"}`}>{t.label}</button>
               ))}
@@ -299,8 +291,7 @@ export default function AskClient({ mode = "ask" }: { mode?: "ask" | "giveaway" 
               <div className="mt-4 pt-4 border-t border-line">
                 <label htmlFor="pfm-id">{item.label_name || "Account number"}</label>
                 <input id="pfm-id" value={identifier} onChange={(e) => { setIdentifier(clean(e.target.value, phone)); setChecked(null); }}
-                  type={phone ? "tel" : "text"} inputMode={phone ? "tel" : exam && /^jamb/i.test(item.biller_code) ? "text" : "numeric"} placeholder={phone ? "08031234567" : exam ? (/^jamb/i.test(item.biller_code) ? "Profile code" : "08031234567") : "04123456789"} maxLength={phone ? 16 : 20} autoComplete="off" autoCorrect="off" spellCheck={false} />
-                {exam && <p className="text-xs text-haze mt-1.5 leading-relaxed">{examService(item.biller_code).idHint}</p>}
+                  type={phone ? "tel" : "text"} inputMode={phone ? "tel" : "numeric"} placeholder={phone ? "08031234567" : "04123456789"} maxLength={phone ? 16 : 20} autoComplete="off" autoCorrect="off" spellCheck={false} />
                 {give && (
                   <div className="mt-3">
                     <label htmlFor="pfm-who">Their name <span className="text-haze font-normal">(optional, for your WhatsApp message)</span></label>
@@ -321,11 +312,11 @@ export default function AskClient({ mode = "ask" }: { mode?: "ask" | "giveaway" 
                 {!checked ? (
                   <button type="button" onClick={check} disabled={busy !== null || !identifier || billAmount <= 0 || out}
                     className="mt-4 w-full h-12 rounded-xl border border-paper/25 font-semibold hover:bg-sunk disabled:opacity-40">
-                    {busy === "check" ? "Checking…" : exam ? (/^jamb/i.test(item.biller_code) ? "Confirm JAMB profile code" : "Confirm phone number") : phone ? "Confirm number" : "Check account name"}
+                    {busy === "check" ? "Checking…" : phone ? "Confirm number" : "Check account name"}
                   </button>
                 ) : (
                   <div className="mt-4 rounded-xl border border-ok/30 bg-ok/10 p-3.5" role="status">
-                    {checked.name ? <p className="text-sm text-haze">This {item.label_name?.toLowerCase() || "account"} belongs to</p> : <p className="text-sm text-haze">{exam ? "Check it once more: a PIN bought for the wrong one can't be moved." : "Number looks fine"}</p>}
+                    {checked.name ? <p className="text-sm text-haze">This {item.label_name?.toLowerCase() || "account"} belongs to</p> : <p className="text-sm text-haze">Number looks fine</p>}
                     {checked.name && <p className="font-display font-bold text-lg">{checked.name}</p>}
                     <button type="button" onClick={addToList} className="mt-3 h-11 px-5 rounded-xl bg-cta text-oncta font-display font-bold hover:brightness-105">{give ? "Add this person" : checked.name ? "Yes, add it to my list" : "Add it to my list"}</button>
                   </div>

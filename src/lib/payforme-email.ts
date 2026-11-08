@@ -32,13 +32,13 @@ function rows(lines: PfmLine[], withTokens: boolean): { html: string; text: stri
       <b>${esc(what(l))}</b> · ${naira(l.amount)}<br>
       <span style="color:#555">${esc(l.identifier)}${l.customerName ? ` · ${esc(l.customerName)}` : ""}</span><br>
       <span style="color:${l.state === "delivered" ? "#1a7f4b" : l.state === "refunded" ? "#b3261e" : "#8a6d00"}">${STATE_TEXT[l.state]}</span>
-      ${withTokens && l.state === "delivered" && l.token ? `<br><span style="font-family:monospace;font-size:16px;letter-spacing:1px">${/^\s*(PIN|Serial)\s*:/i.test(l.token) ? "" : "Token: "}<b>${esc(l.token)}</b></span>` : ""}
+      ${withTokens && l.state === "delivered" && l.token ? `<br><span style="font-family:monospace;font-size:16px;letter-spacing:1px">Token: <b>${esc(l.token)}</b></span>` : ""}
       ${withTokens && l.state === "delivered" && !l.token && l.wantsToken ? `<br><span style="color:#555">The token is on its way. It will appear on the page within a few minutes.</span>` : ""}
       ${l.state === "refunded" ? `<br><span style="color:#555">${naira(l.amount + l.fee)} is being returned to the card that paid.</span>` : ""}
     </td></tr>`).join("");
   const text = lines.map((l) =>
     `- ${what(l)} (${naira(l.amount)}), ${l.identifier}${l.customerName ? ` ${l.customerName}` : ""}: ${STATE_TEXT[l.state]}` +
-    (withTokens && l.state === "delivered" && l.token ? `\n  ${/^\s*(PIN|Serial)\s*:/i.test(l.token) ? "" : "Token: "}${l.token}` : "")
+    (withTokens && l.state === "delivered" && l.token ? `\n  Token: ${l.token}` : "")
   ).join("\n");
   return { html: `<table style="width:100%;border-collapse:collapse;margin:14px 0">${html}</table>`, text };
 }

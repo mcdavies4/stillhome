@@ -7,7 +7,6 @@ import { sendReconcileEmail } from "@/lib/reconcile";
 import { cronAuthorized } from "@/lib/security";
 import { sweepBulk } from "@/lib/bulk";
 import { sweepPayRequests } from "@/lib/payforme";
-import { sweepCollects } from "@/lib/payforme-collect";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -21,7 +20,6 @@ export async function GET(req: NextRequest) {
   try { await sweepBulk(); } catch (e) { console.error("[reconcile] bulk sweep failed", e); }
   // Same for "Pay for Me" requests (nothing to do while the feature has never been used).
   try { await sweepPayRequests(); } catch (e) { console.error("[reconcile] pay-for-me sweep failed", e); }
-  try { await sweepCollects(); } catch (e) { console.error("[reconcile] giveaway-link sweep failed", e); }
   const r = await sendReconcileEmail();
   return Response.json({ sent: true, ...r });
 }

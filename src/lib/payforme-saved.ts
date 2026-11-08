@@ -8,7 +8,6 @@ export type PfmSaved = {
   note?: string;       // the message that goes with each winner's WhatsApp
   email?: string;      // the maker's email, so paying again needs no retyping
   names?: string[];    // winner names, in the same order as the items
-  phones?: (string | null)[]; // winners' WhatsApp numbers (234...), same order, when they gave one on a giveaway link
 };
 
 const t = (v: unknown, max: number) => (typeof v === "string" ? v.replace(/[\u0000-\u001f\u007f<>]/g, " ").trim().slice(0, max) : "");
@@ -25,7 +24,6 @@ export function parseSaved(raw: unknown): PfmSaved[] {
     if (o.give === true) {
       s.give = true; s.note = t(o.note, 160); s.email = t(o.email, 120);
       s.names = Array.isArray(o.names) ? o.names.slice(0, 15).map((n) => t(n, 30)) : [];
-      if (Array.isArray(o.phones)) s.phones = o.phones.slice(0, 15).map((n) => (typeof n === "string" && /^234\d{10}$/.test(n) ? n : null));
     }
     out.push(s);
   }
