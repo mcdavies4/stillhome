@@ -85,7 +85,7 @@ export function reminderEmail(d: Due, token: string, app = appUrl()): Mail {
   const tail = o.identifier.length > 4 ? `…${o.identifier.slice(-4)}` : o.identifier;
   const what = d.kind === "tv" ? `your ${String(o.biller_name ?? "TV").replace(/\s+VTU$/i, "")} subscription (card ${tail})` : `light on meter ${tail}`;
   const subject = d.kind === "tv" ? "Time to renew your TV?" : "Running low on light?";
-  const link = `${app}/#pay`;
+  const link = `${app}/?rt=${token}#pay`;   // opens checkout with this meter, plan, amount and email already filled
   const stop = `${app}/reminders/${token}`;
   const line = d.kind === "tv"
     ? `It has been ${days} days since you paid ${naira(o.amount_ngn)} for ${esc(what)}. If it is about to run out, you can renew it in a minute.`
