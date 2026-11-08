@@ -1,10 +1,10 @@
 // src/lib/analytics-shared.ts
 // Client-safe helpers for the first-party visit counter. Nothing here touches a cookie or any stored id.
 
-export const EVENT_NAMES = ["tab", "lookup_ok", "checkout_click", "play_click", "share_click", "support_open", "find_order", "ask_created", "gift_start", "gift_ask", "gift_note", "giveaway_create", "giveaway_link", "giveaway_join", "giveaway_close"] as const;
+export const EVENT_NAMES = ["tab", "lookup_ok", "checkout_click", "play_click", "share_click", "support_open", "find_order", "ask_created", "gift_start", "gift_ask", "gift_note", "giveaway_create", "reminder_open"] as const;
 export type EventName = (typeof EVENT_NAMES)[number];
 
-const DYNAMIC_ROOTS = new Set(["order", "r", "c", "bulk", "exams", "feedback", "reminders"]);
+const DYNAMIC_ROOTS = new Set(["order", "r", "bulk", "exams", "feedback", "reminders"]);
 const IDLIKE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$|^[0-9a-f]{20,}$/i;
 
 /** A page path with ids and tokens removed, or null for pages we never count (admin, api). */

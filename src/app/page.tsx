@@ -44,6 +44,7 @@ const FEE_RANGE = ngnFeeRange();
 const WA_RECEIPTS = process.env.NEXT_PUBLIC_WHATSAPP_RECEIPTS === "1";
 const RECEIPT_TAIL = WA_RECEIPTS ? "the receipt goes to their phone — token included." : "your receipt, token included, arrives by email.";
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;   // same shape the server checks
 const itemKey = (i: BillerItem) => `${i.biller_code}:${i.item_code}:${i.short_name ?? i.name}`;
 
 // Country-agnostic category matchers (work for NG discos AND GH's ECG etc.)
@@ -204,6 +205,8 @@ export default function Home() {
   const [giftOpen, setGiftOpen] = useState(false);
   const [giftNote, setGiftNote] = useState("");
   const [giftFrom, setGiftFrom] = useState("");
+  // From a reminder email (?rt=<private token>): the last order, fetched once, applied when the service list has loaded.
+  const [remPrefill, setRemPrefill] = useState<{ tab: string; billerCode: string; itemCode: string; billerName: string; identifier: string; amount: number; email: string } | null>(null);
   const [validated, setValidated] = useState<{ name: string | null } | null>(null);
   const [busy, setBusy] = useState<"validate" | "pay" | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -234,6 +237,30 @@ export default function Home() {
     setGiftMode(true); setGiftOpen(true); setTab(g);
     track("gift_start", g);
   }, []);
+
+  useEffect(() => {
+    const rt = new URLSearchParams(window.location.search).get("rt");
+    if (!rt || !UUID_RE.test(rt)) return;
+    let live = true;
+    fetch(`/api/reminders/prefill?t=${encodeURIComponent(rt)}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (live && d && d.identifier) { setRemPrefill(d); track("reminder_open", d.tab); } })
+      .catch(() => { /* the plain form still works */ });
+    return () => { live = false; };
+  }, []);
+
+  // Once the service list is in, fill the form from the reminder and check the name again, exactly like tapping a saved item.
+  useEffect(() => {
+    if (!remPrefill || !loaded || !items.length) return;
+    const found = items.find((i) => i.biller_code === remPrefill.billerCode && i.item_code === remPrefill.itemCode) ?? null;
+    const d = remPrefill; setRemPrefill(null);
+    setError(null); setTab(TABS.some((t) => t.key === d.tab) ? d.tab : "electricity");
+    setProvider(found?.biller_name ?? d.billerName); setItem(found); setIdentifier(d.identifier); setValidated(null);
+    if (d.email) setEmail(d.email);
+    if (!found) { setError("We couldn't find that service on the list right now. Choose it again below."); return; }
+    if (!(found.amount > 0) && d.amount > 0) setAmountLocal(String(d.amount));
+    validate(found, d.identifier);
+  }, [remPrefill, loaded, items]);   // eslint-disable-line react-hooks/exhaustive-deps
 
   const tabItems = useMemo(() => {
     const t = TABS.find((t) => t.key === tab)!;
