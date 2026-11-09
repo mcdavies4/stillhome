@@ -65,7 +65,7 @@ export default function Legal() {
         <li>The account details you enter (meter, smartcard or phone number), to look up the account holder and deliver your purchase.</li>
         <li>Order records: what you bought, the amount, the status and the token, so you can see your order and so we can handle refunds and disputes.</li>
         <li>Anonymous visit counts: which pages are opened, the country, the type of device and browser, and roughly how you found us. This uses no cookies, stores no IP address and cannot identify you or follow you from one day to the next. We do not count browsers that send &ldquo;Do Not Track&rdquo;.</li>
-        <li>Partner links: if you arrive through a link from one of our sales partners, we remember which partner in your browser for 30 days, so they are credited if you buy. It holds only the partner&rsquo;s name, nothing about you.</li>
+        <li>Partner links: if you arrive through a link from one of our sales partners, we remember which partner in your browser for 30 days, so we can see which link brought you. It holds only the partner&rsquo;s name, nothing about you.</li>
         <li>Your account (optional): if you sign in with an emailed code, we keep your email, and any meters, smartcards or phone numbers you choose to save (the number, provider and a nickname only, never the account holder&rsquo;s name), so they follow you between devices. Signing in sets one cookie that keeps you signed in for 30 days; sign out removes it. Your order history is the orders already made with that email. You can remove any saved item yourself, or email us to delete your account data.</li>
       </ul>
       <p className={p}>
