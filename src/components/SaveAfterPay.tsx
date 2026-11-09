@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { addSaved, clearCandidate, isSaved, readCandidate, readSaved, writeSaved, tail, type Candidate } from "@/lib/saved";
+import { acctSignedIn } from "@/lib/account-client";
 
 // On a delivered order: offers to save the meter / smartcard / number that was just paid for.
 // It only appears when this browser made the payment (the pay form leaves a short-lived note) and it matches this order.
@@ -9,12 +10,13 @@ export default function SaveAfterPay({ billerName, identifier }: { billerName: s
   const [cand, setCand] = useState<Candidate | null>(null);
   const [nick, setNick] = useState("");
   const [state, setState] = useState<"hidden" | "offer" | "saved" | "failed">("hidden");
+  const [acct, setAcct] = useState(false);   // signed in: the save also goes to the account, so it follows them to other devices
 
   useEffect(() => {
     const c = readCandidate();
     if (!c || c.identifier !== identifier || c.billerName.trim() !== billerName.trim()) return;
     if (isSaved(readSaved(), c)) { clearCandidate(); return; } // already saved: nothing to ask
-    setCand(c); setState("offer");
+    setAcct(acctSignedIn()); setCand(c); setState("offer");
   }, [billerName, identifier]);
 
   if (state === "hidden" || !cand) return null;
@@ -22,14 +24,19 @@ export default function SaveAfterPay({ billerName, identifier }: { billerName: s
   if (state === "saved") {
     return (
       <div className="mt-4 rounded-2xl border border-ok/30 bg-ok/10 p-5" role="status">
-        <p className="font-semibold text-ok">Saved on this device.</p>
-        <p className="text-haze text-sm mt-1">Next time, tap it under &ldquo;Pay again&rdquo; at the top of the pay form.</p>
+        <p className="font-semibold text-ok">{acct ? "Saved to your account." : "Saved on this device."}</p>
+        <p className="text-haze text-sm mt-1">Next time, tap it under &ldquo;Pay again&rdquo; at the top of the pay form.{acct ? " It will be there on your other devices too." : ""}</p>
       </div>
     );
   }
 
   const save = () => {
-    const ok = writeSaved(addSaved(readSaved(), cand, nick));
+    const next = addSaved(readSaved(), cand, nick);
+    const ok = writeSaved(next);
+    if (acct) {   // also keep it on the account (best effort: this device still has it either way)
+      const item = next.find((s) => s.billerCode === cand.billerCode && s.itemCode === cand.itemCode && s.identifier === cand.identifier);
+      if (item) fetch("/api/account/saved", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "add", items: [item] }) }).catch(() => null);
+    }
     if (ok) { clearCandidate(); setState("saved"); } else setState("failed");
   };
 
@@ -38,7 +45,7 @@ export default function SaveAfterPay({ billerName, identifier }: { billerName: s
       <p className="font-display font-bold">Pay this again faster</p>
       <p className="text-haze text-sm leading-relaxed mt-1">
         Save {cand.ownerName ? <span className="text-paper font-medium">{cand.ownerName}</span> : <>this {cand.label.toLowerCase()}</>} ({tail(cand.identifier)}) on this device. Next time, tap it instead of typing the number.
-        Nothing is stored on our servers.
+        {acct ? "It goes on your account, so it follows you to other devices." : "Nothing is stored on our servers."}
       </p>
       <label htmlFor="save-nick" className="mt-3">Give it a name <span className="text-haze font-normal">(optional)</span></label>
       <input id="save-nick" value={nick} onChange={(e) => setNick(e.target.value)} maxLength={24} placeholder="e.g. Mum's light" autoComplete="off" enterKeyHint="done"

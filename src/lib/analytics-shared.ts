@@ -1,7 +1,7 @@
 // src/lib/analytics-shared.ts
 // Client-safe helpers for the first-party visit counter. Nothing here touches a cookie or any stored id.
 
-export const EVENT_NAMES = ["tab", "lookup_ok", "checkout_click", "play_click", "share_click", "support_open", "find_order", "ask_created", "gift_start", "gift_ask", "gift_note", "giveaway_create", "giveaway_link", "giveaway_join", "giveaway_close", "reminder_open"] as const;
+export const EVENT_NAMES = ["tab", "lookup_ok", "checkout_click", "play_click", "share_click", "support_open", "find_order", "ask_created", "gift_start", "gift_ask", "gift_note", "giveaway_create", "giveaway_link", "giveaway_join", "giveaway_close", "reminder_open", "account_code_sent", "account_signin", "account_pay"] as const;
 export type EventName = (typeof EVENT_NAMES)[number];
 
 const DYNAMIC_ROOTS = new Set(["order", "r", "c", "bulk", "exams", "feedback", "reminders"]);

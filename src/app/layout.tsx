@@ -109,6 +109,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                   { href: "/giveaway", label: "Run a giveaway" },
                 ] : []),
                 ...(process.env.NEXT_PUBLIC_EXAMS_ENABLED === "1" ? [{ href: "/exams", label: "JAMB & WAEC PINs" }] : []),
+                ...(process.env.NEXT_PUBLIC_ACCOUNTS_ENABLED === "1" ? [{ href: "/account", label: "My account" }] : []),
                 { href: "/find-order", label: "Find my order or token" },
                 { href: playUrl("header"), label: "Get the Android app", external: true },
                 { href: "/legal", label: "Terms, refunds & privacy" },

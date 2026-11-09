@@ -11,7 +11,8 @@ import SavedList from "@/components/SavedList";
 import RefBanner from "@/components/RefBanner";
 import { readRef } from "@/lib/referral-client";
 import { readRep } from "@/lib/rep-client";
-import { rememberCandidate, type Saved } from "@/lib/saved";
+import { readSaved, rememberCandidate, type Saved } from "@/lib/saved";
+import { readAcctEmail } from "@/lib/account-client";
 import { GIFTS, OCCASIONS, NOTE_MAX, NAME_MAX, cleanText, clearGift, isGiftKey, rememberGift } from "@/lib/gift";
 import BackSoon, { isBackSoon } from "@/components/BackSoon";
 import { notPower } from "@/lib/not-power";
@@ -276,6 +277,19 @@ export default function Home() {
     if (!(found.amount > 0) && d.amount > 0) setAmountLocal(String(d.amount));
     validate(found, d.identifier);
   }, [remPrefill, loaded, items]);   // eslint-disable-line react-hooks/exhaustive-deps
+
+  // "Pay" on the account page opens /?pay=<saved id>: fill the form from that saved item and check the name again, like tapping "Pay again".
+  const [payId, setPayId] = useState<string | null>(null);
+  useEffect(() => {
+    const p = new URLSearchParams(window.location.search).get("pay");
+    if (p && /^[A-Za-z0-9-]{1,40}$/.test(p)) setPayId(p);
+  }, []);
+  useEffect(() => {
+    if (!payId || !loaded || !items.length) return;
+    const sv = readSaved().find((s) => s.id === payId); setPayId(null);
+    const e = readAcctEmail(); if (e) setEmail((cur) => cur || e);
+    if (sv) applySaved(sv);
+  }, [payId, loaded, items]);   // eslint-disable-line react-hooks/exhaustive-deps
 
   const tabItems = useMemo(() => {
     const t = TABS.find((t) => t.key === tab)!;
@@ -906,6 +920,7 @@ export default function Home() {
           <div>
             <p className="font-semibold text-paper mb-3">Help</p>
             <ul className="[&_a]:inline-flex [&_a]:items-center [&_a]:min-h-[40px]">
+              {process.env.NEXT_PUBLIC_ACCOUNTS_ENABLED === "1" && <li><Link href="/account" className="hover:text-paper">My account</Link></li>}
               <li><Link href="/find-order" className="hover:text-paper">Find my order or token</Link></li>
               <li><a href="mailto:nolgichq@gmail.com" className="hover:text-paper">nolgichq@gmail.com</a></li>
               <li><Link href="/legal" className="hover:text-paper">Terms, refunds &amp; privacy</Link></li>
