@@ -12,7 +12,7 @@ import crypto from "crypto";
 const BASE = "https://api.paystack.co";
 
 export class PaystackError extends Error {
-  constructor(message: string, public raw?: unknown) {
+  constructor(message: string, public raw?: unknown, public http = 0) {
     super(message);
     this.name = "PaystackError";
   }
@@ -49,7 +49,7 @@ async function ps<T = any>(path: string, init: RequestInit = {}): Promise<T> {
   }
   if (!res.ok || body?.status === false) {
     console.error(`[paystack] ${path} -> ${res.status}: ${text.slice(0, 500)}`);
-    throw new PaystackError(body?.message ?? `Paystack HTTP ${res.status}`, body);
+    throw new PaystackError(body?.message ?? `Paystack HTTP ${res.status}`, body, res.status);
   }
   return body as T;
 }
@@ -91,12 +91,16 @@ export async function verifyTransaction(reference: string): Promise<{
   status: string;
   amountKobo: number;
   currency: string;
+  reference: string;
 }> {
-  const r = await ps<{ data: { status: string; amount: number; currency: string } }>(
+  const r = await ps<{ data: { status: string; amount: number; currency: string; reference?: string } }>(
     `/transaction/verify/${encodeURIComponent(reference)}`
   );
-  return { status: r.data.status, amountKobo: r.data.amount, currency: r.data.currency };
+  return { status: String(r.data.status ?? "").toLowerCase(), amountKobo: Number(r.data.amount), currency: String(r.data.currency ?? "").toUpperCase(), reference: String(r.data.reference ?? "") };
 }
+
+/** "No such transaction yet" is an answer (the customer has not paid), not an error. */
+export const paystackNotFound = (e: unknown) => e instanceof PaystackError && (e.http === 404 || /not found|transaction reference/i.test(e.message));
 
 /**
  * Full refund of a transaction by reference. Paystack refunds come out of your

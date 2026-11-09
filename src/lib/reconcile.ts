@@ -16,7 +16,7 @@ import { checkBillStatus, activeProvider, providerLabel, getBalance } from "@/li
 import { flwBase, flwExtraHeaders } from "@/lib/flutterwave";
 import { flwPayConfigured, flwPayIsTestMode, flwPayReferenceFor, orderIdFromFlwPayRef, verifyByReference } from "@/lib/flwpay";
 import { paystackConfigured, paystackIsTestMode, paystackReferenceFor, verifyTransaction } from "@/lib/paystack";
-import { bulkTxRef } from "@/lib/bulk";
+import { bulkPayRef } from "@/lib/bulk";
 import { parsePfmRef } from "@/lib/payforme-shared";
 import { buildReport, dayAfterIso, dayStartIso, fetchBulk, loadSettings, validYmd, watDay, productLabel, type BulkRow, type OrderRow, type Report } from "@/lib/finance";
 
@@ -161,7 +161,7 @@ export async function runReconcile(dateStr: string = yesterdayWAT(), deep = true
     const provider = o.payment_provider === "flutterwave" ? "flutterwave" : "paystack";
     expects.push({ kind: "order", id: o.id, provider, ref: provider === "flutterwave" ? flwPayReferenceFor(o.id) : paystackReferenceFor(o.id), ngn: num(o.amount_ngn) + num(o.service_fee_local), status: o.status, paidExpected: ORDER_PAID.has(o.status), label: `order ${short(o.id)} (${o.biller_name ?? "?"} ${ngn(num(o.amount_ngn))})` });
   }
-  for (const b of bulk) expects.push({ kind: "bulk", id: b.id, provider: "flutterwave", ref: bulkTxRef(b.id), ngn: num(b.amount_total) + num(b.service_fee), status: b.status, paidExpected: BULK_PAID.has(b.status), label: `bulk batch ${short(b.id)} (${b.recipients_count ?? "?"} numbers, ${ngn(num(b.amount_total))})` });
+  for (const b of bulk) expects.push({ kind: "bulk", id: b.id, provider: b.payment_provider === "paystack" ? "paystack" : "flutterwave", ref: bulkPayRef(b), ngn: num(b.amount_total) + num(b.service_fee), status: b.status, paidExpected: BULK_PAID.has(b.status), label: `bulk batch ${short(b.id)} (${b.recipients_count ?? "?"} numbers, ${ngn(num(b.amount_total))})` });
 
   // "Pay for Me": one payment covers a whole request, so it is matched to the request, not to its item orders.
   const PFM_PAID = new Set(["paid", "settled", "needs_review"]);
@@ -181,8 +181,8 @@ export async function runReconcile(dateStr: string = yesterdayWAT(), deep = true
   // Ask each provider for a window one day either side so a payment made near midnight still finds its pair.
   const winFrom = new Date(startMs - 24 * 3600_000).toISOString();
   const winTo = new Date(endMs + 24 * 3600_000).toISOString();
-  const needFlw = true; // bulk always uses Flutterwave, and it is the usual rail
-  const needPs = naira.some((o) => o.payment_provider === "paystack") || (process.env.NGN_PAY_PROVIDER ?? "").trim().toLowerCase() !== "flutterwave";
+  const needFlw = true; // cheap to list, and it catches a customer who pays an old Flutterwave link after a switch
+  const needPs = naira.some((o) => o.payment_provider === "paystack") || bulk.some((b) => b.payment_provider === "paystack") || (process.env.NGN_PAY_PROVIDER ?? "").trim().toLowerCase() !== "flutterwave";
   type Rail = { name: string; listing: Listing | null; skipped: string | null };
   const rails: Record<"flutterwave" | "paystack", Rail> = {
     flutterwave: { name: "Flutterwave", listing: null, skipped: !flwPayConfigured() ? "not configured" : flwPayIsTestMode() ? "test key (payments are not real)" : null },
@@ -241,11 +241,11 @@ export async function runReconcile(dateStr: string = yesterdayWAT(), deep = true
   // 1b. Every successful payment in the day must belong to an order or bulk batch that agrees with it.
   const known = new Map(expects.map((e) => [e.ref, e] as const));
   const strangers = Array.from(byRef.values()).filter((t) => inDay(t.at) && t.currency === "NGN" && !known.has(t.ref));
-  const looksOurs = (ref: string) => /^(NLG|NLGFW|NLGFB|NLGP|NLGFP)-/i.test(ref);
+  const looksOurs = (ref: string) => /^(NLG|NLGFW|NLGFB|NLGPB|NLGP|NLGFP)-/i.test(ref);
   const orderIds = new Set<string>(), bulkIds = new Set<string>();
   for (const t of strangers) {
     const m = /^NLG(?:FW)?-([0-9a-f-]{36})$/i.exec(t.ref); if (m) orderIds.add(m[1].toLowerCase());
-    const b = /^NLGFB-([0-9a-f-]{36})$/i.exec(t.ref); if (b) bulkIds.add(b[1].toLowerCase());
+    const b = /^NLG(?:FB|PB)-([0-9a-f-]{36})$/i.exec(t.ref); if (b) bulkIds.add(b[1].toLowerCase());
   }
   const lateOrders = new Map<string, any>(), lateBulk = new Map<string, any>();
   if (orderIds.size) { const { data } = await db.from("orders").select("id,status,biller_name,amount_ngn,service_fee_local,is_test").in("id", Array.from(orderIds)); for (const o of data ?? []) lateOrders.set(String(o.id).toLowerCase(), o); }
@@ -264,7 +264,7 @@ export async function runReconcile(dateStr: string = yesterdayWAT(), deep = true
       continue; // (a paid request's other payments were refunded as duplicates: the alert email already said so)
     }
     const o = lateOrders.get((/^NLG(?:FW)?-(.+)$/i.exec(t.ref)?.[1] ?? "").toLowerCase());
-    const b = lateBulk.get((/^NLGFB-(.+)$/i.exec(t.ref)?.[1] ?? "").toLowerCase());
+    const b = lateBulk.get((/^NLG(?:FB|PB)-(.+)$/i.exec(t.ref)?.[1] ?? "").toLowerCase());
     const rec = o ?? b;
     if (rec?.is_test) continue;
     if (!looksOurs(t.ref)) { flags.push({ level: "warn", msg: `A payment of ${ngn(t.ngn)} (${t.ref.slice(0, 40)}) is not one of ours. Check it in the payment dashboard.` }); continue; }
@@ -301,7 +301,7 @@ export async function runReconcile(dateStr: string = yesterdayWAT(), deep = true
   }
   for (const b of bulk) {
     const age = now - new Date(b.created_at).getTime();
-    if (b.status === "refund_failed") flags.push({ level: "danger", msg: `Bulk refund failed on batch ${short(b.id)}. Refund the customer by hand in Flutterwave.` });
+    if (b.status === "refund_failed") flags.push({ level: "danger", msg: `Bulk refund failed on batch ${short(b.id)}. Refund the customer by hand in the payment dashboard.` });
     else if (b.status === "needs_review") flags.push({ level: "warn", msg: `Bulk batch ${short(b.id)} still needs review. Check it in the Paybeta console.` });
     else if (["paid", "processing", "settling"].includes(b.status) && age > 3 * 3600_000) flags.push({ level: "warn", msg: `Bulk batch ${short(b.id)} has been "${b.status}" for ${Math.round(age / 3600_000)}h.` });
   }

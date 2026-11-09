@@ -150,7 +150,7 @@ export interface BulkView {
 /**
  * Service fee for a whole batch: BULK_FEE_PCT % of the airtime total, never below MIN, never above MAX (whole naira).
  * Separate from the single-airtime fee because one batch carries many numbers' worth of airtime, so the single
- * ₦100 cap would leave a large batch earning almost nothing after Flutterwave's 2% pay-in cost.
+ * ₦100 cap would leave a large batch earning almost nothing after the payment provider's pay-in cost (Paystack: 1.5% + ₦100).
  * Defaults 1% / ₦20 / ₦500. Env: NEXT_PUBLIC_BULK_FEE_PCT / _MIN / _MAX.
  */
 export function bulkFeeSettings(): { pct: number; min: number; max: number } {

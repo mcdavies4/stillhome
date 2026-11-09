@@ -1,15 +1,16 @@
 // src/lib/bulk.ts
-// Bulk airtime, server side. One Flutterwave payment -> one Paybeta bulk batch -> per-number results ->
-// a PARTIAL refund of only the numbers that failed.
+// Bulk airtime, server side. One naira payment (Paystack or Flutterwave, chosen per batch by
+// bulk_orders.payment_provider) -> one Paybeta bulk batch -> per-number results -> a PARTIAL refund of only the
+// numbers that failed.
 //
 // Life of a batch (bulk_orders.status):
 //   pending_payment -> paid -> processing -> settling -> settled
 //                         \-> (nothing could be bought) settled with everything refunded
 //   needs_review   Nolgic can't tell what happened (never refunds on a guess; you get an email)
-//   refund_failed  numbers failed but the Flutterwave refund didn't go through (you get an email)
+//   refund_failed  numbers failed but the payment refund didn't go through (you get an email)
 //
 // Safety rules (same spirit as single orders):
-//   * money is only taken once: the payment is re-verified with Flutterwave and claimed atomically
+//   * money is only taken once: the payment is re-verified with the payment provider and claimed atomically
 //   * the Paybeta batch reference is unique, so submitting twice can never buy twice
 //   * a refund is only ever issued for numbers Paybeta has FINALLY reported failed, or when Paybeta cleanly
 //     rejected the whole batch. Timeouts, 5xx and unrecognised statuses never refund.
@@ -20,7 +21,8 @@ import { alertFounder } from "@/lib/alerts";
 import { billsTestMode } from "@/lib/bills";
 import { pbBalance } from "@/lib/paybeta";
 import { pbBulkGet, pbBulkSubmit, type PbBulk } from "@/lib/paybeta-bulk";
-import { flwPayIsTestMode, refundTransaction, verifyById, verifyByReference, FlwPayError, type FlwTx } from "@/lib/flwpay";
+import { flwPayIsTestMode, refundTransaction, verifyById, verifyByReference, FlwPayError, payProviderLabel } from "@/lib/flwpay";
+import { paystackIsTestMode, paystackNotFound, refundTransaction as psRefund, verifyTransaction as psVerify } from "@/lib/paystack";
 import { sendBulkReceiptEmail } from "@/lib/bulk-email";
 import { maskPhone, type BulkView, type Network } from "@/lib/bulk-shared";
 
@@ -31,6 +33,15 @@ export const bulkIdFromTxRef = (ref: string): string | null => {
   const m = /^NLGFB-([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i.exec(ref);
   return m ? m[1].toLowerCase() : null;
 };
+/** The Paystack reference of a batch (deterministic, so the webhook, the poll and the refund all find it). */
+export const bulkPsRef = (id: string) => `NLGPB-${id}`;
+export const bulkIdFromPsRef = (ref: string): string | null => {
+  const m = /^NLGPB-([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i.exec(ref);
+  return m ? m[1].toLowerCase() : null;
+};
+/** The payment reference for a batch, whichever rail took the money. */
+export const bulkPayRef = (b: { id: string; payment_provider?: string | null }) =>
+  b.payment_provider === "paystack" ? bulkPsRef(b.id) : bulkTxRef(b.id);
 /** Our batch reference at Paybeta. 35 chars; can never be mistaken for a single-vend "PB<32hex>" reference. */
 export const bulkPbReference = (id: string) => `PBB${id.replace(/-/g, "").toLowerCase()}`;
 export const bulkRowRef = (batchRef: string, row: number) => `${batchRef}-${row}`;
@@ -41,6 +52,31 @@ const SUBMIT_GIVE_UP_MS = 30 * 60_000; // paid but Paybeta never confirmed recei
 const PROCESS_GIVE_UP_MS = 3 * 3600_000; // submitted but results still not final
 
 const notFound = (e: unknown) => e instanceof FlwPayError && (e.http === 404 || /no transaction|not found/i.test(e.message));
+
+/** What a payment provider told us about a batch's payment, in one shape for both rails. */
+type PayCheck =
+  | { kind: "none" } // no transaction yet
+  | { kind: "found"; id: string; ref: string; paid: boolean; status: string; amountNgn: number; currency: string };
+
+async function checkPayment(b: Row, transactionId?: string | null): Promise<PayCheck> {
+  if (b.payment_provider === "paystack") {
+    try {
+      const tx = await psVerify(bulkPsRef(b.id));
+      return { kind: "found", id: bulkPsRef(b.id), ref: tx.reference || bulkPsRef(b.id), paid: tx.status === "success", status: tx.status, amountNgn: tx.amountKobo / 100, currency: tx.currency };
+    } catch (e) {
+      if (paystackNotFound(e)) return { kind: "none" };
+      throw e;
+    }
+  }
+  try {
+    const txId = transactionId ?? b.flw_pay_id ?? null;
+    const tx = txId ? await verifyById(txId) : await verifyByReference(bulkTxRef(b.id));
+    return { kind: "found", id: tx.id, ref: tx.txRef, paid: tx.status === "successful", status: tx.status, amountNgn: tx.amount, currency: tx.currency };
+  } catch (e) {
+    if (notFound(e)) return { kind: "none" };
+    throw e;
+  }
+}
 
 type Row = Record<string, any>;
 
@@ -64,41 +100,39 @@ async function recipientsOf(id: string): Promise<Row[]> {
 
 export type BulkConfirmState = "processed" | "unpaid" | "already" | "mismatch" | "skipped";
 
-/** Called from the Flutterwave webhook AND the status page. Verifies the payment, claims the batch, submits it. */
+/** Called from the payment webhook AND the status page. Verifies the payment, claims the batch, submits it. */
 export async function confirmBulkPayment(id: string, opts: { transactionId?: string | null } = {}): Promise<{ state: BulkConfirmState; note?: string }> {
   const db = supabaseAdmin();
   const { data: b } = await db.from("bulk_orders").select("*").eq("id", id).maybeSingle();
   if (!b) return { state: "skipped", note: "no such batch" };
   if (b.status !== "pending_payment") return { state: "already", note: b.status };
 
-  const expectedRef = bulkTxRef(b.id);
-  let tx: FlwTx;
-  try {
-    const txId = opts.transactionId ?? b.flw_pay_id ?? null;
-    tx = txId ? await verifyById(txId) : await verifyByReference(expectedRef);
-  } catch (e) {
-    if (notFound(e)) return { state: "unpaid", note: "no transaction yet" };
-    throw e;
+  const ps = b.payment_provider === "paystack";
+  const rail = payProviderLabel(ps ? "paystack" : "flutterwave");
+  const expectedRef = bulkPayRef(b);
+  const tx = await checkPayment(b, opts.transactionId);
+  if (tx.kind === "none") return { state: "unpaid", note: "no transaction yet" };
+  if (tx.ref !== expectedRef) {
+    await alertFounder("⚠️ Bulk payment mismatch", `Bulk ${b.id}: ${rail} transaction ${tx.id} has reference "${tx.ref}", expected "${expectedRef}". Not processed.`);
+    return { state: "mismatch", note: "reference mismatch" };
   }
-  if (tx.txRef !== expectedRef) {
-    await alertFounder("⚠️ Bulk payment mismatch", `Bulk ${b.id}: transaction ${tx.id} has tx_ref "${tx.txRef}", expected "${expectedRef}". Not processed.`);
-    return { state: "mismatch", note: "tx_ref mismatch" };
-  }
-  if (tx.status !== "successful") return { state: "unpaid", note: tx.status || "no status" };
+  if (!tx.paid) return { state: "unpaid", note: tx.status || "no status" };
 
   const expected = Number(b.amount_total) + Number(b.service_fee ?? 0);
-  if (tx.currency !== "NGN" || !Number.isFinite(tx.amount) || Math.abs(tx.amount - expected) > 0.005) {
-    await db.from("bulk_orders").update({ status: "needs_review", flw_pay_id: tx.id, updated_at: new Date().toISOString(), error: `PAYMENT MISMATCH: got ${tx.amount} ${tx.currency}, expected ${expected} NGN` }).eq("id", b.id).eq("status", "pending_payment");
-    await alertFounder("🚨 Bulk amount mismatch — NOT vended", `Bulk ${b.id}\nPaid: ${tx.amount} ${tx.currency} (${tx.status})\nExpected: ${expected} NGN\nTransaction ${tx.id}. Check Flutterwave and refund if needed.`);
+  if (tx.currency !== "NGN" || !Number.isFinite(tx.amountNgn) || Math.abs(tx.amountNgn - expected) > 0.005) {
+    await db.from("bulk_orders").update({ status: "needs_review", ...(ps ? {} : { flw_pay_id: tx.id }), updated_at: new Date().toISOString(), error: `PAYMENT MISMATCH: got ${tx.amountNgn} ${tx.currency}, expected ${expected} NGN` }).eq("id", b.id).eq("status", "pending_payment");
+    await alertFounder("🚨 Bulk amount mismatch — NOT vended", `Bulk ${b.id}\nPaid: ${tx.amountNgn} ${tx.currency} (${tx.status})\nExpected: ${expected} NGN\n${rail} transaction ${tx.id}. Check ${rail} and refund if needed.`);
     return { state: "mismatch", note: "amount mismatch" };
   }
-  if (flwPayIsTestMode() && !billsTestMode() && process.env.PAYSTACK_TEST_ALLOW_LIVE_VEND !== "1") {
-    await db.from("bulk_orders").update({ status: "needs_review", flw_pay_id: tx.id, updated_at: new Date().toISOString(), error: "TEST payment on a LIVE bills provider — not vended" }).eq("id", b.id).eq("status", "pending_payment");
-    await alertFounder("Bulk TEST payment — not vended", `Bulk ${b.id}: Flutterwave pay-in is in test mode but the bills provider is live, so nothing was bought.`);
+  const testPay = ps ? paystackIsTestMode() : flwPayIsTestMode();
+  if (testPay && !billsTestMode() && process.env.PAYSTACK_TEST_ALLOW_LIVE_VEND !== "1") {
+    await db.from("bulk_orders").update({ status: "needs_review", ...(ps ? {} : { flw_pay_id: tx.id }), updated_at: new Date().toISOString(), error: "TEST payment on a LIVE bills provider — not vended" }).eq("id", b.id).eq("status", "pending_payment");
+    await alertFounder("Bulk TEST payment — not vended", `Bulk ${b.id}: ${rail} pay-in is in test mode but the bills provider is live, so nothing was bought.`);
     return { state: "skipped", note: "test payment, live bills" };
   }
 
-  const claimed = await claim(b.id, ["pending_payment"], "paid", { flw_pay_id: tx.id, flw_pay_ref: expectedRef, paid_at: new Date().toISOString() });
+  // Paystack refunds by reference, so the reference is what we keep. Flutterwave refunds by transaction id.
+  const claimed = await claim(b.id, ["pending_payment"], "paid", { ...(ps ? {} : { flw_pay_id: tx.id }), flw_pay_ref: expectedRef, paid_at: new Date().toISOString() });
   if (!claimed) return { state: "already", note: "claimed elsewhere" };
 
   await submitBatch(claimed);
@@ -182,16 +216,19 @@ async function doRefundAndFinish(b: Row, refundNgn: number, delivered: number, f
 
   if (refundNgn > 0) {
     try {
-      if (!b.flw_pay_id) throw new Error("no Flutterwave transaction id on file");
       // Full refund when nothing was delivered (omit the amount), partial otherwise.
       const full = Math.abs(refundNgn - (Number(b.amount_total) + Number(b.service_fee ?? 0))) < 0.005;
-      await refundTransaction(b.flw_pay_id, full ? undefined : refundNgn);
+      if (b.payment_provider === "paystack") await psRefund(bulkPsRef(b.id), full ? undefined : refundNgn);
+      else {
+        if (!b.flw_pay_id) throw new Error("no Flutterwave transaction id on file");
+        await refundTransaction(b.flw_pay_id, full ? undefined : refundNgn);
+      }
     } catch (e: any) {
       await db.from("bulk_orders").update({
         status: "refund_failed", delivered_count: delivered, failed_count: failed, delivered_ngn: deliveredNgn,
         error: `REFUND FAILED (${money(refundNgn)}): ${e?.message ?? e}`.slice(0, 300), updated_at: new Date().toISOString(),
       }).eq("id", b.id);
-      await alertFounder("🚨 BULK REFUND FAILED — manual action needed", `Bulk ${b.id}\nOwed to customer: ${money(refundNgn)} (${failed} number(s) failed). ${why}\nFlutterwave tx ${b.flw_pay_id}\nError: ${e?.message ?? e}\nRefund it in the Flutterwave dashboard, then set bulk_orders.status to 'settled' and refunded_ngn.`);
+      await alertFounder("🚨 BULK REFUND FAILED — manual action needed", `Bulk ${b.id}\nOwed to customer: ${money(refundNgn)} (${failed} number(s) failed). ${why}\n${b.payment_provider === "paystack" ? `Paystack ref ${bulkPsRef(b.id)}` : `Flutterwave tx ${b.flw_pay_id}`}\nError: ${e?.message ?? e}\nRefund it in the ${b.payment_provider === "paystack" ? "Paystack" : "Flutterwave"} dashboard, then set bulk_orders.status to 'settled' and refunded_ngn.`);
       return;
     }
   }

@@ -85,6 +85,7 @@ export type BulkRow = {
   id: string; created_at: string; status: string; email: string | null; amount_total: number | string; service_fee: number | string;
   delivered_ngn: number | string | null; refunded_ngn: number | string | null; pb_charged: number | string | null;
   processor_fee_ngn?: number | string | null; flw_pay_id: string | null; recipients_count: number | null; settled_at: string | null;
+  payment_provider?: string | null;
 };
 
 export function econOfBulk(b: BulkRow, s: Settings): Econ {
@@ -177,7 +178,7 @@ export async function fetchOrders(from: string, to: string, includeTest = false)
 
 export async function fetchBulk(from: string, to: string, includeTest = false): Promise<BulkRow[]> {
   const db = supabaseAdmin();
-  const cols = "id,created_at,status,email,amount_total,service_fee,delivered_ngn,refunded_ngn,pb_charged,processor_fee_ngn,flw_pay_id,recipients_count,settled_at";
+  const cols = "id,created_at,status,email,amount_total,service_fee,delivered_ngn,refunded_ngn,pb_charged,processor_fee_ngn,flw_pay_id,recipients_count,settled_at,payment_provider";
   const run = (c: string, useTest: boolean) => pageAll<BulkRow>((a, b) => {
     let q = db.from("bulk_orders").select(c).gte("created_at", dayStartIso(from)).lt("created_at", dayAfterIso(to));
     if (useTest) q = q.eq("is_test", false);

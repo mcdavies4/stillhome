@@ -3,11 +3,12 @@ import { supabaseAdmin } from "@/lib/supabase";
 import { tryRecoverToken, expectsToken } from "@/lib/fulfilment";
 import { UUID_RE } from "@/lib/security";
 import { confirmFlutterwavePayment } from "@/lib/flwpay-process";
+import { confirmPaystackPayment } from "@/lib/paystack-process";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 60; // a Flutterwave payment confirmed from here may run the vend
+export const maxDuration = 60; // a payment confirmed from here (Flutterwave or Paystack) may run the vend
 
-const lastFlwCheck = new Map<string, number>();
+const lastPayCheck = new Map<string, number>();
 
 // Order status lookup by id (the success page polls this).
 // If the order is fulfilled but the electricity token hasn't landed yet,
@@ -29,17 +30,18 @@ export async function GET(req: Request) {
 
   if (error || !data) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  // Safety net for Flutterwave payments: if the customer is back but the webhook hasn't landed (or was
-  // rejected), ask Flutterwave directly. Recent orders only, at most one check per order every 4 seconds.
-  if (data.status === "pending_payment" && data.payment_provider === "flutterwave" && Date.now() - new Date(data.created_at).getTime() < 3 * 3600_000) {
-    const last = lastFlwCheck.get(id) ?? 0;
+  // Safety net for naira payments: if the customer is back but the webhook hasn't landed (or was rejected),
+  // ask the payment provider directly. Recent orders only, at most one check per order every 4 seconds.
+  const viaFlw = data.payment_provider === "flutterwave", viaPs = data.payment_provider === "paystack";
+  if (data.status === "pending_payment" && (viaFlw || viaPs) && Date.now() - new Date(data.created_at).getTime() < 3 * 3600_000) {
+    const last = lastPayCheck.get(id) ?? 0;
     if (Date.now() - last > 4000) {
-      lastFlwCheck.set(id, Date.now());
-      if (lastFlwCheck.size > 500) lastFlwCheck.clear();
+      lastPayCheck.set(id, Date.now());
+      if (lastPayCheck.size > 500) lastPayCheck.clear();
       try {
-        await confirmFlutterwavePayment(id);
+        await (viaFlw ? confirmFlutterwavePayment(id) : confirmPaystackPayment(id));
       } catch (e) {
-        console.error("[orders] flutterwave confirm failed", (e as any)?.message ?? e);
+        console.error(`[orders] ${data.payment_provider} confirm failed`, (e as any)?.message ?? e);
       }
       const again = await db.from("orders").select(SELECT).eq("id", id).single();
       if (again.data) data = again.data;

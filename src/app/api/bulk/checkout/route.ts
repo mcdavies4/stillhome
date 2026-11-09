@@ -6,15 +6,16 @@ import { rateLimit } from "@/lib/ratelimit";
 import { alertFounder } from "@/lib/alerts";
 import { normaliseEmail } from "@/lib/security";
 import { ngnPayProvider, flwPayConfigured, flwPayIsTestMode, initializePayment as flwInitialize } from "@/lib/flwpay";
+import { paystackConfigured, paystackIsTestMode, initializeTransaction as psInitialize } from "@/lib/paystack";
 import { paybetaConfigured } from "@/lib/paybeta";
 import { activeProvider, billsTestMode } from "@/lib/bills";
-import { bulkEnabled, bulkTxRef, bulkPbReference } from "@/lib/bulk";
+import { bulkEnabled, bulkTxRef, bulkPsRef, bulkPbReference } from "@/lib/bulk";
 import { checkRows, bulkFee, BULK_FIRST_CAP, type DraftRow } from "@/lib/bulk-shared";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
-// Creates a bulk airtime batch and a Flutterwave payment link for it. Nothing is bought until the payment is
+// Creates a bulk airtime batch and a payment link for it (Paystack or Flutterwave, per NGN_PAY_PROVIDER). Nothing is bought until the payment is
 // verified (see lib/bulk.ts). Bulk is off until BULK_ENABLED=1 is set in Vercel.
 export async function POST(req: Request) {
   if (!bulkEnabled()) return NextResponse.json({ error: "Bulk airtime isn't open yet." }, { status: 503 });
@@ -34,7 +35,11 @@ export async function POST(req: Request) {
   );
   if (!checked.ok) return NextResponse.json({ error: checked.error }, { status: 400 });
 
-  if (ngnPayProvider() !== "flutterwave" || !flwPayConfigured() || activeProvider() !== "paybeta" || !paybetaConfigured()) {
+  const rail = ngnPayProvider();
+  if (rail === "flutterwave" ? !flwPayConfigured() : !paystackConfigured()) {
+    return NextResponse.json({ error: "Bulk airtime isn't available right now — please check back soon." }, { status: 503 });
+  }
+  if (activeProvider() !== "paybeta" || !paybetaConfigured()) {
     return NextResponse.json({ error: "Bulk airtime isn't available right now — please check back soon." }, { status: 503 });
   }
 
@@ -63,7 +68,7 @@ export async function POST(req: Request) {
     .from("bulk_orders")
     .insert({
       email, ip, status: "pending_payment", recipients_count: checked.rows.length, amount_total: total, service_fee: fee,
-      payment_provider: "flutterwave", is_test: billsTestMode() || flwPayIsTestMode(),
+      payment_provider: rail, is_test: billsTestMode() || (rail === "flutterwave" ? flwPayIsTestMode() : paystackIsTestMode()),
     })
     .select("id")
     .single();
@@ -84,6 +89,18 @@ export async function POST(req: Request) {
 
   try {
     const appUrl = process.env.NEXT_PUBLIC_APP_URL!;
+    if (rail === "paystack") {
+      const init = await psInitialize({
+        email,
+        amountNgn: total + fee,
+        orderId: bulk.id,
+        callbackUrl: `${appUrl}/bulk/${bulk.id}?paid=1`,
+        reference: bulkPsRef(bulk.id),
+        metadata: { bulk_id: bulk.id },
+      });
+      await db.from("bulk_orders").update({ flw_pay_ref: init.reference }).eq("id", bulk.id);
+      return NextResponse.json({ url: init.authorizationUrl, bulkId: bulk.id, total: total + fee });
+    }
     const fw = await flwInitialize({
       email,
       amountNgn: total + fee,

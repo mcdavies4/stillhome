@@ -1,18 +1,18 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { alertFounder } from "@/lib/alerts";
-import { paystackIsTestMode, paystackReferenceFor, refundTransaction, verifyWebhookSignature } from "@/lib/paystack";
-import { fulfilClaimedOrder, type ClaimedOrder } from "@/lib/fulfil-order";
-import { billsTestMode } from "@/lib/bills";
-import { sendNgnReceiptEmail } from "@/lib/receipt-ngn";
+import { paystackReferenceFor, verifyWebhookSignature } from "@/lib/paystack";
+import { confirmPaystackPayment } from "@/lib/paystack-process";
+import { bulkIdFromPsRef, confirmBulkPayment } from "@/lib/bulk";
 import { confirmPayRequest } from "@/lib/payforme";
 import { parsePfmRef } from "@/lib/payforme-shared";
 
 // Paystack (₦) payment pipeline — the naira twin of /api/stripe/webhook.
 //   charge.success
-//     -> verify signature, order, reference, amount and currency
+//     -> verify signature, then re-verify the payment with Paystack's API (reference, amount, currency)
 //     -> atomically claim pending_payment -> paid
-//     -> vend via Flutterwave (shared pipeline), refund through Paystack on confirmed failure
+//     -> vend through the active bills provider (shared pipeline), refund through Paystack on confirmed failure
+//   Bulk airtime batches (reference NLGPB-<id>) and Pay for Me payments (NLGP-...) are routed to their own handlers.
 //
 // Dashboard setup (Nolgic business, NOT Odogwu's):
 //   Settings -> API Keys & Webhooks -> Webhook URL = https://www.nolgic.com/api/paystack/webhook
@@ -49,6 +49,17 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Verification failed, retry" }, { status: 500 });
     }
   }
+  // Bulk airtime: one payment, many numbers (reference NLGPB-<batch id>).
+  const bulkId = bulkIdFromPsRef(reference);
+  if (bulkId) {
+    try {
+      const r = await confirmBulkPayment(bulkId);
+      return NextResponse.json({ received: true, bulk: true, state: r.state });
+    } catch (e: any) {
+      console.error("[paystack-webhook] bulk verification failed", e?.message ?? e);
+      return NextResponse.json({ error: "Verification failed, retry" }, { status: 500 });
+    }
+  }
   if (!orderId) return NextResponse.json({ received: true, note: "no order_id (not a Nolgic payment)" });
 
   const db = supabaseAdmin();
@@ -63,56 +74,13 @@ export async function POST(req: Request) {
     return NextResponse.json({ received: true, note: "mismatch" });
   }
 
-  // Never vend on an underpayment or a wrong-currency charge.
-  const expectedKobo = Math.round((Number(existing.amount_ngn) + Number(existing.service_fee_local ?? 0)) * 100);
-  if (data.status !== "success" || data.currency !== "NGN" || Number(data.amount) !== expectedKobo) {
-    await db
-      .from("orders")
-      .update({
-        status: "needs_review",
-        paystack_reference: reference,
-        error: `PAYMENT MISMATCH: got ${data.amount} ${data.currency} (${data.status}), expected ${expectedKobo} NGN kobo`,
-      })
-      .eq("id", orderId)
-      .eq("status", "pending_payment");
-    await alertFounder(
-      "🚨 Paystack amount mismatch — order NOT vended",
-      `Order ${orderId}\nPaid: ${data.amount} ${data.currency} (${data.status})\nExpected: ${expectedKobo} kobo NGN\nReference ${reference} — check Paystack and refund if needed.`
-    );
-    return NextResponse.json({ received: true, note: "amount mismatch" });
+  // The webhook is only a nudge: the payment is re-verified with Paystack's own API before anything is vended
+  // (amount, currency, reference), and the order page runs the same check if this webhook never arrives.
+  try {
+    const r = await confirmPaystackPayment(orderId);
+    return NextResponse.json({ received: true, state: r.state, result: r.outcome });
+  } catch (e: any) {
+    console.error("[paystack-webhook] verification failed", e?.message ?? e);
+    return NextResponse.json({ error: "Verification failed, retry" }, { status: 500 });
   }
-
-  // Safety: a Paystack TEST payment is not real money. If the bills provider is LIVE it would
-  // vend a real bill from your real wallet, so refuse unless you've explicitly opted in to a
-  // supervised end-to-end test (PAYSTACK_TEST_ALLOW_LIVE_VEND=1 — remove it afterwards).
-  const flwIsLive = !billsTestMode(); // the ACTIVE bills provider (Flutterwave / VTpass / Paybeta), not Flutterwave only
-  if (paystackIsTestMode() && flwIsLive && process.env.PAYSTACK_TEST_ALLOW_LIVE_VEND !== "1") {
-    await alertFounder(
-      "Paystack TEST payment — not vended",
-      `Order ${orderId}: Paystack is in test mode but the bills provider is live, so nothing was vended. ` +
-        `For a supervised end-to-end test set PAYSTACK_TEST_ALLOW_LIVE_VEND=1 (it will spend real ${existing.currency ?? "NGN"} float), then remove it.`
-    );
-    return NextResponse.json({ received: true, note: "test payment, live FLW — skipped" });
-  }
-
-  // Claim atomically: only proceed if we flip pending_payment -> paid.
-  const { data: order } = await db
-    .from("orders")
-    .update({ status: "paid", paystack_reference: reference })
-    .eq("id", orderId)
-    .eq("status", "pending_payment")
-    .select("*")
-    .single();
-
-  if (!order) return NextResponse.json({ received: true, note: "already processed" });
-
-  const result = await fulfilClaimedOrder(order as ClaimedOrder, {
-    refund: async () => {
-      await refundTransaction(reference);
-    },
-    sendReceiptEmail: async (o, token) => { await sendNgnReceiptEmail(o as any, token); },
-    paymentLabel: `Paystack ref ${reference}`,
-  });
-
-  return NextResponse.json({ received: true, result: result.outcome });
 }
