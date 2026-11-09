@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 import { readSaved, tail, writeSaved, type Saved } from "@/lib/saved";
 import { track } from "@/lib/track";
 import { ACCT_EMAIL_KEY } from "@/lib/account-client";
+import { recentMonths } from "@/lib/statement-months";
 
 type Order = { id: string; name: string; tail: string; amountNgn: number; status: string; statusText: string; at: string };
 type Me = { email: string; orders: Order[]; saved: Saved[] };
@@ -22,6 +23,10 @@ export default function Account() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [me, setMe] = useState<Me | null>(null);
+  const months = recentMonths(Date.now(), 12);
+  const [month, setMonth] = useState(months[0].key);
+  const [dl, setDl] = useState<"" | "pdf" | "csv">("");
+  const [dlError, setDlError] = useState("");
 
   // Signed in: copy this device's saved list up, then keep the server's list (now the full one) on this device too.
   const load = useCallback(async (syncLocal: boolean) => {
@@ -83,6 +88,20 @@ export default function Account() {
     track("account_pay", s.tab);
     post("/api/account/saved", { action: "touch", id: s.id }).catch(() => null);
     window.location.href = `/?pay=${encodeURIComponent(s.id)}#pay`;
+  }
+
+  // Downloads go through the page so an ended session or a server error shows a message instead of saving an error file.
+  async function download(format: "pdf" | "csv") {
+    if (dl) return;
+    setDl(format); setDlError(""); track("account_statement", format);
+    try {
+      const r = await fetch(`/api/account/statement?month=${encodeURIComponent(month)}&format=${format}`, { cache: "no-store" });
+      if (r.status === 401) { setMe(null); setStep("email"); setError("Your session has ended. Sign in again to download."); return; }
+      if (!r.ok) { const d = await r.json().catch(() => ({})); setDlError(d.error ?? "We couldn't build that statement. Try again."); return; }
+      const url = URL.createObjectURL(await r.blob());
+      const a = document.createElement("a"); a.href = url; a.download = `nolgic-statement-${month}.${format}`; document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 4000);
+    } catch { setDlError("Can't reach Nolgic. Check your connection and try again."); } finally { setDl(""); }
   }
 
   const btn = "h-12 px-6 rounded-xl bg-cta text-oncta font-display font-bold hover:brightness-105 active:brightness-95 disabled:opacity-50";
@@ -148,6 +167,23 @@ export default function Account() {
               </ul>
             )}
             <p className="text-haze text-xs mt-2 leading-relaxed">We keep only the number and provider. We check the account name again every time, before you pay.</p>
+          </section>
+
+          <section className="mt-10" aria-labelledby="acct-statement">
+            <h2 id="acct-statement" className="font-display font-bold text-xl">Statements</h2>
+            <p className="text-haze mt-2 leading-relaxed">Every bill you paid in a month, for your records or your accountant. Open the CSV in Excel or Google Sheets.</p>
+            <div className="mt-3 flex flex-wrap items-end gap-3">
+              <div>
+                <label htmlFor="stmt-month">Month</label>
+                <select id="stmt-month" value={month} onChange={(e) => setMonth(e.target.value)}>
+                  {months.map((m) => <option key={m.key} value={m.key}>{m.label}</option>)}
+                </select>
+              </div>
+              <button type="button" onClick={() => download("pdf")} disabled={!!dl} className="h-12 px-5 rounded-xl bg-cta text-oncta font-display font-bold hover:brightness-105 active:brightness-95 disabled:opacity-50">{dl === "pdf" ? "Preparing…" : "Download PDF"}</button>
+              <button type="button" onClick={() => download("csv")} disabled={!!dl} className="h-12 px-5 rounded-xl border border-paper/25 font-semibold hover:bg-sunk disabled:opacity-50">{dl === "csv" ? "Preparing…" : "Download CSV"}</button>
+            </div>
+            {dlError && <p className="text-bad text-sm mt-2" role="alert">{dlError}</p>}
+            <p className="text-haze text-xs mt-2 leading-relaxed">Months are Nigerian time. Meter tokens and PINs are never included.</p>
           </section>
 
           <section className="mt-10" aria-labelledby="acct-orders">

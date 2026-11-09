@@ -6,6 +6,16 @@ Customers sign in with a 6-digit code emailed to them (no passwords). They get:
 
 Paying never needs an account. Everything on the pay form works as before.
 
+## Statements (for shops, offices and anyone who keeps books)
+On /account, signed-in customers pick a month and download a **PDF** or **CSV** of every bill they paid that month:
+date, order number, service, number, bill amount, service fee, total paid and status, with totals.
+- Months are Nigerian time (WAT). The last 24 months are available; the picker shows 12.
+- Delivered orders are totalled. Refunded orders are listed in red and shown separately, not counted. Orders still being delivered are marked "In progress".
+- Test orders and unpaid orders never appear. Meter tokens and PINs are never included.
+- A customer only ever gets their own orders (matched on the email they signed in with).
+- The CSV opens in Excel and Google Sheets (UTF-8, formula-safe). The PDF is marked "not a tax invoice".
+- No new setup or migration: it uses the accounts sign-in and the existing orders.
+
 ## One-time setup
 1. Run `supabase/migrations/0027_accounts.sql` in the Supabase SQL editor.
 2. In Vercel add:
