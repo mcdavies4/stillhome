@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
 
 const appUrl = (req: Request) => process.env.NEXT_PUBLIC_APP_URL || new URL(req.url).origin;
 
-// Founder-only: each sales rep's visits, orders, new customers, money brought in and commission owed.
+// Founder-only: each sales rep's visits, orders, new customers, money brought in. Nothing is owed or paid from here.
 export async function GET(req: Request) {
   const denied = await adminGate(req);
   if (denied) return denied;
@@ -15,7 +15,7 @@ export async function GET(req: Request) {
   return NextResponse.json(await repReport(days, appUrl(req)), { headers: { "Cache-Control": "no-store" } });
 }
 
-// Add a rep, or change their name, commission, note, or switch them off. A switched-off rep's link stops tagging new orders.
+// Add a rep, or change their name, note, or switch them off. A switched-off rep's link stops tagging new orders.
 export async function POST(req: Request) {
   const denied = await adminGate(req);
   if (denied) return denied;
@@ -23,13 +23,11 @@ export async function POST(req: Request) {
   const code = String(b?.code ?? "").trim().toLowerCase();
   if (!REP_RE.test(code)) return NextResponse.json({ error: "Code must be 3 to 20 letters or numbers, no spaces." }, { status: 400 });
   const name = String(b?.name ?? "").trim().slice(0, 60);
-  const commission = Math.round(Number(b?.commission_ngn ?? 0));
-  if (!Number.isFinite(commission) || commission < 0 || commission > 100000) return NextResponse.json({ error: "Commission must be between 0 and 100,000 naira." }, { status: 400 });
   const db = supabaseAdmin();
   const { data: existing, error: readErr } = await db.from("reps").select("code").eq("code", code).maybeSingle();
   if (readErr) return NextResponse.json({ error: "The reps table is missing.", hint: "Run supabase/migrations/0026_reps.sql in Supabase first." }, { status: 500 });
   if (!existing && !name) return NextResponse.json({ error: "Give the rep a name." }, { status: 400 });
-  const row: Record<string, unknown> = { code, commission_ngn: commission };
+  const row: Record<string, unknown> = { code };
   if (name) row.name = name;
   if (typeof b?.active === "boolean") row.active = b.active;
   if (typeof b?.note === "string") row.note = b.note.slice(0, 200) || null;

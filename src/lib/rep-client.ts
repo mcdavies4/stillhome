@@ -1,5 +1,5 @@
 // The browser half of sales-rep links: no server imports, safe to use in pages.
-// A rep link looks like https://nolgic.com/?rep=chika . The first rep who brings someone in keeps the credit for 30 days
+// A rep link looks like https://nolgic.com/?rep=chika . The first rep who brings someone in is the one counted for 30 days
 // (a later link from another rep does not take it over), and it is sent along when that person pays.
 export const REP_RE = /^[a-z0-9]{3,20}$/;
 export const REP_KEY = "nolgic.rep.v1";
@@ -23,7 +23,7 @@ export function captureRep(search: string, store: Pick<Storage, "getItem" | "set
   const incoming = cleanRepCode(new URLSearchParams(search).get("rep"));
   let current: { code: string; at: number } | null = null;
   try { current = parseRep(store.getItem(REP_KEY), now); } catch { /* storage blocked */ }
-  if (current) return current.code;                 // first rep keeps the credit while their claim is live
+  if (current) return current.code;                 // first rep stays counted while their claim is live
   if (!incoming) return null;
   try { store.setItem(REP_KEY, JSON.stringify({ code: incoming, at: now })); } catch { /* storage blocked: not remembered */ }
   return incoming;

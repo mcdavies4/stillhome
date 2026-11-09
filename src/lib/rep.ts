@@ -1,4 +1,4 @@
-// Sales reps: who brought which orders, and what each rep is owed. Reads and writes beside the payment path only:
+// Sales reps: who brought which orders. Performance tracking only: nothing is owed or paid from here (reps are paid outside Nolgic). Reads and writes beside the payment path only:
 // tagging an order is best-effort and can never stop a payment.
 import { supabaseAdmin } from "@/lib/supabase";
 import { REP_RE, cleanRepCode } from "@/lib/rep-client";
@@ -29,9 +29,9 @@ export const maskEmail = (e: string): string => {
 };
 
 export type RepRow = {
-  code: string; name: string; active: boolean; commission_ngn: number; note: string | null; link: string;
+  code: string; name: string; active: boolean; note: string | null; link: string;
   visits: number; lookups: number; checkoutClicks: number;
-  orders: number; delivered: number; customers: number; newCustomers: number; deliveredNgn: number; owedNgn: number;
+  orders: number; delivered: number; customers: number; newCustomers: number; deliveredNgn: number;
   recent: { id: string; email: string; status: string; amount_ngn: number; created_at: string; isNew: boolean }[];
 };
 
@@ -40,7 +40,7 @@ const DELIVERED = "fulfilled";
 type OrderRow = { id: string; email: string; status: string; amount_ngn: number | string; created_at: string; rep: string | null; is_test?: boolean | null };
 
 /** Pure maths for one rep's numbers, so it can be tested without a database. */
-export function repNumbers(orders: OrderRow[], firstDeliveredAt: Map<string, string>, commissionNgn: number) {
+export function repNumbers(orders: OrderRow[], firstDeliveredAt: Map<string, string>) {
   const real = orders.filter((o) => !o.is_test);
   const delivered = real.filter((o) => o.status === DELIVERED);
   const customers = new Set(delivered.map((o) => o.email.toLowerCase()));
@@ -53,7 +53,6 @@ export function repNumbers(orders: OrderRow[], firstDeliveredAt: Map<string, str
     customers: customers.size,
     newCustomers: newEmails.size,
     deliveredNgn: Math.round(delivered.reduce((s, o) => s + Number(o.amount_ngn || 0), 0)),
-    owedNgn: newEmails.size * Math.max(0, Math.round(commissionNgn || 0)),
     isNew,
   };
 }
@@ -62,7 +61,7 @@ export async function repReport(days: number, appUrl: string): Promise<{ days: n
   const db = supabaseAdmin();
   const d = Math.min(365, Math.max(1, Math.floor(days) || 30));
   const since = new Date(Date.now() - d * 86400_000).toISOString();
-  const { data: reps, error } = await db.from("reps").select("code,name,active,commission_ngn,note").order("created_at", { ascending: true });
+  const { data: reps, error } = await db.from("reps").select("code,name,active,note").order("created_at", { ascending: true });
   if (error) return { days: d, reps: [], tableReady: false };
   const list = (reps ?? []) as any[];
   if (!list.length) return { days: d, reps: [], tableReady: true };
@@ -84,17 +83,17 @@ export async function repReport(days: number, appUrl: string): Promise<{ days: n
 
   const out: RepRow[] = list.map((r) => {
     const mine = orders.filter((o) => o.rep === r.code);
-    const n = repNumbers(mine, first, r.commission_ngn);
+    const n = repNumbers(mine, first);
     const e = ((ev ?? []) as any[]).filter((x) => x.campaign === r.code);
     // Visitors are counted as one anonymous daily id per day, so this is "visits", not people.
     const visits = new Set(e.filter((x) => x.kind === "view").map((x) => `${x.vid}|${String(x.created_at).slice(0, 10)}`)).size;
     return {
-      code: r.code, name: r.name, active: !!r.active, commission_ngn: Number(r.commission_ngn) || 0, note: r.note ?? null,
+      code: r.code, name: r.name, active: !!r.active, note: r.note ?? null,
       link: `${appUrl.replace(/\/$/, "")}/?rep=${r.code}`,
       visits,
       lookups: e.filter((x) => x.kind === "event" && x.name === "lookup_ok").length,
       checkoutClicks: e.filter((x) => x.kind === "event" && x.name === "checkout_click").length,
-      orders: n.orders, delivered: n.delivered, customers: n.customers, newCustomers: n.newCustomers, deliveredNgn: n.deliveredNgn, owedNgn: n.owedNgn,
+      orders: n.orders, delivered: n.delivered, customers: n.customers, newCustomers: n.newCustomers, deliveredNgn: n.deliveredNgn,
       recent: mine.filter((o) => !o.is_test).slice(0, 15).map((o) => ({ id: o.id, email: maskEmail(o.email), status: o.status, amount_ngn: Math.round(Number(o.amount_ngn) || 0), created_at: o.created_at, isNew: n.isNew(o) })),
     };
   });

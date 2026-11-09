@@ -3,9 +3,9 @@
 import { useCallback, useEffect, useState } from "react";
 
 type Row = {
-  code: string; name: string; active: boolean; commission_ngn: number; note: string | null; link: string;
+  code: string; name: string; active: boolean; note: string | null; link: string;
   visits: number; lookups: number; checkoutClicks: number;
-  orders: number; delivered: number; customers: number; newCustomers: number; deliveredNgn: number; owedNgn: number;
+  orders: number; delivered: number; customers: number; newCustomers: number; deliveredNgn: number;
   recent: { id: string; email: string; status: string; amount_ngn: number; created_at: string; isNew: boolean }[];
 };
 type Data = { days: number; reps: Row[]; tableReady: boolean };
@@ -20,7 +20,7 @@ export default function AdminReps() {
   const [days, setDays] = useState(30);
   const [open, setOpen] = useState<string | null>(null);
   const [note, setNote] = useState("");
-  const [f, setF] = useState({ code: "", name: "", commission: "", note: "" });
+  const [f, setF] = useState({ code: "", name: "", note: "" });
   const pass = () => { try { return sessionStorage.getItem("nolgic-admin"); } catch { return null; } };
 
   const load = useCallback(async () => {
@@ -48,13 +48,13 @@ export default function AdminReps() {
   if (state === "error") return <main className="max-w-xl mx-auto px-5 pt-12"><p className="text-bad">{msg}</p></main>;
   if (!d) return <main className="max-w-xl mx-auto px-5 pt-12"><p className="text-haze">Loading…</p></main>;
 
-  const total = d.reps.reduce((a, r) => ({ orders: a.orders + r.orders, delivered: a.delivered + r.delivered, newC: a.newC + r.newCustomers, ngn: a.ngn + r.deliveredNgn, owed: a.owed + r.owedNgn }), { orders: 0, delivered: 0, newC: 0, ngn: 0, owed: 0 });
+  const total = d.reps.reduce((a, r) => ({ orders: a.orders + r.orders, delivered: a.delivered + r.delivered, newC: a.newC + r.newCustomers, ngn: a.ngn + r.deliveredNgn }), { orders: 0, delivered: 0, newC: 0, ngn: 0 });
 
   return (
     <main className="max-w-3xl mx-auto px-5 pt-10 pb-24">
       <a href="/admin" className="text-sm text-haze underline">Back to dashboard</a>
       <h1 className="font-display font-extrabold text-3xl mt-3">Sales reps</h1>
-      <p className="text-haze mt-2">Each rep gets their own link. Every order that link brings in is tagged to them. The first rep a customer arrives through keeps the credit for 30 days.</p>
+      <p className="text-haze mt-2">Each rep gets their own link. Every order that link brings in is tagged to them. The first rep link a customer opens is the one counted, for 30 days. This is for seeing what works; nothing is owed from here.</p>
 
       {!d.tableReady && <p className="text-bad mt-4">Run supabase/migrations/0026_reps.sql in Supabase first.</p>}
 
@@ -66,7 +66,7 @@ export default function AdminReps() {
       </div>
 
       {d.reps.length > 0 && (
-        <p className="mt-4 text-haze">All reps, last {d.days} days: <b className="text-paper">{total.orders}</b> orders, <b className="text-paper">{total.delivered}</b> delivered, <b className="text-paper">{total.newC}</b> new customers, <b className="text-paper">{naira(total.ngn)}</b> delivered, commission owed <b className="text-paper">{naira(total.owed)}</b>.</p>
+        <p className="mt-4 text-haze">All reps, last {d.days} days: <b className="text-paper">{total.orders}</b> orders, <b className="text-paper">{total.delivered}</b> delivered, <b className="text-paper">{total.newC}</b> new customers, <b className="text-paper">{naira(total.ngn)}</b> delivered.</p>
       )}
 
       {d.reps.map((r) => (
@@ -78,9 +78,9 @@ export default function AdminReps() {
               {r.note && <p className="text-sm text-haze mt-1">{r.note}</p>}
             </div>
             <div className="text-right">
-              <p className="text-sm text-haze">Commission owed</p>
-              <p className="font-display font-extrabold text-2xl">{naira(r.owedNgn)}</p>
-              <p className="text-xs text-haze">{r.newCustomers} new × {naira(r.commission_ngn)}</p>
+              <p className="text-sm text-haze">New customers</p>
+              <p className="font-display font-extrabold text-2xl">{r.newCustomers}</p>
+              <p className="text-xs text-haze">{naira(r.deliveredNgn)} delivered</p>
             </div>
           </div>
 
@@ -98,7 +98,7 @@ export default function AdminReps() {
 
           <div className="mt-3 flex flex-wrap gap-2">
             <button type="button" onClick={() => setOpen(open === r.code ? null : r.code)} className="h-10 px-4 rounded-xl border border-line font-semibold">{open === r.code ? "Hide orders" : `Show latest orders (${r.recent.length})`}</button>
-            <button type="button" onClick={() => save({ code: r.code, active: !r.active, commission_ngn: r.commission_ngn }, r.active ? "Switched off." : "Switched on.")} className="h-10 px-4 rounded-xl border border-line font-semibold">{r.active ? "Switch off" : "Switch on"}</button>
+            <button type="button" onClick={() => save({ code: r.code, active: !r.active }, r.active ? "Switched off." : "Switched on.")} className="h-10 px-4 rounded-xl border border-line font-semibold">{r.active ? "Switch off" : "Switch on"}</button>
           </div>
           {open === r.code && (
             <ul className="mt-3 text-sm divide-y divide-line">
@@ -116,14 +116,13 @@ export default function AdminReps() {
 
       <section className="mt-8 rounded-2xl border border-line p-5">
         <h2 className="font-display font-bold text-xl">Add or change a rep</h2>
-        <p className="text-haze text-sm mt-1">Use the same code again to change a rep's name, commission or note. Commission is paid per new customer whose first delivered order came through their link.</p>
+        <p className="text-haze text-sm mt-1">Use the same code again to change a rep's name or note, or switch their link off.</p>
         <div className="mt-4 grid sm:grid-cols-2 gap-3">
           <div><label htmlFor="rp-code">Code (their link name)</label><input id="rp-code" value={f.code} maxLength={20} onChange={(e) => setF({ ...f, code: e.target.value.toLowerCase().replace(/[^a-z0-9]/g, "") })} placeholder="e.g. chika" /></div>
           <div><label htmlFor="rp-name">Name</label><input id="rp-name" value={f.name} maxLength={60} onChange={(e) => setF({ ...f, name: e.target.value })} placeholder="e.g. Chika (Fiverr)" /></div>
-          <div><label htmlFor="rp-com">Commission per new customer (₦)</label><input id="rp-com" inputMode="numeric" value={f.commission} onChange={(e) => setF({ ...f, commission: e.target.value.replace(/\D/g, "") })} placeholder="e.g. 300" /></div>
           <div><label htmlFor="rp-note">Note (optional)</label><input id="rp-note" value={f.note} maxLength={200} onChange={(e) => setF({ ...f, note: e.target.value })} placeholder="e.g. Instagram and WhatsApp" /></div>
         </div>
-        <button type="button" onClick={() => save({ code: f.code, name: f.name, commission_ngn: Number(f.commission || 0), note: f.note }, "Saved.")} className="mt-4 h-11 px-5 rounded-xl bg-cta text-oncta font-display font-bold">Save rep</button>
+        <button type="button" onClick={() => save({ code: f.code, name: f.name, note: f.note }, "Saved.")} className="mt-4 h-11 px-5 rounded-xl bg-cta text-oncta font-display font-bold">Save rep</button>
         {note && <p className="text-sm mt-3" role="status">{note}</p>}
       </section>
     </main>
