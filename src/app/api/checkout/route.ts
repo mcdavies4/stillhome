@@ -15,6 +15,7 @@ import { orderIsTest } from "@/lib/test-mode";
 import { walletCovers } from "@/lib/capacity";
 import { BACK_SOON_MESSAGE } from "@/lib/back-soon";
 import { planFeeWaiver, commitFeeWaiver, cleanRef } from "@/lib/referral";
+import { cleanRep, tagRep } from "@/lib/rep";
 
 // Creates the order row + a payment session:
 //   - default: Stripe Checkout in GBP (diaspora, any supported country)
@@ -58,6 +59,7 @@ export async function POST(req: Request) {
       recipientWhatsapp,
       userId: null as string | null, // never trust a client-supplied user id
       ref: cleanRef(raw.ref),
+      rep: cleanRep(raw.rep),
     };
     // amountLocal replaces amountNgn; accept both for backward-compat with any cached client.
     const amountLocal = raw.amountLocal ?? raw.amountNgn;
@@ -177,6 +179,7 @@ export async function POST(req: Request) {
         .single();
       if (errN) throw errN;
       await commitFeeWaiver(waiver, b.email, orderN.id);
+      await tagRep(orderN.id, b.rep); // credit the sales rep whose link brought this customer (best effort, never blocks payment)
 
       const appUrlN = process.env.NEXT_PUBLIC_APP_URL!;
       if (rail === "flutterwave") {

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import BackSoon, { isBackSoon } from "@/components/BackSoon";
+import { readRep } from "@/lib/rep-client";
 
 const ENABLED = process.env.NEXT_PUBLIC_EXAMS_ENABLED === "1";
 const naira = (n: number) => `₦${Math.round(n).toLocaleString("en-NG")}`;
@@ -48,7 +49,7 @@ export default function ExamsPage() {
       const r = await fetch("/api/exams/checkout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ service: group.service, code: item.code, identifier: idClean, email: email.trim() }),
+        body: JSON.stringify({ service: group.service, code: item.code, identifier: idClean, email: email.trim(), rep: readRep() }),
       });
       const d = await r.json().catch(() => ({}));
       if (!r.ok || !d.url) { setError(d.error ?? "Something went wrong. Please try again."); setBusy(false); return; }

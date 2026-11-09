@@ -65,6 +65,7 @@ export default function Legal() {
         <li>The account details you enter (meter, smartcard or phone number), to look up the account holder and deliver your purchase.</li>
         <li>Order records: what you bought, the amount, the status and the token, so you can see your order and so we can handle refunds and disputes.</li>
         <li>Anonymous visit counts: which pages are opened, the country, the type of device and browser, and roughly how you found us. This uses no cookies, stores no IP address and cannot identify you or follow you from one day to the next. We do not count browsers that send &ldquo;Do Not Track&rdquo;.</li>
+        <li>Partner links: if you arrive through a link from one of our sales partners, we remember which partner in your browser for 30 days, so they are credited if you buy. It holds only the partner&rsquo;s name, nothing about you.</li>
       </ul>
       <p className={p}>
         We do not ask for your name, address, contacts, location, photos or files. We do not sell personal data, and we

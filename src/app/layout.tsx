@@ -10,6 +10,7 @@ import SupportChat from "@/components/SupportChat";
 import AndroidBanner from "@/components/AndroidBanner";
 import StatusBar from "@/components/StatusBar";
 import RefCapture from "@/components/RefCapture";
+import RepCapture from "@/components/RepCapture";
 import { playUrl } from "@/lib/app-links";
 import { themeInitScript } from "@/lib/theme-time";
 
@@ -86,6 +87,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <AndroidBanner />
         <StatusBar />
         <RefCapture />
+        <RepCapture />
         <nav className="sticky top-0 z-50 bg-panel/95 backdrop-blur-md border-b border-line">
           <div className="max-w-6xl mx-auto px-4 sm:px-5 h-16 flex items-center justify-between">
             <Link href="/" className="flex items-center gap-2.5 min-h-11" aria-label="Nolgic home">

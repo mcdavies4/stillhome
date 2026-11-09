@@ -12,6 +12,7 @@ const ITEMS: { href: string; label: string }[] = [
   { href: "/admin/inbox", label: "Support inbox" },
   { href: "/admin/finance", label: "Finance" },
   { href: "/admin/growth", label: "Growth" },
+  { href: "/admin/reps", label: "Sales reps" },
   { href: "/admin/feedback", label: "Abandoned orders" },
   { href: "/admin/exams-check", label: "Exam PIN check" },
   { href: "/admin/partners", label: "Partners" },

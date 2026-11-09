@@ -10,6 +10,7 @@ import GetOnPlay from "@/components/GetOnPlay";
 import SavedList from "@/components/SavedList";
 import RefBanner from "@/components/RefBanner";
 import { readRef } from "@/lib/referral-client";
+import { readRep } from "@/lib/rep-client";
 import { rememberCandidate, type Saved } from "@/lib/saved";
 import { GIFTS, OCCASIONS, NOTE_MAX, NAME_MAX, cleanText, clearGift, isGiftKey, rememberGift } from "@/lib/gift";
 import BackSoon, { isBackSoon } from "@/components/BackSoon";
@@ -383,6 +384,7 @@ export default function Home() {
           amountLocal: fixedAmount ? fixedLocal : Number(amountLocal),
           recipientWhatsapp: whatsapp || null,
           ref: readRef(),
+          rep: readRep(),
         }),
       });
       const d = await r.json();

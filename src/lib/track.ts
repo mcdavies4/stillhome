@@ -11,10 +11,11 @@ function ctx(): Landing {
   const q = new URLSearchParams(location.search);
   let r = "";
   try { r = document.referrer ? new URL(document.referrer).hostname : ""; } catch {}
+  const rep = /^[a-z0-9]{3,20}$/.test((q.get("rep") || "").toLowerCase()) ? (q.get("rep") || "").toLowerCase() : "";
   landing = {
-    s: (q.get("utm_source") || q.get("ref") || "").slice(0, 30),
+    s: (rep ? "rep" : q.get("utm_source") || q.get("ref") || "").slice(0, 30),
     m: (q.get("utm_medium") || "").slice(0, 30),
-    c: (q.get("utm_campaign") || "").slice(0, 40),
+    c: (rep || q.get("utm_campaign") || "").slice(0, 40),
     r: r.slice(0, 80),
   };
   return landing;

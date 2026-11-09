@@ -11,6 +11,7 @@ import { initializeTransaction, paystackConfigured, paystackIsTestMode } from "@
 import { examFee, examIdOk, examMaxOrder, examService } from "@/lib/exams-shared";
 import { walletCovers } from "@/lib/capacity";
 import { BACK_SOON_MESSAGE } from "@/lib/back-soon";
+import { cleanRep, tagRep } from "@/lib/rep";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
@@ -87,6 +88,7 @@ export async function POST(req: Request) {
     console.error("[exams] order insert failed", error?.message);
     return NextResponse.json({ error: "Something went wrong. Please try again." }, { status: 500 });
   }
+  await tagRep(order.id, cleanRep(body?.rep)); // credit the sales rep whose link brought this customer (best effort)
 
   try {
     const appUrl = process.env.NEXT_PUBLIC_APP_URL!;
