@@ -4,8 +4,9 @@
 // Who gets one (all must be true):
 //   - the order is their LATEST delivered order for that meter or smartcard (electricity or TV only)
 //   - it is not a test order, has an email, and the email has not opted out
-//   - enough time has passed: their own usual gap for that meter (the median of their past gaps, kept between
-//     7 and 45 days) or, with only one order so far, 21 days for light and 28 days for TV
+//   - the predicted run-out is close: their own usual gap for that meter (the median of their past gaps, kept between
+//     7 and 45 days) or, with only one order so far, 21 days for light and 28 days for TV. The email goes out
+//     LEAD_DAYS (2) BEFORE that point, so there is time to top up before the lights go off
 //   - it is no more than 10 days past that point (an old order never gets a late "you must be low" email)
 //   - that order has not been reminded about before, and the email has had no reminder in the last 7 days
 //   - it is between 09:00 and 19:00 UK time
@@ -22,11 +23,14 @@ export const DEFAULT_GAP_DAYS = { electricity: 21, tv: 28 } as const;
 export const MIN_GAP_DAYS = 7;
 export const MAX_GAP_DAYS = 45;
 export const GRACE_DAYS = 10;
+export const LEAD_DAYS = 2;
 export const COOLDOWN_DAYS = 7;
 export const HISTORY_DAYS = 180;
 
 export type Hist = { id: string; email: string; identifier: string; biller_code?: string | null; item_code?: string | null; biller_name?: string | null; amount_ngn: number | string; created_at: string };
 export type Due = { order: Hist; kind: "electricity" | "tv"; gapDays: number; basis: "own history" | "usual"; ageDays: number };
+/** One meter or smartcard and when it is expected to need a top-up. daysLeft is negative once the usual gap has passed. */
+export type Forecast = Due & { daysLeft: number; runOutAt: number };
 
 const median = (xs: number[]) => { const s = [...xs].sort((a, b) => a - b); const m = Math.floor(s.length / 2); return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; };
 
@@ -44,11 +48,8 @@ export function kindOfOrder(o: Pick<Hist, "biller_code" | "item_code" | "biller_
   return k;
 }
 
-/** Pure: given delivered orders, who is due a reminder now. Tested without a database. */
-export function planReminders(
-  history: Hist[],
-  o: { now: number; optOut: Set<string>; remindedOrders: Set<string>; recentlyEmailed: Set<string>; max?: number },
-): Due[] {
+/** Pure: for every meter or smartcard in the history, when it is expected to run out. Used by the emails and the account page. */
+export function forecastMeters(history: Hist[], now: number): Forecast[] {
   const groups = new Map<string, Hist[]>();
   for (const h of history) {
     const email = String(h.email ?? "").trim().toLowerCase();
@@ -58,7 +59,7 @@ export function planReminders(
     const key = `${email}|${kind}|${h.identifier}`;
     (groups.get(key) ?? groups.set(key, []).get(key)!).push({ ...h, email });
   }
-  const due: Due[] = [];
+  const out: Forecast[] = [];
   for (const [key, list] of Array.from(groups.entries())) {
     list.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
     const last = list[list.length - 1];
@@ -67,10 +68,24 @@ export function planReminders(
     for (let i = 1; i < list.length; i++) gaps.push((new Date(list[i].created_at).getTime() - new Date(list[i - 1].created_at).getTime()) / DAY);
     const own = gaps.length >= 1;
     const gapDays = own ? Math.min(MAX_GAP_DAYS, Math.max(MIN_GAP_DAYS, Math.round(median(gaps)))) : DEFAULT_GAP_DAYS[kind];
-    const ageDays = (o.now - new Date(last.created_at).getTime()) / DAY;
-    if (ageDays < gapDays || ageDays > gapDays + GRACE_DAYS) continue;
-    if (o.optOut.has(last.email) || o.remindedOrders.has(last.id) || o.recentlyEmailed.has(last.email)) continue;
-    due.push({ order: last, kind, gapDays, basis: own ? "own history" : "usual", ageDays });
+    const lastMs = new Date(last.created_at).getTime();
+    const ageDays = (now - lastMs) / DAY;
+    out.push({ order: last, kind, gapDays, basis: own ? "own history" : "usual", ageDays, daysLeft: gapDays - ageDays, runOutAt: lastMs + gapDays * DAY });
+  }
+  return out;
+}
+
+/** Pure: given delivered orders, who is due a reminder now. Tested without a database. */
+export function planReminders(
+  history: Hist[],
+  o: { now: number; optOut: Set<string>; remindedOrders: Set<string>; recentlyEmailed: Set<string>; max?: number },
+): Due[] {
+  const due: Due[] = [];
+  for (const f of forecastMeters(history, o.now)) {
+    // From LEAD_DAYS before the predicted run-out until GRACE_DAYS after it.
+    if (f.daysLeft > LEAD_DAYS || f.ageDays > f.gapDays + GRACE_DAYS) continue;
+    if (o.optOut.has(f.order.email) || o.remindedOrders.has(f.order.id) || o.recentlyEmailed.has(f.order.email)) continue;
+    due.push(f);
   }
   due.sort((a, b) => b.ageDays - a.ageDays);
   // one email per address per run, even if they have two meters
@@ -87,9 +102,13 @@ export function reminderEmail(d: Due, token: string, app = appUrl()): Mail {
   const subject = d.kind === "tv" ? "Time to renew your TV?" : "Running low on light?";
   const link = `${app}/?rt=${token}#pay`;   // opens checkout with this meter, plan, amount and email already filled
   const stop = `${app}/reminders/${token}`;
+  const runOut = new Date(new Date(o.created_at).getTime() + d.gapDays * DAY).toLocaleDateString("en-GB", { day: "numeric", month: "short", timeZone: "Africa/Lagos" });
+  const guess = d.basis === "own history"
+    ? ` You usually top up about every ${d.gapDays} days, so it may run out around ${runOut}.`
+    : "";
   const line = d.kind === "tv"
-    ? `It has been ${days} days since you paid ${naira(o.amount_ngn)} for ${esc(what)}. If it is about to run out, you can renew it in a minute.`
-    : `It has been ${days} days since you paid ${naira(o.amount_ngn)} for ${esc(what)}. If the units are getting low, you can top up in a minute.`;
+    ? `It has been ${days} days since you paid ${naira(o.amount_ngn)} for ${esc(what)}.${guess} If it is about to run out, you can renew it in a minute.`
+    : `It has been ${days} days since you paid ${naira(o.amount_ngn)} for ${esc(what)}.${guess} If the units are getting low, you can top up in a minute.`;
   return {
     subject,
     html: shell({

@@ -6,9 +6,10 @@ import { readSaved, tail, writeSaved, type Saved } from "@/lib/saved";
 import { track } from "@/lib/track";
 import { ACCT_EMAIL_KEY } from "@/lib/account-client";
 import { recentMonths } from "@/lib/statement-months";
+import type { Topup } from "@/lib/topups";
 
 type Order = { id: string; name: string; tail: string; amountNgn: number; status: string; statusText: string; at: string };
-type Me = { email: string; orders: Order[]; saved: Saved[] };
+type Me = { email: string; orders: Order[]; saved: Saved[]; topups?: Topup[] };
 
 const naira = (n: number) => `₦${Math.round(n).toLocaleString("en-NG")}`;
 const day = (iso: string) => new Date(iso).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
@@ -84,6 +85,12 @@ export default function Account() {
     await post("/api/account/saved", { action: "remove", id: s.id }).catch(() => null);
   }
 
+  const soon = (t: Topup) => (t.daysLeft <= 0 ? "Probably running low now" : t.daysLeft === 1 ? "Likely to run low tomorrow" : `Likely to run low in about ${t.daysLeft} days`);
+  function payTopup(t: Topup) {
+    const s = me?.saved.find((x) => x.id === t.savedId);
+    if (s) payOne(s);
+  }
+
   function payOne(s: Saved) {
     track("account_pay", s.tab);
     post("/api/account/saved", { action: "touch", id: s.id }).catch(() => null);
@@ -145,6 +152,28 @@ export default function Account() {
       {step === "in" && me && (
         <>
           <p className="mt-2 text-haze">Signed in as <span className="text-paper font-medium break-all">{me.email}</span> · <button type="button" onClick={signOut} className="underline">Sign out</button></p>
+
+          {!!me.topups?.length && (
+            <section className="mt-9" aria-labelledby="acct-low">
+              <h2 id="acct-low" className="font-display font-bold text-xl">Running low soon</h2>
+              <ul className="mt-3 divide-y divide-line border-y border-line">
+                {me.topups.map((t) => (
+                  <li key={t.orderId} className="py-3 flex items-center gap-3">
+                    <div className="min-w-0 flex-1">
+                      <p className="font-semibold leading-tight truncate">{t.name} {t.tail}</p>
+                      <p className="text-sm text-haze leading-tight mt-0.5">{soon(t)}. {t.basis === "own history" ? `You usually top up about every ${t.gapDays} days.` : `Most people top up about every ${t.gapDays} days.`}</p>
+                    </div>
+                    {t.savedId ? (
+                      <button type="button" onClick={() => payTopup(t)} className="h-11 px-5 rounded-xl bg-cta text-oncta font-display font-bold hover:brightness-105 active:brightness-95">{t.kind === "tv" ? "Renew" : "Top up"}</button>
+                    ) : (
+                      <Link href={`/order/${t.orderId}`} className="h-11 px-4 rounded-xl border border-paper/25 font-semibold hover:bg-sunk inline-flex items-center">Last receipt</Link>
+                    )}
+                  </li>
+                ))}
+              </ul>
+              <p className="text-haze text-xs mt-2 leading-relaxed">An estimate from how often you have paid before. Save the meter from its receipt to get a one-tap button here.</p>
+            </section>
+          )}
 
           <section className="mt-9" aria-labelledby="acct-saved">
             <h2 id="acct-saved" className="font-display font-bold text-xl">Saved meters, cards and numbers</h2>
