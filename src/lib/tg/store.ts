@@ -5,6 +5,7 @@
 import { supabaseAdmin } from "@/lib/supabase";
 import { visitorId } from "@/lib/analytics";
 import { esc, sendMessage, sendMessageId, adminChatIds, TgError } from "./api";
+import { createPayLink, payLinkReady, listChatLinks, chatOwnerView, setChatLinkActive, deleteChatLink } from "@/lib/paylink";
 import { BROADCAST_FOOTER, dueAt, type SavedItem, type V3 } from "./v3";
 import { computeStats, countSources, startOfLagosDay, type FailureRow, type StatOrder } from "./stats";
 
@@ -34,6 +35,23 @@ export function realV3(): V3 {
       } catch (e: any) {
         console.error("[telegram] rep track failed", e?.message ?? e);
       }
+    },
+
+    bills: {
+      ready: () => payLinkReady().catch(() => false),
+      list: (chatId) => listChatLinks(chatId).catch(() => []),
+      view: (chatId, slug) => chatOwnerView(chatId, slug).catch(() => null),
+      async create(chatId, i) {
+        try {
+          const r = await createPayLink({ name: i.name, email: i.email ?? undefined, note: i.note ?? undefined, items: i.items }, { ownerChat: chatId });
+          return r.ok ? { ok: true, slug: r.slug } : { ok: false, error: r.error };
+        } catch (e: any) {
+          console.error("[telegram] bills link failed", e?.message ?? e);
+          return { ok: false, error: "Something went wrong. Nothing was charged. Please try again." };
+        }
+      },
+      setActive: (chatId, slug, active) => setChatLinkActive(chatId, slug, active).catch(() => false),
+      remove: (chatId, slug) => deleteChatLink(chatId, slug).catch(() => false),
     },
 
     saved: {

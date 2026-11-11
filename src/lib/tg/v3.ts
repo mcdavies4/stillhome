@@ -11,6 +11,7 @@ import { CANCEL, reply, say, save, type Ctx } from "./kit";
 import { LANGS, T, isLang } from "./i18n";
 import { fmtFailures, fmtStats, type FailureRow, type StatsData } from "./stats";
 import type { Cat } from "./engine";
+import * as billslink from "./billslink";
 
 // ───────────────────────── what the outside world has to provide ─────────────────────────
 
@@ -48,6 +49,8 @@ export interface V3 {
     start(adminChat: number, id: string): Promise<{ ok: boolean; error?: string; sent?: number; audience?: number }>;
     cancel(adminChat: number, id: string): Promise<void>;
   };
+  /** "My bills link": the standing link friends and family pay (see billslink.ts and lib/paylink.ts). */
+  bills: billslink.Bills;
   support: {
     forward(i: { chatId: number; name: string; username: string | null; email: string | null; text: string }): Promise<{ ok: boolean; error?: string }>;
     lookup(adminChat: number, adminMsgId: number): Promise<number | null>;
@@ -198,6 +201,7 @@ async function setReminder(c: Ctx, id: string, days: number, repeat: boolean, ho
 
 /** Buttons: sv:* (saved), rm:* (reminders), lg:* (language), sp:* (talk to us). Returns false if it isn't one of ours. */
 export async function onButton(c: Ctx, data: string, hooks: Hooks): Promise<boolean> {
+  if (data.startsWith("bl:")) return billslink.onButton(c, data, hooks);
   const [p] = data.split(":");
   if (p === "sv") {
     const [, a, b] = data.split(":");
@@ -286,6 +290,7 @@ export async function onText(c: Ctx, text: string, hooks: Hooks): Promise<boolea
   if (c.user.state === "sv_label") { await onLabel(c, text, hooks); return true; }
   if (c.user.state === "rm_days") { await onDays(c, text, hooks); return true; }
   if (c.user.state === "sp_msg") { await onSupportText(c, text); return true; }
+  if (c.user.state.startsWith("bl_")) return billslink.onText(c, text);
   return false;
 }
 

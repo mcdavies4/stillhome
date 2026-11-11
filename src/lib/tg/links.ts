@@ -5,12 +5,12 @@
 // Each status is announced once (compare-and-set on tg_links.last), and nothing here can affect the payment itself.
 
 import { supabaseAdmin } from "@/lib/supabase";
-import { sendMessage, telegramConfigured, TgError, type Keyboard } from "./api";
+import { esc, sendMessage, telegramConfigured, TgError, type Keyboard } from "./api";
 
 const naira = (n: number) => `₦${Math.round(Number(n)).toLocaleString("en-NG")}`;
 const app = () => (process.env.NEXT_PUBLIC_APP_URL ?? "https://www.nolgic.com").replace(/\/+$/, "");
 
-export type LinkKind = "ask" | "give" | "link";
+export type LinkKind = "ask" | "give" | "link" | "bill";
 
 /** Remember a request / giveaway / giveaway link started from this chat. Never throws. */
 export async function tgTrackLink(chatId: number, kind: LinkKind, ref: string, key: string): Promise<void> {
@@ -25,10 +25,11 @@ const FINAL: Record<LinkKind, string[]> = {
   ask: ["settled", "cancelled", "expired"],
   give: ["settled", "cancelled", "expired"],
   link: ["closed", "cancelled", "expired"],
+  bill: ["settled", "cancelled", "expired"],
 };
 
 /** What to say when a thing reaches this status, or null to stay quiet. */
-export function linkMessage(kind: LinkKind, status: string, ref: string, key: string, total?: number): { text: string; kb: Keyboard } | null {
+export function linkMessage(kind: LinkKind, status: string, ref: string, key: string, total?: number, extra?: { payer?: string | null; tokens?: string[] }): { text: string; kb: Keyboard } | null {
   const mine = kind === "link" ? `${app()}/c/${ref}?k=${key}` : `${app()}/r/${ref}?k=${key}`;
   const page: Keyboard = [[{ text: "📄 My page", url: mine }]];
   const amt = total ? ` (${naira(total)})` : "";
@@ -43,6 +44,19 @@ export function linkMessage(kind: LinkKind, status: string, ref: string, key: st
     if (status === "settled") return { text: `🎉 <b>Your giveaway has been delivered.</b> Each person's token or confirmation is on your page, ready to send on.`, kb: page };
     if (status === "needs_review") return { text: `⏳ Your giveaway was paid, but one gift is slow to confirm. We're checking it now and will refund anything that can't be delivered.`, kb: page };
   }
+  if (kind === "bill") {
+    const who = extra?.payer ? esc(extra.payer) : "Someone";
+    const bill = total ? ` ${naira(total)}` : "";
+    if (status === "paid") return { text: `🎉 <b>${who} paid${bill} toward your bills!</b> I'm delivering it now.`, kb: page };
+    if (status === "settled") {
+      const toks = extra?.tokens?.length ? `
+
+Your token${extra.tokens.length > 1 ? "s" : ""}:
+${extra.tokens.map((t) => `<code>${esc(t)}</code>`).join("\n")}` : "";
+      return { text: `✅ <b>Delivered.</b> ${who}'s${bill} payment has gone through.${toks}`, kb: page };
+    }
+    if (status === "needs_review") return { text: `⏳ ${who} paid, but one item is slow to confirm. We're checking it now and will refund anything that can't be delivered.`, kb: page };
+  }
   if (kind === "link") {
     if (status === "full") return { text: `🎉 <b>Your giveaway link is full.</b> Open your page to see who joined, then pay once for everyone.`, kb: page };
     if (status === "expired") return { text: `⌛ Your giveaway link expired. Nothing was charged.`, kb: [[{ text: "🎉 New giveaway", data: "sc:gv" }]] };
@@ -54,7 +68,7 @@ export async function tgLinksSweep(): Promise<{ checked: number; sent: number }>
   if (!telegramConfigured()) return { checked: 0, sent: 0 };
   const db = supabaseAdmin();
   const since = new Date(Date.now() - 9 * 86400_000).toISOString();
-  const { data: links } = await db.from("tg_links").select("*").gte("created_at", since).limit(200);
+  const { data: links } = await db.from("tg_links").select("*").gte("created_at", since).order("created_at", { ascending: false }).limit(200);
   const open = (links ?? []).filter((l: any) => !(FINAL[l.kind as LinkKind] ?? []).includes(l.last ?? "")).slice(0, 60);
   let sent = 0;
   for (const l of open as any[]) {
@@ -65,7 +79,15 @@ export async function tgLinksSweep(): Promise<{ checked: number; sent: number }>
       if (!row) continue;
       const status = String(row.status);
       if (status === prev) continue;
-      const msg = linkMessage(kind, status, l.ref, l.key, Number(row.amount_ngn ?? 0) + Number(row.fee_ngn ?? 0) || undefined);
+      let extra: { payer?: string | null; tokens?: string[] } | undefined;
+      if (kind === "bill") {
+        extra = { payer: row.payer_name ?? null };
+        if (status === "settled") {
+          const { data: os } = await db.from("orders").select("flw_token,status").eq("pay_request_id", l.ref);
+          extra.tokens = ((os ?? []) as any[]).filter((o) => o.status === "fulfilled" && o.flw_token).map((o) => String(o.flw_token));
+        }
+      }
+      const msg = linkMessage(kind, status, l.ref, l.key, Number(row.amount_ngn ?? 0) + Number(row.fee_ngn ?? 0) || undefined, extra);
       // Claim this status before sending so two sweeps can't both announce it. A status we stay quiet about is still recorded.
       const q = db.from("tg_links").update({ last: status }).eq("id", l.id);
       const { data: won } = await (prev ? q.eq("last", prev) : q.is("last", null)).select("id");
