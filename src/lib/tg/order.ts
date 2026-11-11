@@ -17,13 +17,14 @@ import { ngnServiceFee, ngnMaxOrder, feeKindOf } from "@/lib/ngn-fee";
 import { orderIsTest } from "@/lib/test-mode";
 import { walletCovers } from "@/lib/capacity";
 import { BACK_SOON_MESSAGE } from "@/lib/back-soon";
-import { pfmNoValidate } from "@/lib/payforme-shared";
+import { pfmNoValidate, pfmIsExam } from "@/lib/payforme-shared";
+import { checkExamItem } from "@/lib/payforme";
 import type { CreateResult, Item } from "./engine";
 
 const naira = (n: number) => `₦${Math.round(n).toLocaleString("en-NG")}`;
 const MAX_OPEN_UNPAID = 4;
 
-export async function createTelegramOrder(i: { chatId: number; email: string; item: Item; identifier: string; amount: number }): Promise<CreateResult> {
+export async function createTelegramOrder(i: { chatId: number; email: string; item: Item; identifier: string; amount: number; gift?: { note: string; from: string } }): Promise<CreateResult> {
   try {
     const country = getCountry("NG");
     const rail = ngnPayProvider();
@@ -33,32 +34,49 @@ export async function createTelegramOrder(i: { chatId: number; email: string; it
     const amount = Math.round(Number(i.amount));
     const maxNgn = ngnMaxOrder(country.maxLocal);
     const minNgn = country.minDomestic ?? country.minLocal;
-    if (!Number.isFinite(amount) || amount < minNgn || amount > maxNgn) {
-      return { ok: false, error: `The amount must be between ${naira(minNgn)} and ${naira(maxNgn)}.` };
-    }
-
-    // Provider rules, checked before any money moves (plan exists, fixed price, min/max).
-    const purchase = await checkPurchase(i.item.biller_code, i.item.item_code, amount);
-    if (!purchase.ok) return { ok: false, error: purchase.error };
-
-    // Re-check the meter / smartcard on the server, exactly as the website does.
+    const exam = pfmIsExam(i.item.biller_code);
     let name: string | null = null;
-    const noValidate = pfmNoValidate(i.item) || /VTU|AIRTIME|DATA|BROADBAND|SURFLINE|POSTPAID PAYMENT/i.test(`${i.item.biller_name} ${i.item.item_code}`);
-    try {
-      const v = await validateCustomer(i.item.item_code, i.item.biller_code, i.identifier);
-      name = v.name;
-      if (!noValidate && Number(v.minimum) > amount) {
-        return { ok: false, error: `The minimum for this meter is ${naira(Number(v.minimum))}. Please start again with a higher amount.` };
+    let billerName = i.item.biller_name;
+    let idLabel = i.item.label_name || "Account number";
+    let examFeeNgn = 0;
+    let purchaseItem: Item | null = null;
+
+    if (exam) {
+      // An exam PIN is checked the way /exams checkout does it: the price and name come from Paybeta's own list,
+      // and the candidate's number / profile code must have the right shape.
+      const ex = await checkExamItem({ billerCode: i.item.biller_code, itemCode: i.item.item_code, identifier: i.identifier, amount });
+      if (!ex.ok) return { ok: false, error: ex.error };
+      billerName = ex.billerName;
+      idLabel = ex.identifierLabel;
+      examFeeNgn = ex.fee;
+    } else {
+      if (!Number.isFinite(amount) || amount < minNgn || amount > maxNgn) {
+        return { ok: false, error: `The amount must be between ${naira(minNgn)} and ${naira(maxNgn)}.` };
       }
-    } catch (e: any) {
-      if (!noValidate) {
-        const m = String(e?.message ?? "");
-        return { ok: false, error: m && !/^(Flutterwave|VTpass|Paybeta) /i.test(m) ? m : "I couldn't check that number right now. Please try again in a moment." };
+
+      // Provider rules, checked before any money moves (plan exists, fixed price, min/max).
+      const purchase = await checkPurchase(i.item.biller_code, i.item.item_code, amount);
+      if (!purchase.ok) return { ok: false, error: purchase.error };
+      purchaseItem = (purchase.item ?? null) as Item | null;
+
+      // Re-check the meter / smartcard on the server, exactly as the website does.
+      const noValidate = pfmNoValidate(i.item) || /VTU|AIRTIME|DATA|BROADBAND|SURFLINE|POSTPAID PAYMENT/i.test(`${i.item.biller_name} ${i.item.item_code}`);
+      try {
+        const v = await validateCustomer(i.item.item_code, i.item.biller_code, i.identifier);
+        name = v.name;
+        if (!noValidate && Number(v.minimum) > amount) {
+          return { ok: false, error: `The minimum for this meter is ${naira(Number(v.minimum))}. Please start again with a higher amount.` };
+        }
+      } catch (e: any) {
+        if (!noValidate) {
+          const m = String(e?.message ?? "");
+          return { ok: false, error: m && !/^(Flutterwave|VTpass|Paybeta) /i.test(m) ? m : "I couldn't check that number right now. Please try again in a moment." };
+        }
       }
     }
 
     // Can we deliver right now? Asked before a payment link exists, so nobody pays for something we can't vend.
-    const cover = await walletCovers(amount, { context: i.item.biller_name });
+    const cover = await walletCovers(amount, { context: billerName });
     if (!cover.ok) return { ok: false, error: BACK_SOON_MESSAGE };
 
     const db = supabaseAdmin();
@@ -74,7 +92,7 @@ export async function createTelegramOrder(i: { chatId: number; email: string; it
       }
     }
 
-    const fee = ngnServiceFee(amount, feeKindOf(purchase.item ?? i.item));
+    const fee = exam ? examFeeNgn : ngnServiceFee(amount, feeKindOf(purchaseItem ?? i.item));
     const total = amount + fee;
 
     const approxPence = Math.round((total / Number(process.env.NGN_PER_GBP ?? country.fxDefault)) * 100);
@@ -96,9 +114,9 @@ export async function createTelegramOrder(i: { chatId: number; email: string; it
         payment_provider: rail,
         biller_code: i.item.biller_code,
         item_code: i.item.item_code,
-        biller_name: i.item.biller_name,
+        biller_name: billerName,
         identifier: i.identifier,
-        identifier_label: i.item.label_name || "Account number",
+        identifier_label: idLabel,
         customer_name: name,
         recipient_whatsapp: null,
         amount_ngn: amount,
@@ -112,14 +130,14 @@ export async function createTelegramOrder(i: { chatId: number; email: string; it
       .select("id")
       .single();
     if (error || !order) throw error ?? new Error("order insert failed");
-    await db.from("tg_orders").insert({ order_id: order.id, chat_id: i.chatId });
+    await db.from("tg_orders").insert({ order_id: order.id, chat_id: i.chatId, ...(i.gift ? { gift: i.gift } : {}) });
 
     const app = process.env.NEXT_PUBLIC_APP_URL!;
     if (rail === "flutterwave") {
       const fw = await flwInitialize({
         email: i.email, name, amountNgn: total, orderId: order.id,
         redirectUrl: `${app}/order/${order.id}?paid=1`,
-        description: `${i.item.biller_name} — ${naira(amount)}`,
+        description: `${billerName} — ${naira(amount)}`,
       });
       await db.from("orders").update({ flw_pay_ref: fw.txRef }).eq("id", order.id);
       return { ok: true, url: fw.link, orderId: order.id, total };

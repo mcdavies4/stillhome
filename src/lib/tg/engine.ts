@@ -10,15 +10,20 @@
 // Everything outside (Telegram, the database, the bills provider, order creation) comes in through `Deps`,
 // so the whole conversation can be tested without a network.
 
-import { PFM_TABS, pfmTitle, maskIdentifier, type PfmBiller } from "@/lib/payforme-shared";
+import { PFM_TABS, pfmTitle, maskIdentifier, pfmItemFee, type PfmBiller } from "@/lib/payforme-shared";
+import { examService } from "@/lib/exams-shared";
+import { OCCASIONS, cleanText, NOTE_MAX } from "@/lib/gift";
 import { localPhone, guessNetwork } from "@/lib/bulk-shared";
-import { ngnServiceFee, feeKindOf, ngnMaxOrder } from "@/lib/ngn-fee";
+import { ngnMaxOrder } from "@/lib/ngn-fee";
 import { getCountry } from "@/lib/countries";
 import { normaliseEmail } from "@/lib/security";
 import { statusWord } from "@/lib/find-order";
 import { esc, type Keyboard } from "./api";
+import { naira, rows, CANCEL, reply, say, save, parseAmount, safeMessage, catRows, askEmailFor, type Ctx } from "./kit";
+import * as bulk from "./bulk";
+import * as social from "./social";
 
-export type Cat = "el" | "tv" | "ai" | "da";
+export type Cat = "el" | "tv" | "ai" | "da" | "ex";
 export type Item = PfmBiller;
 
 export interface Draft {
@@ -31,8 +36,13 @@ export interface Draft {
   amt?: number;                       // bill amount in naira
   menu?: Record<string, any>[];       // what the buttons currently on screen stand for
   pg?: number;
-  after?: "confirm";                  // where to go once the email is saved
+  after?: "confirm" | "list" | "bk";  // where to go once the email is saved
   order?: { id: string; url: string; total: number };
+  mode?: "gift" | "ask" | "give";     // what this buy flow is for (absent = a normal purchase)
+  gift?: { note: string; from: string };
+  list?: social.ListItem[];           // things collected for "ask someone to pay" / a giveaway
+  sc?: Record<string, any>;           // scratch for social.ts (names, notes, giveaway link choices)
+  bk?: Record<string, any>;           // scratch for bulk.ts (the numbers, the batch being paid)
 }
 
 export interface TgUser {
@@ -59,6 +69,12 @@ export interface RecentOrder {
 }
 
 export type CreateResult = { ok: true; url: string; orderId: string; total: number } | { ok: false; error: string };
+export type BulkRow = { phone: string; amount: number; network: string };
+export type BulkResult = { ok: true; url: string; bulkId: string; total: number } | { ok: false; error: string };
+export type AskResult = { ok: true; id: string; key: string; total: number; count: number } | { ok: false; error: string };
+export type GiveResult = { ok: true; id: string; key: string; total: number; count: number; url: string } | { ok: false; error: string };
+export type LinkResult = { ok: true; id: string; key: string } | { ok: false; error: string };
+export interface Flags { bulk: boolean; ask: boolean; giveaway: boolean; exams: boolean; accounts: boolean }
 
 export interface Deps {
   send(chatId: number, html: string, kb?: Keyboard): Promise<void>;
@@ -70,7 +86,15 @@ export interface Deps {
   saveUser(chatId: number, patch: { email?: string; state?: string; draft?: Draft }): Promise<void>;
   catalogue(): Promise<Item[]>;
   validate(item: Item, identifier: string): Promise<{ name: string | null; minimum: number }>;
-  createOrder(i: { chatId: number; email: string; item: Item; identifier: string; amount: number }): Promise<CreateResult>;
+  createOrder(i: { chatId: number; email: string; item: Item; identifier: string; amount: number; gift?: { note: string; from: string } }): Promise<CreateResult>;
+  /** Which optional parts of Nolgic are switched on (the same switches the website uses). */
+  flags: Flags;
+  createBulk(i: { chatId: number; email: string; rows: BulkRow[] }): Promise<BulkResult>;
+  /** Asks the payment provider about this batch and, if it has finished, makes sure the chat has the outcome. */
+  checkBulk(chatId: number, bulkId: string): Promise<string>;
+  createAsk(i: { chatId: number; name: string; email: string | null; note: string | null; items: social.ListItem[] }): Promise<AskResult>;
+  createGiveaway(i: { chatId: number; name: string; email: string; note: string | null; items: social.ListItem[] }): Promise<GiveResult>;
+  createLink(i: { chatId: number; name: string; email: string; note: string | null; budget: number; categories: string[]; maxPeople: number }): Promise<LinkResult>;
   /**
    * Asks the payment provider about this order (the same safety net the order page uses) and returns its status.
    * When the order is already finished, this also makes sure the customer has been sent the outcome
@@ -85,7 +109,6 @@ export interface Deps {
 
 // ───────────────────────── small helpers ─────────────────────────
 
-const naira = (n: number) => `₦${Math.round(n).toLocaleString("en-NG")}`;
 const NG = () => getCountry("NG");
 
 const CATS: Record<Cat, { tab: string; icon: string; word: string; noun: string; example: (c: ReturnType<typeof NG>) => string }> = {
@@ -93,8 +116,21 @@ const CATS: Record<Cat, { tab: string; icon: string; word: string; noun: string;
   tv: { tab: "cable", icon: "📺", word: "TV", noun: "smartcard number", example: (c) => c.identifierExamples.tv },
   ai: { tab: "airtime", icon: "📱", word: "airtime", noun: "phone number", example: (c) => c.identifierExamples.phone },
   da: { tab: "data", icon: "🌐", word: "data", noun: "phone number", example: (c) => c.identifierExamples.phone },
+  ex: { tab: "exam", icon: "🎓", word: "exam PIN", noun: "phone number", example: (c) => c.identifierExamples.phone },
 };
-const CAT_BY_TAB: Record<string, Cat> = { electricity: "el", cable: "tv", airtime: "ai", data: "da" };
+const CAT_BY_TAB: Record<string, Cat> = { electricity: "el", cable: "tv", airtime: "ai", data: "da", exam: "ex" };
+
+/** What the customer must type for this one (a JAMB profile code is not a phone number). */
+function nounFor(cat: Cat, bc?: string): string {
+  if (cat === "ex" && bc) { const l = examService(bc).idLabel; return /^[A-Z]{2,}/.test(l) ? l : l[0].toLowerCase() + l.slice(1); } // keep "JAMB" in capitals
+  return CATS[cat].noun;
+}
+function exampleFor(cat: Cat, bc?: string): string {
+  if (cat === "ex" && bc && /^jamb/i.test(bc)) return "A1B2C3D4";
+  return CATS[cat].example(NG());
+}
+/** The things that go along with a buy flow that is not a plain purchase. */
+const carry = (dr: Draft): Draft => ({ ...(dr.mode ? { mode: dr.mode } : {}), ...(dr.gift ? { gift: dr.gift } : {}), ...(dr.list ? { list: dr.list } : {}), ...(dr.sc ? { sc: dr.sc } : {}) });
 
 export function catOf(i: Pick<Item, "biller_name" | "name"> & Partial<Item>): Cat | null {
   const x = { biller_code: "", item_code: "", short_name: "", amount: 0, is_airtime: false, label_name: "", ...i } as Item;
@@ -110,19 +146,12 @@ function uniqueBy<T>(list: T[], key: (x: T) => string): T[] {
 }
 
 const brandLabel = (i: Item, cat: Cat) =>
-  cat === "ai" ? i.biller_name.replace(/\s*Airtime(\s*VTU)?$/i, "").trim() || i.biller_name
+  cat === "ex" ? examService(i.biller_code).title
+  : cat === "ai" ? i.biller_name.replace(/\s*Airtime(\s*VTU)?$/i, "").trim() || i.biller_name
   : cat === "da" ? i.biller_name.replace(/\s*Data$/i, "").trim() || i.biller_name
   : i.biller_name;
 
 export const planLabel = (i: Item) => `${String(i.name).replace(/\s+/g, " ").slice(0, 34)} · ${naira(i.amount)}`;
-
-const rows = (btns: { text: string; data: string }[], per = 2): Keyboard => {
-  const out: Keyboard = [];
-  for (let k = 0; k < btns.length; k += per) out.push(btns.slice(k, k + per));
-  return out;
-};
-
-const CANCEL: Keyboard[number] = [{ text: "✖ Cancel", data: "x" }];
 
 // Light protection against a chat that floods the bot (per instance; the order limits below are the real guard).
 const hits = new Map<number, number[]>();
@@ -134,21 +163,6 @@ function throttled(chatId: number, now = Date.now()): boolean {
   return list.length > 25;
 }
 export const _resetThrottle = () => hits.clear();
-
-interface Ctx { d: Deps; chatId: number; user: TgUser; cbId?: string; msgId?: number }
-
-async function reply(c: Ctx, html: string, kb?: Keyboard) {
-  // A tapped button edits the message it was on, so the chat doesn't fill up with old menus.
-  if (c.msgId) return c.d.edit(c.chatId, c.msgId, html, kb);
-  return c.d.send(c.chatId, html, kb);
-}
-async function say(c: Ctx, html: string, kb?: Keyboard) { return c.d.send(c.chatId, html, kb); }
-
-async function save(c: Ctx, state: string, draft: Draft) {
-  c.user.state = state;
-  c.user.draft = draft;
-  await c.d.saveUser(c.chatId, { state, draft });
-}
 
 // ───────────────────────── entry point ─────────────────────────
 
@@ -173,7 +187,7 @@ export async function handleUpdate(d: Deps, upd: any): Promise<void> {
       await d.answer(cb.id);
       await onButton(c, String(cb.data ?? "").slice(0, 64));
     } else if (typeof msg?.text === "string") {
-      await onText(c, msg.text.trim().slice(0, 300));
+      await onText(c, msg.text.trim().slice(0, 4000));
     } else {
       await say(c, "I understand text and buttons only. Tap /start to open the menu.");
     }
@@ -187,6 +201,7 @@ export async function handleUpdate(d: Deps, upd: any): Promise<void> {
 // ───────────────────────── commands & buttons ─────────────────────────
 
 async function onText(c: Ctx, text: string) {
+  if (!c.user.state.startsWith("bk_")) text = text.slice(0, 300); // only a pasted list of numbers may be long
   if (text.startsWith("/")) {
     const cmd = text.split(/[\s@]/)[0].toLowerCase();
     if (cmd === "/start" || cmd === "/menu") return menu(c, true);
@@ -201,7 +216,11 @@ async function onText(c: Ctx, text: string) {
     case "ask_id": return onIdentifier(c, text);
     case "ask_amount": return onAmount(c, text);
     case "ask_email": return onEmail(c, text);
-    default: return menu(c, false);
+    case "gf_note": return onGiftNote(c, text);
+    default:
+      if (c.user.state.startsWith("bk_")) return bulk.onText(c, text);
+      if (c.user.state.startsWith("sc_")) return social.onText(c, text);
+      return menu(c, false);
   }
 }
 
@@ -220,6 +239,9 @@ async function onButton(c: Ctx, data: string) {
   if (data.startsWith("pg:")) return showPlans(c, Number(data.slice(3)));
   if (data.startsWith("a:")) return onAmountValue(c, Number(data.slice(2)));
   if (data.startsWith("ag:")) return buyAgain(c, Number(data.slice(3)));
+  if (data.startsWith("bk:")) return bulk.onButton(c, data);
+  if (data.startsWith("sc:")) return social.onButton(c, data);
+  if (data.startsWith("gf:")) return gift(c, data);
   return stale(c);
 }
 
@@ -235,17 +257,57 @@ async function menu(c: Ctx, greet: boolean) {
 }
 
 function mainMenu(c: Ctx): Keyboard {
-  return [
+  const f = c.d.flags;
+  const kb: Keyboard = [
     [{ text: "⚡ Light", data: "c:el" }, { text: "📺 TV", data: "c:tv" }],
     [{ text: "📱 Airtime", data: "c:ai" }, { text: "🌐 Data", data: "c:da" }],
-    [{ text: "🎓 Exam PIN", url: `${c.d.appUrl}/exams` }, { text: "🧾 My orders", data: "ord" }],
-    [{ text: "💬 Help", data: "help" }],
+    [f.exams ? { text: "🎓 Exam PIN", data: "c:ex" } : { text: "🎓 Exam PIN", url: `${c.d.appUrl}/exams` }],
   ];
+  if (f.bulk) kb[2].push({ text: "📦 Bulk airtime", data: "bk:go" });
+  const extra: Keyboard[number] = [{ text: "🎁 Send a gift", data: "gf:go" }];
+  if (f.ask) extra.push({ text: "🙏 Ask someone to pay", data: "sc:ask" });
+  kb.push(extra);
+  if (f.giveaway) kb.push([{ text: "🎉 Giveaway", data: "sc:gv" }]);
+  const tail: Keyboard[number] = [{ text: "🧾 My orders", data: "ord" }];
+  if (f.accounts) tail.push({ text: "👤 My account", url: `${c.d.appUrl}/account` });
+  tail.push({ text: "💬 Help", data: "help" });
+  kb.push(tail);
+  return kb;
 }
 
 async function categories(c: Ctx) {
   await save(c, "idle", {});
   await reply(c, "What do you want to pay for?", mainMenu(c));
+}
+
+/** Gift: the same buy flow, with a short message for the person, and a forwardable note once it is delivered. */
+async function gift(c: Ctx, data: string) {
+  if (data === "gf:go") {
+    await save(c, "pick_cat", { mode: "gift" });
+    return reply(c, "🎁 <b>Send a gift</b>\nI'll pay for someone else's light, TV, airtime or data, and give you a note to send them. What would you like to give?", [...catRows(c.d.flags), CANCEL]);
+  }
+  if (data === "gf:skip" && c.user.state === "gf_note") return toConfirm(c, { ...c.user.draft, gift: { note: "", from: giftFrom(c) } });
+  const m = /^gf:o:(\d+)$/.exec(data);
+  if (m && c.user.state === "gf_note") {
+    const o = OCCASIONS[Number(m[1])];
+    if (!o) return stale(c);
+    return toConfirm(c, { ...c.user.draft, gift: { note: o.note, from: giftFrom(c) } });
+  }
+  return stale(c);
+}
+const giftFrom = (c: Ctx) => cleanText(c.user.first_name ?? "", 30);
+
+async function askGiftNote(c: Ctx, draft: Draft) {
+  await save(c, "gf_note", draft);
+  const kb: Keyboard = OCCASIONS.map((o, i) => [{ text: `${o.label}: ${o.note}`.slice(0, 40), data: `gf:o:${i}` }]);
+  kb.push([{ text: "Skip the message", data: "gf:skip" }], CANCEL);
+  await reply(c, "Add a short message for them? Tap one, or type your own (up to 140 characters).", kb);
+}
+
+async function onGiftNote(c: Ctx, text: string) {
+  const note = cleanText(text, NOTE_MAX);
+  if (!note) return say(c, "Type your message, or tap Skip.", [[{ text: "Skip the message", data: "gf:skip" }], CANCEL]);
+  return toConfirm(c, { ...c.user.draft, gift: { note, from: giftFrom(c) } });
 }
 
 async function cancel(c: Ctx) {
@@ -294,8 +356,8 @@ async function startCategory(c: Ctx, cat: Cat) {
     return reply(c, `${CATS[cat].icon} ${CATS[cat].word[0].toUpperCase()}${CATS[cat].word.slice(1)} isn't available right now. Please check back soon.`, [[{ text: "⬅ Back", data: "home" }]]);
   }
   const menuRefs = brands.map((b) => ({ bc: b.biller_code }));
-  await save(c, "pick_brand", { cat, menu: menuRefs });
-  const ask = cat === "el" ? "Which electricity company?" : cat === "tv" ? "Which TV provider?" : "Which network?";
+  await save(c, "pick_brand", { ...carry(c.user.draft), cat, menu: menuRefs });
+  const ask = cat === "el" ? "Which electricity company?" : cat === "tv" ? "Which TV provider?" : cat === "ex" ? "Which exam?" : "Which network?";
   const kb = rows(brands.map((b, i) => ({ text: brandLabel(b, cat), data: `m:${i}` })));
   kb.push([{ text: "⬅ Back", data: "home" }]);
   await reply(c, `${CATS[cat].icon} ${ask}`, kb);
@@ -313,19 +375,19 @@ async function pickMenu(c: Ctx, idx: number) {
     const mine = uniqueBy(items.filter((i) => i.biller_code === ref.bc), (i) => i.item_code);
     if (!mine.length) return stale(c);
     if (dr.cat === "el" && mine.length > 1) {
-      await save(c, "pick_type", { cat: dr.cat, bc: ref.bc, menu: mine.map((i) => ({ ic: i.item_code })) });
+      await save(c, "pick_type", { ...carry(dr), cat: dr.cat, bc: ref.bc, menu: mine.map((i) => ({ ic: i.item_code })) });
       const kb = rows(mine.map((i, k) => ({ text: /post/i.test(i.item_code) ? "Postpaid" : "Prepaid", data: `m:${k}` })));
       kb.push([{ text: "⬅ Back", data: "buy" }]);
       return reply(c, "Prepaid or postpaid meter?", kb);
     }
     // electricity (single type) and airtime use the one item; TV and data pick a plan after the number is checked.
     const ic = dr.cat === "el" || dr.cat === "ai" ? mine[0].item_code : undefined;
-    return askId(c, { cat: dr.cat, bc: ref.bc, ic });
+    return askId(c, { ...carry(dr), cat: dr.cat, bc: ref.bc, ic });
   }
   if (st === "pick_type") {
     const ok = items.some((i) => i.biller_code === dr.bc && i.item_code === ref.ic);
     if (!ok) return stale(c);
-    return askId(c, { cat: dr.cat, bc: dr.bc, ic: ref.ic });
+    return askId(c, { ...carry(dr), cat: dr.cat, bc: dr.bc, ic: ref.ic });
   }
   if (st === "pick_plan") {
     const plan = items.find((i) => i.biller_code === ref.bc && i.item_code === ref.ic);
@@ -338,36 +400,36 @@ async function pickMenu(c: Ctx, idx: number) {
 async function askId(c: Ctx, draft: Draft) {
   await save(c, "ask_id", draft);
   const cat = draft.cat!;
-  const eg = CATS[cat].example(NG());
-  await reply(c, `${CATS[cat].icon} Send the <b>${CATS[cat].noun}</b>, for example <code>${esc(eg)}</code>.`, [CANCEL]);
+  const eg = exampleFor(cat, draft.bc);
+  const extra = cat === "ex" && /^jamb/i.test(draft.bc ?? "") ? "\nUse the profile code the candidate got when they registered. A wrong code gives a PIN that can't be used, so check it twice." : "";
+  await reply(c, `${CATS[cat].icon} Send the <b>${nounFor(cat, draft.bc)}</b>, for example <code>${esc(eg)}</code>.${extra}`, [CANCEL]);
 }
 
 // ───────────────────────── the number ─────────────────────────
 
-function cleanIdentifier(cat: Cat, raw: string): string | null {
+function cleanIdentifier(cat: Cat, raw: string, bc?: string): string | null {
   if (cat === "ai" || cat === "da") return localPhone(raw);
+  if (cat === "ex") {
+    const v = raw.replace(/\s+/g, "");
+    return bc && examService(bc).idPattern.test(v) ? v : null;
+  }
   const digits = raw.replace(/[\s-]/g, "");
   if (cat === "tv") return /^\d{8,14}$/.test(digits) ? digits : null;
   return /^\d{6,20}$/.test(digits) ? digits : null;
 }
 
-const safeMessage = (e: any) => {
-  const m = String(e?.message ?? "");
-  return m && !/^(Flutterwave|VTpass|Paybeta|Telegram|Paystack) /i.test(m) && m.length < 220 ? m : "I couldn't check that number right now. Please try again in a moment.";
-};
-
 async function onIdentifier(c: Ctx, text: string) {
   const dr = c.user.draft;
   if (!dr.cat || !dr.bc) return menu(c, false);
-  const id = cleanIdentifier(dr.cat, text);
+  const id = cleanIdentifier(dr.cat, text, dr.bc);
   if (!id) {
-    const eg = CATS[dr.cat].example(NG());
-    return say(c, `That doesn't look like a valid ${CATS[dr.cat].noun}. Check it and send it again, for example <code>${esc(eg)}</code>.`, [CANCEL]);
+    const eg = exampleFor(dr.cat, dr.bc);
+    return say(c, `That doesn't look like a valid ${nounFor(dr.cat, dr.bc)}. Check it and send it again, for example <code>${esc(eg)}</code>.`, [CANCEL]);
   }
   const next: Draft = { ...dr, id, nm: null };
 
   if (dr.cat === "ai") return askAmount(c, next);
-  if (dr.cat === "da") return showPlans(c, 0, next);
+  if (dr.cat === "da" || dr.cat === "ex") return showPlans(c, 0, next); // no name lookup for these
 
   const all = await loadCatalogue(c);
   if (!all) return;
@@ -379,7 +441,7 @@ async function onIdentifier(c: Ctx, text: string) {
     next.nm = v.name;
     next.min = v.minimum || 0;
   } catch (e: any) {
-    return say(c, `${esc(safeMessage(e))}\n\nSend the ${CATS[dr.cat].noun} again, or cancel.`, [CANCEL]);
+    return say(c, `${esc(safeMessage(e))}\n\nSend the ${nounFor(dr.cat, dr.bc)} again, or cancel.`, [CANCEL]);
   }
   if (dr.cat === "tv") return showPlans(c, 0, next);
   return askAmount(c, next);
@@ -407,7 +469,7 @@ async function showPlans(c: Ctx, page: number, draft?: Draft) {
   if (nav.length) kb.push(nav);
   kb.push(CANCEL);
   const who = dr.nm ? `<b>${esc(dr.nm)}</b> · ${esc(dr.id)}` : esc(dr.id);
-  await reply(c, `${CATS[dr.cat].icon} ${who}\nChoose a ${dr.cat === "tv" ? "package" : "bundle"}:${pages > 1 ? ` (page ${pg + 1} of ${pages})` : ""}`, kb);
+  await reply(c, `${CATS[dr.cat].icon} ${who}\nChoose a ${dr.cat === "tv" ? "package" : dr.cat === "ex" ? "PIN" : "bundle"}:${pages > 1 ? ` (page ${pg + 1} of ${pages})` : ""}`, kb);
 }
 
 // ───────────────────────── the amount ─────────────────────────
@@ -428,13 +490,6 @@ async function askAmount(c: Ctx, draft: Draft) {
   await reply(c, `${who}How much? Tap an amount or type it (${naira(min)} to ${naira(max)}).`, kb);
 }
 
-function parseAmount(text: string): number | null {
-  const t = text.toLowerCase().replace(/[₦,\s]|ngn|naira/g, "");
-  const k = t.match(/^(\d+(?:\.\d+)?)k$/);
-  const n = k ? Number(k[1]) * 1000 : /^\d+(?:\.\d+)?$/.test(t) ? Number(t) : NaN;
-  return Number.isFinite(n) ? Math.round(n) : null;
-}
-
 async function onAmount(c: Ctx, text: string) {
   const n = parseAmount(text);
   if (n === null) return say(c, "Type the amount in naira, for example <code>2000</code> or <code>2k</code>.", [CANCEL]);
@@ -453,10 +508,7 @@ async function onAmountValue(c: Ctx, n: number) {
 // ───────────────────────── email, then the confirm card ─────────────────────────
 
 async function askEmail(c: Ctx, after: "confirm" | undefined) {
-  await save(c, "ask_email", { ...(after ? c.user.draft : {}), after });
-  await reply(c, c.user.email
-    ? `Your receipts go to <b>${esc(c.user.email)}</b>. Type a new email to change it, or cancel.`
-    : "Where should we send your receipt? Type your email address (asked only once).", [CANCEL]);
+  await askEmailFor(c, after ? c.user.draft : {}, after);
 }
 
 async function onEmail(c: Ctx, text: string) {
@@ -466,6 +518,8 @@ async function onEmail(c: Ctx, text: string) {
   c.user.email = email;
   const after = c.user.draft.after;
   if (after === "confirm") return toConfirm(c, { ...c.user.draft, after: undefined });
+  if (after === "list") return social.afterEmail(c, { ...c.user.draft, after: undefined });
+  if (after === "bk") return bulk.afterEmail(c, { ...c.user.draft, after: undefined });
   await save(c, "idle", {});
   await say(c, `Saved ✅ Receipts will go to <b>${esc(email)}</b>.`, [[{ text: "🛒 Buy something", data: "buy" }]]);
 }
@@ -476,22 +530,30 @@ async function currentItem(c: Ctx, dr: Draft): Promise<Item | null> {
 }
 
 async function toConfirm(c: Ctx, draft: Draft) {
+  // "Ask someone to pay" and giveaways collect a list first: nobody pays for anything yet, so no email is needed here.
+  if (draft.mode === "ask" || draft.mode === "give") {
+    const it = await currentItem(c, draft).catch(() => null);
+    if (!it || !draft.id || !draft.amt || !draft.cat) return stale(c);
+    return social.listAdd(c, draft, it);
+  }
   if (!c.user.email) {
     await save(c, "ask_email", { ...draft, after: "confirm" });
     return reply(c, "Almost there. Where should we send your receipt? Type your email address (asked only once).", [CANCEL]);
   }
   const item = await currentItem(c, draft).catch(() => null);
   if (!item || !draft.id || !draft.amt || !draft.cat) return stale(c);
-  const fee = ngnServiceFee(draft.amt, feeKindOf(item));
+  if (draft.mode === "gift" && !draft.gift) return askGiftNote(c, draft);
+  const fee = pfmItemFee(item, draft.amt);
   const total = draft.amt + fee;
   await save(c, "confirm", { ...draft, menu: undefined });
   const lines = [
-    "<b>Please check your order</b>",
+    `<b>Please check your ${draft.mode === "gift" ? "gift" : "order"}</b>`,
     `${CATS[draft.cat].icon} ${esc(pfmTitle(item.biller_name, item.name))}`,
-    `${CATS[draft.cat].noun[0].toUpperCase()}${CATS[draft.cat].noun.slice(1)}: <code>${esc(draft.id)}</code>`,
+    `${nounFor(draft.cat, draft.bc)[0].toUpperCase()}${nounFor(draft.cat, draft.bc).slice(1)}: <code>${esc(draft.id)}</code>`,
   ];
   if (draft.nm) lines.push(`Name: <b>${esc(draft.nm)}</b>`);
   lines.push(`Amount: ${naira(draft.amt)}`, `Service fee: ${naira(fee)}`, `<b>Total: ${naira(total)}</b>`, `Receipt to: ${esc(c.user.email)}`);
+  if (draft.gift?.note) lines.push(`🎁 Your message: <i>${esc(draft.gift.note)}</i>`);
   if (draft.cat === "ai") {
     const guess = guessNetwork(draft.id);
     const picked = brandLabel(item, "ai");
@@ -514,7 +576,7 @@ async function pay(c: Ctx) {
   const item = await currentItem(c, dr).catch(() => null);
   if (!item) return stale(c);
   await c.d.typing(c.chatId);
-  const r = await c.d.createOrder({ chatId: c.chatId, email: c.user.email, item, identifier: dr.id, amount: dr.amt });
+  const r = await c.d.createOrder({ chatId: c.chatId, email: c.user.email, item, identifier: dr.id, amount: dr.amt, ...(dr.mode === "gift" && dr.gift ? { gift: dr.gift } : {}) });
   if (!r.ok) {
     // The draft stays on the confirm card so the customer can simply tap Pay again.
     return say(c, `${esc(r.error)}`, [[{ text: "✅ Try again", data: "go" }, { text: "✖ Cancel", data: "x" }]]);

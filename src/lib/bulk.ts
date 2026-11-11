@@ -24,6 +24,7 @@ import { pbBulkGet, pbBulkSubmit, type PbBulk } from "@/lib/paybeta-bulk";
 import { flwPayIsTestMode, refundTransaction, verifyById, verifyByReference, FlwPayError, payProviderLabel } from "@/lib/flwpay";
 import { paystackIsTestMode, paystackNotFound, refundTransaction as psRefund, verifyTransaction as psVerify } from "@/lib/paystack";
 import { sendBulkReceiptEmail } from "@/lib/bulk-email";
+import { tgNotifyBulk } from "@/lib/tg/notify";
 import { maskPhone, type BulkView, type Network } from "@/lib/bulk-shared";
 
 export const bulkEnabled = () => process.env.BULK_ENABLED === "1";
@@ -228,6 +229,7 @@ async function doRefundAndFinish(b: Row, refundNgn: number, delivered: number, f
         status: "refund_failed", delivered_count: delivered, failed_count: failed, delivered_ngn: deliveredNgn,
         error: `REFUND FAILED (${money(refundNgn)}): ${e?.message ?? e}`.slice(0, 300), updated_at: new Date().toISOString(),
       }).eq("id", b.id);
+      await tgNotifyBulk(b.id);
       await alertFounder("🚨 BULK REFUND FAILED — manual action needed", `Bulk ${b.id}\nOwed to customer: ${money(refundNgn)} (${failed} number(s) failed). ${why}\n${b.payment_provider === "paystack" ? `Paystack ref ${bulkPsRef(b.id)}` : `Flutterwave tx ${b.flw_pay_id}`}\nError: ${e?.message ?? e}\nRefund it in the ${b.payment_provider === "paystack" ? "Paystack" : "Flutterwave"} dashboard, then set bulk_orders.status to 'settled' and refunded_ngn.`);
       return;
     }
@@ -239,6 +241,7 @@ async function doRefundAndFinish(b: Row, refundNgn: number, delivered: number, f
   }).eq("id", b.id).select("*").maybeSingle();
 
   try { if (done) await sendBulkReceiptEmail(done as any); } catch (e) { console.error("[bulk] receipt failed", e); }
+  await tgNotifyBulk(b.id); // Telegram customers also get the result in their chat (no-op for website batches; never throws)
   if (failed > 0) {
     await alertFounder(
       failed === Number(b.recipients_count) ? "Bulk order: every number failed — customer refunded" : "Bulk order settled with failed numbers — customer partly refunded",

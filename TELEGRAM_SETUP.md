@@ -103,3 +103,26 @@ and typed shortcuts like "again 5k". Say the word and I'll add any of them.
 ## Website links
 
 The homepage hero, the header menu and the footer show "Nolgic on Telegram" buttons once `NEXT_PUBLIC_TELEGRAM_BOT_USERNAME` is set. Each opens the bot with a place tag (`?start=hero`, `header`, `footer`). Unset the variable and the buttons disappear.
+
+## Version 2: everything else
+
+Run `supabase/migrations/0029_telegram_v2.sql` in the Supabase SQL editor (safe to run more than once). It adds a `gift` column
+to `tg_orders` and two tables, `tg_bulk` and `tg_links`. No new environment variables and no new cron job: the bot uses the
+website's own switches, and the existing sweep also carries the new follow-up messages.
+
+| In the bot | Shows when | What it does |
+| --- | --- | --- |
+| Exam PIN (JAMB, WAEC) | `EXAMS_ENABLED=1` and `NEXT_PUBLIC_EXAMS_ENABLED=1` | Full flow in the chat, same price source and fee as `/exams`. Off: the button opens the website page. |
+| Send a gift | always | The normal buy flow plus a short message. After delivery the buyer gets a note (message, token, sender) to forward on WhatsApp. |
+| Bulk airtime | `BULK_ENABLED=1` and `NEXT_PUBLIC_BULK_ENABLED=1` | Paste numbers and amounts, pay once, get a report when done. Failed numbers are refunded by the website's bulk pipeline. |
+| Ask someone to pay | `NEXT_PUBLIC_PAYFORME_ENABLED=1` | Builds the list, makes the request, gives a message to forward. The chat is told when they pay and when it is delivered. |
+| Giveaway (pick people) | `NEXT_PUBLIC_PAYFORME_ENABLED=1` | Builds the list, makes the giveaway, gives a payment link. The chat is told when it is delivered. |
+| Giveaway (link) | `NEXT_PUBLIC_PAYFORME_ENABLED=1` | Makes a link people choose from; the chat is told when it is full. |
+| My account | `NEXT_PUBLIC_ACCOUNTS_ENABLED=1` | Opens the website account page. |
+
+A button appears only when its switch is on, so features that are not live yet stay hidden from the bot too.
+Order of events when deploying: run the SQL, then merge. If the code goes live first, nothing existing breaks (delivery
+messages keep working); only the new features that need the new tables would fail until the SQL is run.
+
+Limits worth knowing: one chat can make at most 6 requests/giveaways an hour; bulk batches follow the website limits
+(first batch cap, 3 unpaid per email); the private page links (`?k=`) are sent only to the chat that made the request.
