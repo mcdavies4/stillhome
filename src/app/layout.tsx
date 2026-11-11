@@ -11,7 +11,7 @@ import AndroidBanner from "@/components/AndroidBanner";
 import StatusBar from "@/components/StatusBar";
 import RefCapture from "@/components/RefCapture";
 import RepCapture from "@/components/RepCapture";
-import { playUrl } from "@/lib/app-links";
+import { playUrl, telegramUrl } from "@/lib/app-links";
 import { themeInitScript } from "@/lib/theme-time";
 
 const BASE = process.env.NEXT_PUBLIC_APP_URL ?? "https://stillhome-ten.vercel.app";
@@ -110,8 +110,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 ] : []),
                 ...(process.env.NEXT_PUBLIC_EXAMS_ENABLED === "1" ? [{ href: "/exams", label: "JAMB & WAEC PINs" }] : []),
                 ...(process.env.NEXT_PUBLIC_ACCOUNTS_ENABLED === "1" ? [{ href: "/account", label: "My account" }] : []),
+                { href: "/proof", label: "Proof: delivery numbers" },
                 { href: "/find-order", label: "Find my order or token" },
                 { href: playUrl("header"), label: "Get the Android app", external: true },
+                ...(telegramUrl("header") ? [{ href: telegramUrl("header") as string, label: "Buy on Telegram", external: true }] : []),
                 { href: "/legal", label: "Terms, refunds & privacy" },
               ]} />
               <ThemeToggle />

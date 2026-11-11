@@ -99,3 +99,7 @@ and typed shortcuts like "again 5k". Say the word and I'll add any of them.
 - "I can't load the list just now" -> the bills provider's list failed; it retries on its own within minutes.
 - To switch the bot off without a redeploy: `curl https://api.telegram.org/bot<TOKEN>/deleteWebhook`. Orders already in
   progress still finish (the website side doesn't depend on Telegram).
+
+## Website links
+
+The homepage hero, the header menu and the footer show "Nolgic on Telegram" buttons once `NEXT_PUBLIC_TELEGRAM_BOT_USERNAME` is set. Each opens the bot with a place tag (`?start=hero`, `header`, `footer`). Unset the variable and the buttons disappear.
