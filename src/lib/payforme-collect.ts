@@ -13,7 +13,7 @@
 // Nolgic never holds money for people who haven't chosen: nobody pays until the list is final.
 //
 // Life of a link (pay_collects.status): open -> closing -> converted
-//                                         \-> cancelled (by the giver)   \-> expired (7 days, nobody closed it)
+//                                         \-> cancelled (by the giver)   \-> expired (7, 14 or 30 days, nobody closed it)
 
 import { supabaseAdmin } from "@/lib/supabase";
 import { checkPurchase, validateCustomer, FlwError } from "@/lib/bills";
@@ -27,7 +27,7 @@ import { appUrl, button, esc, naira, sendMail, shell } from "@/lib/mailer";
 import { waRecipient } from "@/lib/gift";
 import { checkExamItem, createPayRequest, isMissingSchema, payForMeReady, syncPayRequest } from "@/lib/payforme";
 import {
-  PFC_CATEGORIES, PFC_MAX_PEOPLE, PFC_VALID_DAYS, PFM_NOTE_MAX, itemStateOf, pfmIsExam, maskIdentifier, pfcChoiceText, pfmCategoryOf, pfmMoney, pfmNoValidate,
+  PFC_CATEGORIES, PFC_DAY_CHOICES, PFC_MAX_PEOPLE, PFC_VALID_DAYS, PFM_NOTE_MAX, itemStateOf, pfmIsExam, maskIdentifier, pfcChoiceText, pfmCategoryOf, pfmMoney, pfmNoValidate,
   type PfcEntryState, type PfcEntryView, type PfcStatus, type PfcView, type PfmCategory,
 } from "@/lib/payforme-shared";
 
@@ -102,9 +102,12 @@ export async function createCollect(raw: any, ip: string): Promise<{ ok: true; i
     return { ok: false, status: 400, error: `That could come to more than ${pfmMoney(MAX_TOTAL())} in one payment. At ${pfmMoney(budget)} each, the most is ${fits} ${fits === 1 ? "person" : "people"}.` };
   }
 
+  // How long it stays open: 7 (default), 14 or 30 days.
+  const days = PFC_DAY_CHOICES.includes(Number(raw.validDays)) ? Number(raw.validDays) : PFC_VALID_DAYS;
+
   const { data, error } = await db().from("pay_collects").insert({
     maker_name: makerName, maker_email: makerEmail, note, budget_ngn: budget, categories, max_people: maxPeople, status: "open", ip,
-    expires_at: new Date(Date.now() + PFC_VALID_DAYS * 86400_000).toISOString(),
+    expires_at: new Date(Date.now() + days * 86400_000).toISOString(),
   }).select("id,maker_key").single();
   if (error || !data) {
     console.error("[pfc] create failed", error?.message);

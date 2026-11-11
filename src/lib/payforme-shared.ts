@@ -160,6 +160,8 @@ export function parsePfmRef(ref: string): { rail: "paystack" | "flutterwave"; re
 
 export const PFC_MAX_PEOPLE = GIVEAWAY_MAX_ITEMS;   // a closed link becomes one giveaway, so the same cap applies
 export const PFC_VALID_DAYS = PFM_VALID_DAYS;
+/** How long a giveaway link may stay open. Nothing is paid until the giver closes the list, so a longer window holds no money. */
+export const PFC_DAY_CHOICES = [7, 14, 30];
 export const PFC_BUDGETS = [1000, 2000, 5000, 10000];
 export const PFC_CATEGORIES: PfmCategory[] = ["electricity", "cable", "airtime", "data", "exam"];
 export const PFC_CATEGORY_LABEL: Record<PfmCategory, string> = { electricity: "light", cable: "TV", airtime: "airtime", data: "data", exam: "an exam PIN" };
@@ -209,11 +211,12 @@ export type PfcView = {
 };
 
 /** The WhatsApp message the giver sends with the link. */
-export function pfcShareText(p: { makerName: string; budget: number; categories: PfmCategory[]; link: string; note?: string | null }): string {
+export function pfcShareText(p: { makerName: string; budget: number; categories: PfmCategory[]; link: string; note?: string | null; until?: string | null }): string {
   return [
     `${p.makerName} is giving away up to ${money(p.budget)} of ${pfcChoiceText(p.categories)} on Nolgic 🎁`,
     p.note ? `"${p.note}"` : "",
     `Open the link, choose what you want and enter your number. Nothing for you to pay:`,
     p.link,
+    p.until ? `Open until ${p.until}.` : "",
   ].filter(Boolean).join("\n");
 }
