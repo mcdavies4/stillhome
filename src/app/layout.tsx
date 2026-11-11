@@ -105,6 +105,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 { href: "/gift", label: "Send a gift" },
                 ...(process.env.NEXT_PUBLIC_PAYFORME_ENABLED === "1" ? [
                   { href: "/ask", label: "Ask someone to pay" },
+                  { href: "/for", label: "Get a bills link" },
                   { href: "/giveaway/link", label: "Giveaway link: let them choose" },
                   { href: "/giveaway", label: "Run a giveaway" },
                 ] : []),

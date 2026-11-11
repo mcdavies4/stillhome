@@ -23,6 +23,7 @@ import { naira, rows, CANCEL, reply, say, save, parseAmount, safeMessage, catRow
 import * as bulk from "./bulk";
 import * as social from "./social";
 import * as v3 from "./v3";
+import * as billslink from "./billslink";
 import { T } from "./i18n";
 
 export type Cat = "el" | "tv" | "ai" | "da" | "ex";
@@ -46,6 +47,7 @@ export interface Draft {
   sc?: Record<string, any>;           // scratch for social.ts (names, notes, giveaway link choices)
   bk?: Record<string, any>;           // scratch for bulk.ts (the numbers, the batch being paid)
   sv?: Record<string, any>;           // scratch for v3.ts (the item being saved, the item a reminder is for)
+  bl?: Record<string, any>;           // scratch for billslink.ts (the saved items picked, the name, the message)
 }
 
 export interface TgUser {
@@ -224,6 +226,7 @@ async function onText(c: Ctx, text: string) {
     if (cmd === "/buy") return categories(c);
     if (cmd === "/orders") return orders(c);
     if (cmd === "/saved") return v3.savedList(c);
+    if (cmd === "/billslink") return billslink.home(c);
     if (cmd === "/language") return v3.languageMenu(c);
     if (cmd === "/stop") return v3.stopAnnouncements(c, false);
     if (cmd === "/subscribe") return v3.stopAnnouncements(c, true);
@@ -304,6 +307,7 @@ function mainMenu(c: Ctx): Keyboard {
   kb.push(extra);
   if (f.giveaway) kb.push([{ text: t.giveaway, data: "sc:gv" }]);
   kb.push([{ text: t.orders, data: "ord" }, { text: t.saved, data: "sv:list" }]);
+  if (f.ask) kb.push([{ text: "🔗 My bills link", data: "bl:go" }]);
   const tail: Keyboard[number] = [];
   if (f.accounts) tail.push({ text: t.account, url: `${c.d.appUrl}/account` });
   tail.push({ text: t.help, data: "help" });
