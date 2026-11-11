@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 type Row = {
-  code: string; name: string; active: boolean; note: string | null; link: string;
+  code: string; name: string; active: boolean; note: string | null; link: string; tgLink?: string | null;
   visits: number; lookups: number; checkoutClicks: number;
   orders: number; delivered: number; customers: number; newCustomers: number; deliveredNgn: number;
   recent: { id: string; email: string; status: string; amount_ngn: number; created_at: string; isNew: boolean }[];
@@ -88,6 +88,12 @@ export default function AdminReps() {
             <code className="text-sm px-3 py-2 rounded-lg bg-sunk break-all">{r.link}</code>
             <button type="button" onClick={() => copy(r.link)} className="h-10 px-4 rounded-xl border border-line font-semibold">Copy link</button>
           </div>
+          {r.tgLink && (
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <code className="text-sm px-3 py-2 rounded-lg bg-sunk break-all">{r.tgLink}</code>
+              <button type="button" onClick={() => copy(r.tgLink!)} className="h-10 px-4 rounded-xl border border-line font-semibold">Copy Telegram link</button>
+            </div>
+          )}
 
           <dl className="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
             {[["Visits", r.visits], ["Meter / number checks", r.lookups], ["Clicked pay", r.checkoutClicks], ["Orders", r.orders], ["Delivered", r.delivered], ["Customers", r.customers], ["New customers", r.newCustomers], ["Delivered value", naira(r.deliveredNgn)]].map(([k, v]) => (

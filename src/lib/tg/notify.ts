@@ -14,6 +14,8 @@ import { esc, sendMessage, telegramConfigured, TgError, type Keyboard } from "./
 import { catOf } from "./engine";
 import { waShare } from "./kit";
 import { tgLinksSweep } from "./links";
+import { T } from "./i18n";
+import { broadcastSweep, remindersSweep } from "./store";
 
 const naira = (n: number) => `₦${Math.round(Number(n)).toLocaleString("en-NG")}`;
 const refOf = (id: string) => `NLG-${id.replace(/-/g, "").slice(0, 6).toUpperCase()}`;
@@ -40,7 +42,7 @@ export function giftNote(o: any, cat: string | null, gift: { note?: string; from
   return [gift.note || "A little something for you 🎁", what, gift.from ? `— ${gift.from}` : ""].filter(Boolean).join("\n");
 }
 
-export function outcomeMessage(o: any, key: ReturnType<typeof outcomeKey>, gift?: { note?: string; from?: string } | null): { text: string; kb: Keyboard } | null {
+export function outcomeMessage(o: any, key: ReturnType<typeof outcomeKey>, gift?: { note?: string; from?: string } | null, lang?: string | null): { text: string; kb: Keyboard } | null {
   if (!key) return null;
   const ref = refOf(o.id);
   const cat = catOf({ biller_name: String(o.biller_name ?? ""), name: String(o.biller_name ?? ""), biller_code: String(o.biller_code ?? "") });
@@ -48,13 +50,16 @@ export function outcomeMessage(o: any, key: ReturnType<typeof outcomeKey>, gift?
   const id = esc(o.identifier);
   const who = o.customer_name ? ` (${esc(o.customer_name)})` : "";
   const amt = naira(o.amount_ngn);
+  const t = T(lang);
   const receipt: Keyboard[number] = [{ text: "🧾 Receipt", url: `${app()}/order/${o.id}` }, { text: "🔁 Buy another", data: "buy" }];
+  // Meters, smartcards and phones can be kept for next time (exam PINs can't).
+  const keep = (k: Keyboard): Keyboard => (o.status === "fulfilled" && cat && cat !== "ex" ? [...k, [{ text: "💾 Save this", data: `sv:o:${o.id}` }]] : k);
 
   if (key === "pending_token") {
     return {
       text: cat === "ex"
-        ? `✅ <b>Payment received.</b> Your ${title} is being issued.\nIt can take a few minutes. I'll send the PIN here the moment it lands.\n\nRef: ${ref}`
-        : `✅ <b>Payment received.</b> Your ${title} units are on the way.\nThe token can take a few minutes. I'll send it here the moment it lands.\n\nRef: ${ref}`,
+        ? `${t.received} Your ${title} is being issued.\nIt can take a few minutes. I'll send the PIN here the moment it lands.\n\nRef: ${ref}`
+        : `${t.received} Your ${title} units are on the way.\nThe token can take a few minutes. I'll send it here the moment it lands.\n\nRef: ${ref}`,
       kb: [receipt],
     };
   }
@@ -87,19 +92,19 @@ export function outcomeMessage(o: any, key: ReturnType<typeof outcomeKey>, gift?
   };
   if (cat === "ex") {
     const pins = splitPins(o.flw_token).map((p) => `${esc(p.label)}: <code>${esc(p.value)}</code>`).join("\n");
-    return withGift({ text: `✅ <b>Done!</b>\n🎓 ${title} for ${id}\nAmount ${amt}${pins ? `\n\n🔑 ${pins}\n<i>Tap a code to copy it.</i>` : "\nYour PIN is on your receipt page."}\n\nRef: ${ref}`, kb: [receipt] });
+    return withGift({ text: `${t.done}\n🎓 ${title} for ${id}\nAmount ${amt}${pins ? `\n\n🔑 ${pins}\n<i>Tap a code to copy it.</i>` : "\nYour PIN is on your receipt page."}\n\nRef: ${ref}`, kb: keep([receipt]) });
   }
   if (cat === "el") {
     const tok = o.flw_token ? `\n\n🔑 Token: <code>${esc(o.flw_token)}</code>\n<i>Tap the token to copy it. Forward this message to the meter owner if it isn't you.</i>` : "";
-    return withGift({ text: `✅ <b>Done!</b>\n⚡ ${title}\nMeter ${id}${who}\nAmount ${amt}${tok}\n\nRef: ${ref}`, kb: [receipt] });
+    return withGift({ text: `${t.done}\n⚡ ${title}\nMeter ${id}${who}\nAmount ${amt}${tok}\n\nRef: ${ref}`, kb: keep([receipt]) });
   }
   if (cat === "tv") {
-    return withGift({ text: `✅ <b>Done!</b>\n📺 ${title} paid for smartcard ${id}${who}\nAmount ${amt}\nIt can take a few minutes to show on your decoder.\n\nRef: ${ref}`, kb: [receipt] });
+    return withGift({ text: `${t.done}\n📺 ${title} paid for smartcard ${id}${who}\nAmount ${amt}\nIt can take a few minutes to show on your decoder.\n\nRef: ${ref}`, kb: keep([receipt]) });
   }
   if (cat === "da") {
-    return withGift({ text: `✅ <b>Done!</b>\n🌐 ${title}: ${amt} sent to ${esc(maskIdentifier(String(o.identifier)))}\nIt can take a minute to show on the line.\n\nRef: ${ref}`, kb: [receipt] });
+    return withGift({ text: `${t.done}\n🌐 ${title}: ${amt} sent to ${esc(maskIdentifier(String(o.identifier)))}\nIt can take a minute to show on the line.\n\nRef: ${ref}`, kb: keep([receipt]) });
   }
-  return withGift({ text: `✅ <b>Done!</b>\n📱 ${amt} airtime sent to ${esc(maskIdentifier(String(o.identifier)))}\n\nRef: ${ref}`, kb: [receipt] });
+  return withGift({ text: `${t.done}\n📱 ${amt} airtime sent to ${esc(maskIdentifier(String(o.identifier)))}\n\nRef: ${ref}`, kb: keep([receipt]) });
 }
 
 /**
@@ -116,7 +121,8 @@ export async function tgNotifyOrder(orderId: string, opts: { force?: boolean } =
     if (!order) return false;
 
     const key = outcomeKey(order);
-    const msg = outcomeMessage(order, key, link.gift ?? null);
+    const { data: who } = await db.from("tg_users").select("lang").eq("chat_id", link.chat_id).maybeSingle(); // empty before migration 0030: English
+    const msg = outcomeMessage(order, key, link.gift ?? null, who?.lang ?? null);
     if (!key || !msg) return false;
     const prev: string | null = link.notified ?? null;
     if (!opts.force && prev === key) return false;
@@ -248,6 +254,9 @@ export async function tgSweep(): Promise<{ checked: number; sent: number }> {
   }
   const links = await tgLinksSweep();
   sent += links.sent;
+  // The customer's own reminders, and any announcement still going out. Each is isolated: one failing never stops the rest.
+  try { const r = await remindersSweep(); sent += r.sent; } catch (e: any) { console.error("[telegram] reminders sweep failed", e?.message ?? e); }
+  try { sent += await broadcastSweep(); } catch (e: any) { console.error("[telegram] broadcast sweep failed", e?.message ?? e); }
   await db.from("tg_updates").delete().lt("created_at", new Date(Date.now() - 3 * 86400_000).toISOString());
   return { checked: open.length + links.checked, sent };
 }

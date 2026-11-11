@@ -29,7 +29,7 @@ export const maskEmail = (e: string): string => {
 };
 
 export type RepRow = {
-  code: string; name: string; active: boolean; note: string | null; link: string;
+  code: string; name: string; active: boolean; note: string | null; link: string; tgLink: string | null;
   visits: number; lookups: number; checkoutClicks: number;
   orders: number; delivered: number; customers: number; newCustomers: number; deliveredNgn: number;
   recent: { id: string; email: string; status: string; amount_ngn: number; created_at: string; isNew: boolean }[];
@@ -90,6 +90,8 @@ export async function repReport(days: number, appUrl: string): Promise<{ days: n
     return {
       code: r.code, name: r.name, active: !!r.active, note: r.note ?? null,
       link: `${appUrl.replace(/\/$/, "")}/?rep=${r.code}`,
+      // The same rep, for the Telegram bot: orders placed there are tagged with them too.
+      tgLink: process.env.NEXT_PUBLIC_TELEGRAM_BOT_USERNAME ? `https://t.me/${process.env.NEXT_PUBLIC_TELEGRAM_BOT_USERNAME.replace(/^@/, "").trim()}?start=rep_${r.code}` : null,
       visits,
       lookups: e.filter((x) => x.kind === "event" && x.name === "lookup_ok").length,
       checkoutClicks: e.filter((x) => x.kind === "event" && x.name === "checkout_click").length,

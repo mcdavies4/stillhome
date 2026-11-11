@@ -89,8 +89,7 @@ Tell me what you see before you share it.
   receipt email, so this is acceptable, but don't use the bot for anything more sensitive.
 
 ## Not in version 1
-Bulk airtime, Pay for Me and giveaway links (they stay on the website), referral credit and rep tracking inside the bot,
-and typed shortcuts like "again 5k". Say the word and I'll add any of them.
+Everything on this list arrived in versions 2 and 3 below, except typed shortcuts like "again 5k".
 
 ## Troubleshooting
 - Bot silent -> Vercel logs, search `[telegram]`. Re-run the setup curl and read `lastError` and `pending`.
@@ -126,3 +125,28 @@ messages keep working); only the new features that need the new tables would fai
 
 Limits worth knowing: one chat can make at most 6 requests/giveaways an hour; bulk batches follow the website limits
 (first batch cap, 3 unpaid per email); the private page links (`?k=`) are sent only to the chat that made the request.
+
+## Version 3: reps, saved items, reminders, announcements, support, language
+
+Run `supabase/migrations/0030_telegram_v3.sql` in the Supabase SQL editor (safe to run more than once) **before** merging.
+It adds four columns to `tg_users` (`ref`, `src`, `lang`, `optout`) and four tables (`tg_saved`, `tg_reminders`,
+`tg_broadcasts`, `tg_support`). No new cron job: the existing `/api/cron/telegram` sweep also sends due reminders and
+carries on with an announcement that is still going out.
+
+One new environment variable, for the owner features: `TELEGRAM_ADMIN_CHAT_IDS` = your Telegram chat id (comma separated if
+more than one person). To find yours, message `@userinfobot`. Without it the bot works as before and the owner features are off.
+
+| Feature | How it works |
+| --- | --- |
+| Rep links | `https://t.me/<bot>?start=rep_<code>` (the admin Reps page shows each rep's Telegram link). The first rep stays counted for that customer. Their Telegram orders are tagged with the rep, and their visits, meter checks and pay taps are counted, so the weekly rep numbers include Telegram. The rep must exist and be active. Bulk batches are not tagged. |
+| Saved | Every delivered meter, smartcard, data or airtime message has "💾 Save this". Up to 10 per customer. Menu: ⭐ Saved, or `/saved`. One tap to buy again. |
+| Reminders | From a saved item: in 14, 25 or 30 days, every 2 weeks, every month, or a number of days they type. Sent at 8am Nigerian time with a Buy button. One reminder per saved item. |
+| Owner commands | `/stats` (today and 7 days, reps, where new customers came from), `/failed` (stuck or failed orders), `/admin`. Only chat ids in `TELEGRAM_ADMIN_CHAT_IDS` can use them; for everyone else they do nothing. |
+| Alerts | Every founder alert that is emailed is also sent to the owner chats (the same text; a burst of the same alert is one message). |
+| Announcements | `/broadcast your message` shows a preview and the audience, and sends only when you tap Send. Skips people who blocked the bot or sent `/stop`. Every copy ends with the stop line. One at a time. |
+| Talk to us | Help > 💬 Talk to us. The message reaches the owner chats with who it is from and their last order. Reply to that message in Telegram (or `/reply chat_id text`) and the answer goes back with a Reply button. 5 messages an hour per customer. Without an owner chat configured the button is hidden and Help shows the email address. |
+| Language | `/language` or Help > 🌍 Language: English, Pidgin, Yoruba, Igbo, Hausa. Covers the greeting, the main menu and the "Done!" / "Payment received" lines. Payment details always stay in English. **Have a native speaker read the Pidgin, Yoruba, Igbo and Hausa text in `src/lib/tg/i18n.ts` before promoting it.** |
+
+Order of events when deploying: run the SQL, add `TELEGRAM_ADMIN_CHAT_IDS`, merge. If the code goes live first nothing
+existing breaks; saving, reminders, announcements, rep tags and language need the new tables and columns.
+Re-run the setup curl once after deploying so Telegram's command list shows the new commands.

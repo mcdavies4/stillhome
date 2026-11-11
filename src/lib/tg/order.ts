@@ -19,12 +19,13 @@ import { walletCovers } from "@/lib/capacity";
 import { BACK_SOON_MESSAGE } from "@/lib/back-soon";
 import { pfmNoValidate, pfmIsExam } from "@/lib/payforme-shared";
 import { checkExamItem } from "@/lib/payforme";
+import { tagRep } from "@/lib/rep";
 import type { CreateResult, Item } from "./engine";
 
 const naira = (n: number) => `₦${Math.round(n).toLocaleString("en-NG")}`;
 const MAX_OPEN_UNPAID = 4;
 
-export async function createTelegramOrder(i: { chatId: number; email: string; item: Item; identifier: string; amount: number; gift?: { note: string; from: string } }): Promise<CreateResult> {
+export async function createTelegramOrder(i: { chatId: number; email: string; item: Item; identifier: string; amount: number; gift?: { note: string; from: string }; rep?: string | null }): Promise<CreateResult> {
   try {
     const country = getCountry("NG");
     const rail = ngnPayProvider();
@@ -131,6 +132,8 @@ export async function createTelegramOrder(i: { chatId: number; email: string; it
       .single();
     if (error || !order) throw error ?? new Error("order insert failed");
     await db.from("tg_orders").insert({ order_id: order.id, chat_id: i.chatId, ...(i.gift ? { gift: i.gift } : {}) });
+    // Counts towards the sales rep who brought this customer to the bot (same rule as a website order: only a live rep code sticks).
+    if (i.rep) await tagRep(order.id, i.rep);
 
     const app = process.env.NEXT_PUBLIC_APP_URL!;
     if (rail === "flutterwave") {

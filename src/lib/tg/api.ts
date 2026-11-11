@@ -43,6 +43,16 @@ export async function sendMessage(chatId: number, html: string, kb?: Keyboard): 
   await call("sendMessage", { chat_id: chatId, text: html.slice(0, 4000), parse_mode: "HTML", disable_web_page_preview: true, reply_markup: markup(kb) });
 }
 
+/** Same as sendMessage, but returns the message id (needed to match an owner's reply to a forwarded customer message). */
+export async function sendMessageId(chatId: number, html: string, kb?: Keyboard): Promise<number | null> {
+  const r = await call<any>("sendMessage", { chat_id: chatId, text: html.slice(0, 4000), parse_mode: "HTML", disable_web_page_preview: true, reply_markup: markup(kb) });
+  return Number(r?.message_id) || null;
+}
+
+/** The owner's chat ids (TELEGRAM_ADMIN_CHAT_IDS, comma separated). They get /stats, announcements, support messages and alerts. */
+export const adminChatIds = (): number[] =>
+  (process.env.TELEGRAM_ADMIN_CHAT_IDS ?? "").split(",").map((s) => Number(s.trim())).filter((n) => Number.isInteger(n) && n > 0);
+
 /** Replaces a message's text + buttons in place (used when a button is tapped, so the chat does not fill with menus). */
 export async function editMessage(chatId: number, messageId: number, html: string, kb?: Keyboard): Promise<void> {
   try {
@@ -65,7 +75,9 @@ export async function sendTyping(chatId: number): Promise<void> {
 export const COMMANDS = [
   { command: "start", description: "Open the menu" },
   { command: "buy", description: "Buy light, TV, airtime or data" },
+  { command: "saved", description: "My saved meters and phones" },
   { command: "orders", description: "My recent orders" },
+  { command: "language", description: "Change language" },
   { command: "help", description: "Help and support" },
   { command: "cancel", description: "Cancel what I'm doing" },
 ];
