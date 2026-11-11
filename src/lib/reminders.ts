@@ -104,6 +104,12 @@ export function reminderEmail(d: Due, token: string, app = appUrl()): Mail {
   const link = `${app}/?rt=${token}#pay`;   // opens checkout with this meter, plan, amount and email already filled
   const stop = `${app}/reminders/${token}`;
   const runOut = new Date(new Date(o.created_at).getTime() + d.gapDays * DAY).toLocaleDateString("en-GB", { day: "numeric", month: "short", timeZone: "Africa/Lagos" });
+  // If Pay for Me is open, offer the other way out: a friend or relative can cover it. Nothing is promised that isn't switched on.
+  const pfm = process.env.NEXT_PUBLIC_PAYFORME_ENABLED === "1";
+  const bills = pfm && process.env.NEXT_PUBLIC_BILLSLINK_ENABLED === "1";
+  const family = !pfm ? null : bills
+    ? { html: `<a href="${app}/ask" style="color:#666">Ask a friend or relative to pay it</a>, or <a href="${app}/for/new" style="color:#666">make a bills link</a> they can use any time.`, text: `Ask someone to pay it: ${app}/ask . Or make a bills link: ${app}/for/new` }
+    : { html: `<a href="${app}/ask" style="color:#666">Ask a friend or relative to pay it</a>.`, text: `Ask someone to pay it: ${app}/ask` };
   const guess = d.basis === "own history"
     ? ` You usually top up about every ${d.gapDays} days, so it may run out around ${runOut}.`
     : "";
@@ -114,10 +120,10 @@ export function reminderEmail(d: Due, token: string, app = appUrl()): Mail {
     subject,
     html: shell({
       title: subject,
-      bodyHtml: `<p>${line}</p>${button(link, d.kind === "tv" ? "Renew now" : "Top up now")}<p>You see the account name before any money moves, and you get your receipt${d.kind === "tv" ? "" : " and token"} by email.</p>`,
+      bodyHtml: `<p>${line}</p>${button(link, d.kind === "tv" ? "Renew now" : "Top up now")}<p>You see the account name before any money moves, and you get your receipt${d.kind === "tv" ? "" : " and token"} by email.</p>${family ? `<p style="color:#666">Would you rather someone else covered it? ${family.html}</p>` : ""}`,
       footerHtml: `You got this because you paid for this with us before. We send at most one of these per payment. <a href="${esc(stop)}" style="color:#999">Stop these reminders</a>.`,
     }),
-    text: `${line.replace(/&[a-z]+;/g, "")}\n\n${d.kind === "tv" ? "Renew" : "Top up"}: ${link}\n\nStop these reminders: ${stop}`,
+    text: `${line.replace(/&[a-z]+;/g, "")}\n\n${d.kind === "tv" ? "Renew" : "Top up"}: ${link}${family ? `\n\nWould you rather someone else covered it? ${family.text}` : ""}\n\nStop these reminders: ${stop}`,
   };
 }
 

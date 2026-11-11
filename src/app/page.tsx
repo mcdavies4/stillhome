@@ -116,7 +116,7 @@ const EXTRAS = [
     icon: (<><path d="M6 3h8.5L19 7.5V21H6z" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" /><path d="M9.5 12.5h6M9.5 16.5h4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" /></>),
   },
   process.env.NEXT_PUBLIC_PAYFORME_ENABLED === "1" && {
-    href: "/ask", title: "Ask someone to pay", text: "Send a link. A friend or family member abroad pays by card.",
+    href: "/ask", title: "Ask someone to pay", text: "Send a link. A friend or family member pays it in naira.",
     icon: (<><path d="M10 14a4 4 0 005.7 0l3-3a4 4 0 00-5.7-5.7l-1 1" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" /><path d="M14 10a4 4 0 00-5.7 0l-3 3a4 4 0 005.7 5.7l1-1" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" /></>),
   },
   process.env.NEXT_PUBLIC_PAYFORME_ENABLED === "1" && {
@@ -150,11 +150,13 @@ const FAQS_DOMESTIC = [
 
 const PFM_ON = process.env.NEXT_PUBLIC_PAYFORME_ENABLED === "1";
 const EXAMS_ON = process.env.NEXT_PUBLIC_EXAMS_ENABLED === "1";
+const BILLS_ON = PFM_ON && process.env.NEXT_PUBLIC_BILLSLINK_ENABLED === "1";
 // Questions about the features beyond one bill, so people who search for them find them.
 const FAQS_MORE = [
   ...(PFM_ON ? [
-    { q: "Can someone abroad pay my bills for me?", a: "Yes. Use \"Ask someone to pay\": list what you need (light, TV, airtime, data" + (EXAMS_ON ? ", exam PINs" : "") + "), and send the one link it gives you on WhatsApp. They see exactly what it's for, with the name on each meter, and pay by card from anywhere. Your tokens and top-ups arrive in seconds." },
-    { q: "How do I run a giveaway for many people?", a: "If you have everyone's numbers, add them on the giveaway page and pay once. If you don't, make a giveaway link: share it, each person picks their own light, airtime, data or TV and enters their own number, then you check the list, remove anyone you don't know, and pay once. Each person is delivered separately and sees their own token." },
+    { q: "Can a friend or relative pay my bills for me?", a: "Yes. Use \"Ask someone to pay\": list what you need (light, TV, airtime, data" + (EXAMS_ON ? ", exam PINs" : "") + "), and send the one link it gives you on WhatsApp. They see exactly what it's for, with the name on each meter, and pay in naira by card, bank transfer or USSD. Your tokens and top-ups arrive in seconds." },
+    ...(BILLS_ON ? [{ q: "What is a bills link?", a: "One permanent link for your light, TV, airtime and data. You add your meter, smartcard or number once and share the link with family and friends. Whenever they want to help, they open it, choose what to pay and how much, and pay in naira. It is delivered to you in seconds. They see only your name and the last four digits, never the full number, and you can pause or delete the link at any time." }] : []),
+    { q: "How do I run a giveaway for many people?", a: "If you have everyone's numbers, add them on the giveaway page and pay once. If you don't, make a giveaway link: share it, each person picks their own light, airtime, data or TV and enters their own number, then you check the list, remove anyone you don't know, and pay once. Each person is delivered separately and sees their own token. You choose how long the link stays open: 7, 14 or 30 days. Nothing is charged until you close the list and pay." },
   ] : []),
   ...(EXAMS_ON ? [
     { q: "Can I buy JAMB or WAEC PINs?", a: "Yes. Pick the PIN, enter the candidate's JAMB profile code or phone number, and the PIN arrives in seconds." + (PFM_ON ? " A parent or sponsor can also pay for it with \"Ask someone to pay\", and a school or sponsor can cover many students with one giveaway link." : "") },

@@ -217,7 +217,7 @@ export default function RequestPage({ params }: { params: { id: string } }) {
               {err && <p className="text-bad text-sm mt-3" role="alert">{err}</p>}
               <button type="submit" disabled={busy || !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)}
                 className="mt-5 w-full h-12 rounded-xl bg-cta text-oncta font-display font-bold hover:brightness-105 active:brightness-95 disabled:opacity-50">
-                {busy ? "Taking you to the payment page…" : `Pay ${pfmMoney(v.total)} by card`}
+                {busy ? "Taking you to the payment page…" : `Pay ${pfmMoney(v.total)}`}
               </button>
               <p className="text-xs text-haze mt-2.5 leading-relaxed">{give ? "You will be taken to a secure payment page. Check every number first: once delivered, a token or top-up can’t be taken back." : "UK and international cards work. You will be taken to a secure payment page. You pay in naira, and your bank shows the exchange rate."}</p>
             </form>

@@ -186,7 +186,7 @@ export default function AskClient({ mode = "ask" }: { mode?: "ask" | "giveaway" 
     return (
       <main id="content" className="max-w-xl mx-auto px-5 pt-12 pb-24">
         <h1 className="font-display font-extrabold text-3xl sm:text-4xl leading-tight tracking-tight">Your link is ready</h1>
-        <p className="mt-3 text-haze text-lg leading-relaxed">Send it to the person who will pay. They see exactly what it is, and pay by card from anywhere. Nothing is charged until they do.</p>
+        <p className="mt-3 text-haze text-lg leading-relaxed">Send it to the person who will pay. They see exactly what it is and pay in naira, by card, bank transfer or USSD. Nothing is charged until they do.</p>
         <div className="mt-6 rounded-2xl border border-line p-5" data-testid="share">
           <p className="font-display font-bold">{pfmMoney(done.total)} for {done.count} {done.count === 1 ? "thing" : "things"}</p>
           <pre className="mt-3 whitespace-pre-wrap text-sm text-haze font-sans leading-relaxed">{text}</pre>
@@ -212,7 +212,7 @@ export default function AskClient({ mode = "ask" }: { mode?: "ask" | "giveaway" 
       <h1 className="font-display font-extrabold text-3xl sm:text-4xl leading-tight tracking-tight">{give ? "Run a giveaway" : "Ask someone to pay"}</h1>
       <p className="mt-3 text-haze text-lg leading-relaxed">{give
         ? "Pick what each person gets: light, airtime, data or TV. Pay once. Every person is delivered separately, and you send each one their token or confirmation on WhatsApp."
-        : "Make a list of what you need. Send one link. A friend or relative pays by card from anywhere, and your tokens and top-ups arrive in seconds."}</p>
+        : "Make a list of what you need. Send one link. A friend or relative pays it in naira, and your tokens and top-ups arrive in seconds."}</p>
       {give && <p className="mt-2 text-sm text-haze">Don&rsquo;t have everyone&rsquo;s numbers? <a href="/giveaway/link" className="text-tungsten underline underline-offset-2" data-testid="to-link">Send one link and let them choose</a>.</p>}
 
       {saved.filter((x) => !!x.give === give).length > 0 && (
