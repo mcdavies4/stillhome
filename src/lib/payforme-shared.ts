@@ -118,7 +118,7 @@ export function requestShareText(p: { receiverName: string; total: number; count
   return [
     `Hi, it's ${p.receiverName}. Please help me pay for ${what} (${money(p.total)} in all) on Nolgic.`,
     p.note ? `"${p.note}"` : "",
-    `You can see exactly what it is and pay by card here:`,
+    `You can see exactly what it is and pay here:`,
     p.link,
   ].filter(Boolean).join("\n");
 }

@@ -15,7 +15,7 @@ export async function generateMetadata({ params }: { params: { id: string } }): 
         return {
           ...base,
           title: `${v.receiverName} is asking you to pay ${pfmMoney(v.total)}`,
-          description: "See exactly what it is, then pay by card from anywhere. Light, TV, airtime and data, delivered in seconds.",
+          description: "See exactly what it is, then pay in naira. Light, TV, airtime and data, delivered in seconds.",
         };
       }
     }

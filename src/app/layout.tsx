@@ -105,10 +105,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 { href: "/gift", label: "Send a gift" },
                 ...(process.env.NEXT_PUBLIC_PAYFORME_ENABLED === "1" ? [
                   { href: "/ask", label: "Ask someone to pay" },
-                  { href: "/for", label: "Get a bills link" },
                   { href: "/giveaway/link", label: "Giveaway link: let them choose" },
                   { href: "/giveaway", label: "Run a giveaway" },
                 ] : []),
+                ...(process.env.NEXT_PUBLIC_PAYFORME_ENABLED === "1" && process.env.NEXT_PUBLIC_BILLSLINK_ENABLED === "1" ? [{ href: "/for", label: "Get a bills link" }] : []),
                 ...(process.env.NEXT_PUBLIC_EXAMS_ENABLED === "1" ? [{ href: "/exams", label: "JAMB & WAEC PINs" }] : []),
                 ...(process.env.NEXT_PUBLIC_ACCOUNTS_ENABLED === "1" ? [{ href: "/account", label: "My account" }] : []),
                 { href: "/proof", label: "Proof: delivery numbers" },

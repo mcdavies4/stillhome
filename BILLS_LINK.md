@@ -7,7 +7,8 @@ airtime, data) and how much, and pay in naira. It is delivered to the owner like
 
 1. Pay for Me must already be live (`0023`, `NEXT_PUBLIC_PAYFORME_ENABLED=1`).
 2. Run `supabase/migrations/0031_bills_link.sql` in the Supabase SQL editor (safe to run more than once). Run it **before** merging.
-3. Merge. Nothing else to set. Until the SQL is run the pages say "opening soon" and the Telegram button says the same.
+3. Add `NEXT_PUBLIC_BILLSLINK_ENABLED=1` in Vercel (and redeploy) to show the bills link on the home page, the strip above the headline and the More menu. The `/for` pages work without it; this switch only controls where the link is promoted.
+4. Merge. Nothing else to set. Until the SQL is run the pages say "opening soon" and the Telegram button says the same.
 
 ## What it is built on
 
