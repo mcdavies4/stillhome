@@ -7,6 +7,7 @@ import { useEffect, useMemo, useState } from "react";
 import { allCountries, getCountry, type CountryCode } from "@/lib/countries";
 import { ngnFeeRange, ngnServiceFee, ngnMaxOrder, feeKindOf } from "@/lib/ngn-fee";
 import GetOnPlay from "@/components/GetOnPlay";
+import GetOnTelegram from "@/components/GetOnTelegram";
 import SavedList from "@/components/SavedList";
 import RefBanner from "@/components/RefBanner";
 import { readRef } from "@/lib/referral-client";
@@ -472,7 +473,8 @@ export default function Home() {
           {DOMESTIC && (
             <div className="mt-8 sm:mt-10 flex flex-wrap items-center gap-x-5 gap-y-3">
               <GetOnPlay place="hero" />
-              <p className="text-haze text-sm max-w-[16rem] leading-snug">The Nolgic app for Android. Same checks, in two taps.</p>
+              <GetOnTelegram place="hero" />
+              <p className="text-haze text-sm max-w-[16rem] leading-snug">Prefer an app or a chat? Same checks, in two taps.</p>
             </div>
           )}
 
@@ -915,6 +917,7 @@ export default function Home() {
               <li><Link href="/#how" className="hover:text-paper">How it works</Link></li>
               <li><Link href="/#faq" className="hover:text-paper">FAQ</Link></li>
               <li><GetOnPlay place="footer" variant="link" /></li>
+              <li><GetOnTelegram place="footer" variant="link" /></li>
             </ul>
           </div>
           <div>
