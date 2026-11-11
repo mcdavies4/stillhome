@@ -261,8 +261,12 @@ function Join({ v, onJoined }: { v: PfcView; onJoined: (entryKey: string) => voi
 
   return (
     <>
-      <h1 className={h1} data-testid="join-title">{v.makerName} is giving you up to {pfmMoney(v.budget)} of {pfcChoiceText(v.categories)}</h1>
-      {v.note && <p className="mt-3 text-lg leading-relaxed border-l-2 border-tungsten pl-4">&ldquo;{v.note}&rdquo;</p>}
+      <div className="rounded-3xl border-2 border-tungsten bg-cta/10 p-6 sm:p-8" data-testid="gift-card">
+        <p className="text-sm text-haze">A gift from <span className="font-semibold text-paper">{v.makerName}</span></p>
+        <h1 className={`${h1} mt-2`} data-testid="join-title">{v.makerName} is giving you up to {pfmMoney(v.budget)} of {pfcChoiceText(v.categories)}</h1>
+        {v.note && <p className="mt-4 text-lg leading-relaxed border-l-2 border-tungsten pl-4">&ldquo;{v.note}&rdquo;</p>}
+        <p className="mt-4 text-sm text-haze">Open until {new Date(v.expiresAt).toLocaleDateString("en-GB", { day: "numeric", month: "long" })}</p>
+      </div>
       <p className="mt-3 text-haze leading-relaxed">Choose what you want and enter your number. Nothing for you to pay. {v.makerName} pays for everyone once the list is ready.</p>
       <p className="mt-1 text-sm text-haze">{v.count} of {v.maxPeople} places taken.</p>
 

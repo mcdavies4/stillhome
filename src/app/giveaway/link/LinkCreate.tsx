@@ -6,7 +6,7 @@ import { track } from "@/lib/track";
 import { GIVEAWAY_NOTES, cleanText } from "@/lib/gift";
 import { ngnMaxOrder, ngnServiceFee } from "@/lib/ngn-fee";
 import { readMyLinks, rememberMyLink, type PfcMine } from "@/lib/payforme-collect-local";
-import { PFC_BUDGETS, PFC_CATEGORIES, PFC_CATEGORY_LABEL, PFC_MAX_PEOPLE, PFM_NOTE_MAX, pfcShareText, pfmMoney, type PfmCategory } from "@/lib/payforme-shared";
+import { PFC_BUDGETS, PFC_CATEGORIES, PFC_DAY_CHOICES, PFC_VALID_DAYS, PFC_CATEGORY_LABEL, PFC_MAX_PEOPLE, PFM_NOTE_MAX, pfcShareText, pfmMoney, type PfmCategory } from "@/lib/payforme-shared";
 import { whatsappShareUrl } from "@/lib/share";
 
 const CAT_TITLE: Record<PfmCategory, string> = { electricity: "Electricity", cable: "Cable TV", airtime: "Airtime", data: "Data", exam: "Exam PINs" };
@@ -23,10 +23,12 @@ export default function LinkCreate() {
   const [examMin, setExamMin] = useState(0); // the cheapest PIN, so the giver knows what budget covers one
   const [budget, setBudget] = useState("2000");
   const [people, setPeople] = useState("10");
+  const [days, setDays] = useState(PFC_VALID_DAYS);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const [done, setDone] = useState<{ id: string; key: string } | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
+  const [until, setUntil] = useState<Date | null>(null);
   const [mine, setMine] = useState<PfcMine[]>([]);
 
   useEffect(() => {
@@ -53,11 +55,12 @@ export default function LinkCreate() {
     try {
       const r = await fetch("/api/payforme/collect", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ makerName: name.trim(), makerEmail: email.trim(), note: note.trim() || undefined, budget: b, categories: cats, maxPeople: n }),
+        body: JSON.stringify({ makerName: name.trim(), makerEmail: email.trim(), note: note.trim() || undefined, budget: b, categories: cats, maxPeople: n, validDays: days }),
       });
       const d = await r.json().catch(() => ({}));
       if (!r.ok || !d.id) throw new Error(d.error || "Something went wrong. Please try again.");
       rememberMyLink({ id: d.id, key: d.key, at: Date.now(), budget: b, people: n });
+      setUntil(new Date(Date.now() + days * 86400_000));
       track("giveaway_link");
       setDone({ id: d.id, key: d.key });
     } catch (e: any) { setErr(e.message); } finally { setBusy(false); }
@@ -72,7 +75,7 @@ export default function LinkCreate() {
     const origin = window.location.origin;
     const link = `${origin}/c/${done.id}`;
     const own = `${origin}/c/${done.id}?k=${done.key}`;
-    const text = pfcShareText({ makerName: name.trim(), budget: b, categories: cats, link, note: note.trim() || null });
+    const text = pfcShareText({ makerName: name.trim(), budget: b, categories: cats, link, note: note.trim() || null, until: until ? until.toLocaleDateString("en-GB", { day: "numeric", month: "long" }) : null });
     return (
       <main id="content" className="max-w-xl mx-auto px-5 pt-12 pb-24">
         <h1 className="font-display font-extrabold text-3xl sm:text-4xl leading-tight tracking-tight">Your giveaway link is ready</h1>
@@ -152,6 +155,14 @@ export default function LinkCreate() {
           </div>
           <p className="text-xs text-haze mt-2">Each person picks anything up to this. A TV or data plan that costs more won&rsquo;t show for them.</p>
           {(b > 0 && (b < 100 || b > maxEach)) && <p className="text-sm text-bad mt-2" role="status">Between ₦100 and {pfmMoney(maxEach)} each.</p>}
+        </div>
+
+        <div className="mt-5">
+          <p className="font-semibold text-sm">How long should the link stay open?</p>
+          <div className="flex gap-2 flex-wrap mt-2" role="group" aria-label="How long the link stays open">
+            {PFC_DAY_CHOICES.map((d) => <button key={d} type="button" aria-pressed={days === d} onClick={() => setDays(d)} className={`px-3 h-9 rounded-full border text-sm ${days === d ? "border-tungsten bg-cta/15 font-semibold" : "border-line text-haze hover:text-paper"}`}>{d} days</button>)}
+          </div>
+          <p className="text-xs text-haze mt-2">People can join until then, or until it&rsquo;s full. Nothing is charged until you close the list and pay, so a longer time costs you nothing.</p>
         </div>
 
         <div className="mt-5">
