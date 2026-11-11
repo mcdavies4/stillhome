@@ -18,6 +18,7 @@ import { createTelegramOrder } from "./order";
 import { createTelegramBulk } from "./bulk-order";
 import { tgNotifyOrder, tgNotifyBulk } from "./notify";
 import { tgTrackLink } from "./links";
+import { realV3 } from "./store";
 import type { Deps, Item, RecentOrder, TgUser } from "./engine";
 
 // The catalogue is cached by the bills provider for an hour; keep one copy per warm instance for a minute on top.
@@ -102,6 +103,7 @@ export function realDeps(): Deps {
       return { name: v.name ?? null, minimum: Number(v.minimum) || 0 };
     },
 
+    v3: realV3(),
     createOrder: createTelegramOrder,
     createBulk: createTelegramBulk,
 

@@ -22,6 +22,8 @@ import { esc, type Keyboard } from "./api";
 import { naira, rows, CANCEL, reply, say, save, parseAmount, safeMessage, catRows, askEmailFor, type Ctx } from "./kit";
 import * as bulk from "./bulk";
 import * as social from "./social";
+import * as v3 from "./v3";
+import { T } from "./i18n";
 
 export type Cat = "el" | "tv" | "ai" | "da" | "ex";
 export type Item = PfmBiller;
@@ -43,6 +45,7 @@ export interface Draft {
   list?: social.ListItem[];           // things collected for "ask someone to pay" / a giveaway
   sc?: Record<string, any>;           // scratch for social.ts (names, notes, giveaway link choices)
   bk?: Record<string, any>;           // scratch for bulk.ts (the numbers, the batch being paid)
+  sv?: Record<string, any>;           // scratch for v3.ts (the item being saved, the item a reminder is for)
 }
 
 export interface TgUser {
@@ -50,6 +53,10 @@ export interface TgUser {
   first_name?: string | null;
   username?: string | null;
   email?: string | null;
+  ref?: string | null;                // sales rep who first brought them here
+  src?: string | null;                // which Nolgic button they came from
+  lang?: string | null;
+  optout?: boolean | null;
   state: string;
   draft: Draft;
   order_count?: number;
@@ -83,10 +90,10 @@ export interface Deps {
   typing(chatId: number): Promise<void>;
   seen(updateId: number): Promise<boolean>;
   getUser(from: { id: number; first_name?: string; username?: string }): Promise<TgUser>;
-  saveUser(chatId: number, patch: { email?: string; state?: string; draft?: Draft }): Promise<void>;
+  saveUser(chatId: number, patch: { email?: string; state?: string; draft?: Draft; ref?: string; src?: string; lang?: string; optout?: boolean }): Promise<void>;
   catalogue(): Promise<Item[]>;
   validate(item: Item, identifier: string): Promise<{ name: string | null; minimum: number }>;
-  createOrder(i: { chatId: number; email: string; item: Item; identifier: string; amount: number; gift?: { note: string; from: string } }): Promise<CreateResult>;
+  createOrder(i: { chatId: number; email: string; item: Item; identifier: string; amount: number; gift?: { note: string; from: string }; rep?: string | null }): Promise<CreateResult>;
   /** Which optional parts of Nolgic are switched on (the same switches the website uses). */
   flags: Flags;
   createBulk(i: { chatId: number; email: string; rows: BulkRow[] }): Promise<BulkResult>;
@@ -102,6 +109,8 @@ export interface Deps {
    */
   checkOrder(chatId: number, orderId: string): Promise<string>;
   recentOrders(chatId: number): Promise<RecentOrder[]>;
+  /** Saved items, reminders, rep counters, the owner's numbers, announcements and support (see v3.ts). */
+  v3: v3.V3;
   appUrl: string;
   supportEmail: string;
   supportWhatsapp: string | null;
@@ -187,7 +196,11 @@ export async function handleUpdate(d: Deps, upd: any): Promise<void> {
       await d.answer(cb.id);
       await onButton(c, String(cb.data ?? "").slice(0, 64));
     } else if (typeof msg?.text === "string") {
-      await onText(c, msg.text.trim().slice(0, 4000));
+      const text = msg.text.trim().slice(0, 4000);
+      // The owner replying to a forwarded customer message: the answer goes to that customer.
+      const replyTo = Number(msg.reply_to_message?.message_id);
+      if (replyTo && !text.startsWith("/") && (await v3.adminReply(c, replyTo, text))) return;
+      await onText(c, text);
     } else {
       await say(c, "I understand text and buttons only. Tap /start to open the menu.");
     }
@@ -201,15 +214,24 @@ export async function handleUpdate(d: Deps, upd: any): Promise<void> {
 // ───────────────────────── commands & buttons ─────────────────────────
 
 async function onText(c: Ctx, text: string) {
-  if (!c.user.state.startsWith("bk_")) text = text.slice(0, 300); // only a pasted list of numbers may be long
+  // Only a pasted list of numbers (bulk) or the owner's announcement may be long.
+  if (!c.user.state.startsWith("bk_") && !/^\/broadcast\b/i.test(text)) text = text.slice(0, 300);
   if (text.startsWith("/")) {
     const cmd = text.split(/[\s@]/)[0].toLowerCase();
-    if (cmd === "/start" || cmd === "/menu") return menu(c, true);
+    const arg = text.replace(/^\S+\s*/, "");
+    if (cmd === "/start") { await v3.captureStart(c, arg.split(/\s/)[0]); return menu(c, true); }
+    if (cmd === "/menu") return menu(c, true);
     if (cmd === "/buy") return categories(c);
     if (cmd === "/orders") return orders(c);
+    if (cmd === "/saved") return v3.savedList(c);
+    if (cmd === "/language") return v3.languageMenu(c);
+    if (cmd === "/stop") return v3.stopAnnouncements(c, false);
+    if (cmd === "/subscribe") return v3.stopAnnouncements(c, true);
+    if (cmd === "/support") return v3.supportStart(c);
     if (cmd === "/help") return help(c);
     if (cmd === "/cancel") return cancel(c);
     if (cmd === "/email") return askEmail(c, undefined);
+    if (await v3.adminCommand(c, cmd, arg)) return;
     return help(c);
   }
   switch (c.user.state) {
@@ -218,6 +240,7 @@ async function onText(c: Ctx, text: string) {
     case "ask_email": return onEmail(c, text);
     case "gf_note": return onGiftNote(c, text);
     default:
+      if (await v3.onText(c, text, hooks)) return;
       if (c.user.state.startsWith("bk_")) return bulk.onText(c, text);
       if (c.user.state.startsWith("sc_")) return social.onText(c, text);
       return menu(c, false);
@@ -242,7 +265,20 @@ async function onButton(c: Ctx, data: string) {
   if (data.startsWith("bk:")) return bulk.onButton(c, data);
   if (data.startsWith("sc:")) return social.onButton(c, data);
   if (data.startsWith("gf:")) return gift(c, data);
+  if (await v3.onButton(c, data, hooks)) return;
   return stale(c);
+}
+
+const hooks: v3.Hooks = {
+  menu: (c) => menu(c, false),
+  rebuy: (c, ref) => rebuy(c, ref),
+  catOf: (i) => catOf(i as any),
+  stale: (c) => stale(c),
+};
+
+/** Counts a meter check / pay tap towards the rep who brought this customer (never blocks the conversation). */
+function trackRep(c: Ctx, what: "lookup_ok" | "checkout_click") {
+  if (c.user.ref) c.d.v3.track(c.user.ref, c.chatId, what).catch(() => undefined);
 }
 
 const stale = (c: Ctx) => reply(c, "That button has expired. Tap /buy to start again.", [[{ text: "🛒 Buy something", data: "buy" }]]);
@@ -250,27 +286,27 @@ const stale = (c: Ctx) => reply(c, "That button has expired. Tap /buy to start a
 async function menu(c: Ctx, greet: boolean) {
   await save(c, "idle", {});
   const name = c.user.first_name ? ` ${esc(c.user.first_name)}` : "";
-  const text = greet
-    ? `Hi${name} 👋 I'm <b>Nolgic</b>. I pay light, TV, airtime and data bills in naira, right here in Telegram.\n\nWhat do you want to pay for?`
-    : "What do you want to pay for?";
-  await say(c, text, mainMenu(c));
+  const t = T(c.user.lang);
+  await say(c, greet ? t.welcome(name) : t.menu, mainMenu(c));
 }
 
 function mainMenu(c: Ctx): Keyboard {
   const f = c.d.flags;
+  const t = T(c.user.lang);
   const kb: Keyboard = [
-    [{ text: "⚡ Light", data: "c:el" }, { text: "📺 TV", data: "c:tv" }],
-    [{ text: "📱 Airtime", data: "c:ai" }, { text: "🌐 Data", data: "c:da" }],
-    [f.exams ? { text: "🎓 Exam PIN", data: "c:ex" } : { text: "🎓 Exam PIN", url: `${c.d.appUrl}/exams` }],
+    [{ text: t.light, data: "c:el" }, { text: t.tv, data: "c:tv" }],
+    [{ text: t.airtime, data: "c:ai" }, { text: t.data, data: "c:da" }],
+    [f.exams ? { text: t.exam, data: "c:ex" } : { text: t.exam, url: `${c.d.appUrl}/exams` }],
   ];
-  if (f.bulk) kb[2].push({ text: "📦 Bulk airtime", data: "bk:go" });
-  const extra: Keyboard[number] = [{ text: "🎁 Send a gift", data: "gf:go" }];
-  if (f.ask) extra.push({ text: "🙏 Ask someone to pay", data: "sc:ask" });
+  if (f.bulk) kb[2].push({ text: t.bulk, data: "bk:go" });
+  const extra: Keyboard[number] = [{ text: t.gift, data: "gf:go" }];
+  if (f.ask) extra.push({ text: t.ask, data: "sc:ask" });
   kb.push(extra);
-  if (f.giveaway) kb.push([{ text: "🎉 Giveaway", data: "sc:gv" }]);
-  const tail: Keyboard[number] = [{ text: "🧾 My orders", data: "ord" }];
-  if (f.accounts) tail.push({ text: "👤 My account", url: `${c.d.appUrl}/account` });
-  tail.push({ text: "💬 Help", data: "help" });
+  if (f.giveaway) kb.push([{ text: t.giveaway, data: "sc:gv" }]);
+  kb.push([{ text: t.orders, data: "ord" }, { text: t.saved, data: "sv:list" }]);
+  const tail: Keyboard[number] = [];
+  if (f.accounts) tail.push({ text: t.account, url: `${c.d.appUrl}/account` });
+  tail.push({ text: t.help, data: "help" });
   kb.push(tail);
   return kb;
 }
@@ -329,6 +365,8 @@ async function help(c: Ctx) {
   ];
   const kb: Keyboard = [];
   if (c.d.supportWhatsapp) kb.push([{ text: "💬 WhatsApp a person", url: `https://wa.me/${c.d.supportWhatsapp}` }]);
+  if (c.d.v3.admins.length) kb.push([{ text: "💬 Talk to us", data: "sp:go" }]);
+  kb.push([{ text: "🌍 Language", data: "lg:menu" }, { text: "⭐ Saved", data: "sv:list" }]);
   kb.push([{ text: "🛒 Buy something", data: "buy" }, { text: "🧾 My orders", data: "ord" }]);
   await reply(c, lines.join("\n"), kb);
 }
@@ -428,8 +466,8 @@ async function onIdentifier(c: Ctx, text: string) {
   }
   const next: Draft = { ...dr, id, nm: null };
 
-  if (dr.cat === "ai") return askAmount(c, next);
-  if (dr.cat === "da" || dr.cat === "ex") return showPlans(c, 0, next); // no name lookup for these
+  if (dr.cat === "ai") { trackRep(c, "lookup_ok"); return askAmount(c, next); }
+  if (dr.cat === "da" || dr.cat === "ex") { trackRep(c, "lookup_ok"); return showPlans(c, 0, next); } // no name lookup for these
 
   const all = await loadCatalogue(c);
   if (!all) return;
@@ -440,6 +478,7 @@ async function onIdentifier(c: Ctx, text: string) {
     const v = await c.d.validate(mine[0], id);
     next.nm = v.name;
     next.min = v.minimum || 0;
+    trackRep(c, "lookup_ok");
   } catch (e: any) {
     return say(c, `${esc(safeMessage(e))}\n\nSend the ${nounFor(dr.cat, dr.bc)} again, or cancel.`, [CANCEL]);
   }
@@ -576,7 +615,8 @@ async function pay(c: Ctx) {
   const item = await currentItem(c, dr).catch(() => null);
   if (!item) return stale(c);
   await c.d.typing(c.chatId);
-  const r = await c.d.createOrder({ chatId: c.chatId, email: c.user.email, item, identifier: dr.id, amount: dr.amt, ...(dr.mode === "gift" && dr.gift ? { gift: dr.gift } : {}) });
+  trackRep(c, "checkout_click");
+  const r = await c.d.createOrder({ chatId: c.chatId, email: c.user.email, item, identifier: dr.id, amount: dr.amt, rep: c.user.ref ?? null, ...(dr.mode === "gift" && dr.gift ? { gift: dr.gift } : {}) });
   if (!r.ok) {
     // The draft stays on the confirm card so the customer can simply tap Pay again.
     return say(c, `${esc(r.error)}`, [[{ text: "✅ Try again", data: "go" }, { text: "✖ Cancel", data: "x" }]]);
@@ -637,6 +677,11 @@ async function orders(c: Ctx) {
 async function buyAgain(c: Ctx, idx: number) {
   const ref = c.user.draft.menu?.[idx];
   if (!ref) return stale(c);
+  return rebuy(c, ref as { bc: string; ic: string; id: string; nm: string | null });
+}
+
+/** One-tap buy of something known: a recent order, a saved item, a reminder. Fixed-price items go straight to the confirm card. */
+async function rebuy(c: Ctx, ref: { bc: string; ic: string; id: string; nm: string | null }) {
   const all = await loadCatalogue(c);
   if (!all) return;
   const item = all.find((i) => i.biller_code === ref.bc && i.item_code === ref.ic);
