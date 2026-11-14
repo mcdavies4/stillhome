@@ -61,16 +61,29 @@ export function ngnFeeSettings(): FeeSettings {
   return feeSettingsFor("electricity");
 }
 
-// Card processing: Paystack charges a flat ₦100 on payments of ₦2,500 and above. That charge is added to the
-// customer's fee on those orders, so the flat cost is theirs, not ours. Set NEXT_PUBLIC_NG_CARD_FEE_NGN=0 to switch it off.
-export const PROCESSING_FEE_NGN = num(process.env.NEXT_PUBLIC_NG_CARD_FEE_NGN, 100);
-export const PROCESSING_FROM_NGN = num(process.env.NEXT_PUBLIC_NG_CARD_FEE_FROM, 2500);
+// Card fees: Paystack's charge (1.5%, plus ₦100 on payments of ₦2,500 and above, capped at ₦2,000) is added to the
+// customer's total, so Paystack takes it from them once and our service fee arrives in full. Set
+// NEXT_PUBLIC_NG_PASS_CARD_FEE=0 to switch this off.
+export const PROCESSING_FEE_NGN = 100; // used only for the "What does it cost?" range
+const PASS_CARD_FEE = num(process.env.NEXT_PUBLIC_NG_PASS_CARD_FEE, 1) !== 0;
+
+/** The total a customer must pay so that, after Paystack's charge, `net` (bill + our fee) is left. Whole naira, rounded up. */
+export function paystackGross(net: number): number {
+  const pct = 0.015, flat = 100, flatFrom = 2500, cap = 2000;
+  let t = (net + flat) / (1 - pct);
+  if (t < flatFrom) t = net / (1 - pct);
+  if (t > (cap - flat) / pct) t = net + cap; // above this total Paystack's charge is at its ₦2,000 cap
+  return Math.ceil(t);
+}
 
 export function ngnServiceFee(amountNgn: number, kind: FeeKind = "electricity"): number {
   const { pct, min, max } = feeSettingsFor(kind);
   const raw = Math.round((Number(amountNgn) * pct) / 100);
   const service = Math.min(max, Math.max(min, raw));
-  return Number(amountNgn) + service >= PROCESSING_FROM_NGN ? service + PROCESSING_FEE_NGN : service;
+  const bill = Number(amountNgn);
+  const net = bill + service;
+  const total = PASS_CARD_FEE ? paystackGross(net) : net;
+  return total - bill;
 }
 
 /** Lowest and highest fee across all kinds — for the "What does it cost?" line. */
