@@ -43,7 +43,7 @@ export async function GET(req: NextRequest) {
         }
         await resetConversation(convo.wa_user_id);
         try {
-          await sendText(phone, "Your payment link expired ⏰ Nothing was charged. Say *retry* to place the order again.");
+          await sendText(phone, "Your payment link expired ⏰ If you haven't paid, nothing was charged. Say *retry* to place the order again.");
         } catch { /* outside 24h window — silence is fine */ }
         expired++;
       } else {

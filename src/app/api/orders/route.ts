@@ -33,7 +33,8 @@ export async function GET(req: Request) {
   // Safety net for naira payments: if the customer is back but the webhook hasn't landed (or was rejected),
   // ask the payment provider directly. Recent orders only, at most one check per order every 4 seconds.
   const viaFlw = data.payment_provider === "flutterwave", viaPs = data.payment_provider === "paystack";
-  if (data.status === "pending_payment" && (viaFlw || viaPs) && Date.now() - new Date(data.created_at).getTime() < 3 * 3600_000) {
+  const lapsed = data.status === "expired" && viaPs; // a Paystack payment can still land after we marked it expired
+  if ((data.status === "pending_payment" || lapsed) && (viaFlw || viaPs) && Date.now() - new Date(data.created_at).getTime() < 3 * 3600_000) {
     const last = lastPayCheck.get(id) ?? 0;
     if (Date.now() - last > 4000) {
       lastPayCheck.set(id, Date.now());

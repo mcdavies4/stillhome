@@ -33,7 +33,7 @@ const COPY: Record<string, { title: string; body: string; tone: Tone }> = {
   fulfilled: { title: "Delivered", body: "It\u2019s done. Your email receipt is on its way, and if you added their mobile number, so is theirs.", tone: "ok" },
   failed_refunded: { title: "Delivery failed. You\u2019ve been refunded", body: "The provider didn\u2019t accept this payment, so we\u2019ve refunded you in full. It can take a few working days to show on your statement. Check the details and try again.", tone: "bad" },
   needs_review: { title: "Payment received. We\u2019re confirming delivery", body: "The provider hasn\u2019t confirmed this one yet, so we\u2019re checking it by hand. It will either be delivered or refunded to you in full. Your money is safe.", tone: "check" },
-  expired: { title: "This order expired", body: "No payment was taken. You can start a new payment any time.", tone: "wait" },
+  expired: { title: "This order expired", body: "The payment window closed before payment. If you haven\u2019t paid, nothing was taken and you can start a new order any time. If you did pay, this page will update on its own.", tone: "wait" },
   refund_failed: { title: "We need to fix something", body: "Delivery failed and the automatic refund didn\u2019t go through. We\u2019ve been alerted. Email us with your order number and we\u2019ll sort it out straight away.", tone: "bad" },
 };
 

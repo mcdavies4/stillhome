@@ -6,6 +6,7 @@ import { canAutoRefund, paymentRefLabel, refundOrderPayment } from "@/lib/refund
 import { sendNgnReceiptEmail } from "@/lib/receipt-ngn";
 import { sendReceipt } from "@/lib/whatsapp";
 import { waOnFulfilled, waOnFailedRefunded } from "@/lib/wa/hooks";
+import { sendOrderRefundEmail, sendOrderRefundDelayedEmail } from "@/lib/order-status-mail";
 
 // Paybeta webhook — the ONLY way Paybeta tells us the final result of a vend that was pending.
 //
@@ -126,10 +127,12 @@ export async function POST(req: Request) {
     await refundOrderPayment(order);
     await alertFounder("Paybeta reported failure — customer auto-refunded", `Order ${order.id} (${label}) ${paymentRefLabel(order)}`);
     await waOnFailedRefunded(claimed as any);
+    await sendOrderRefundEmail(order as any);
     return NextResponse.json({ received: true, state: "failed", order: "failed_refunded" });
   } catch (e: any) {
     await db.from("orders").update({ status: "refund_failed", error: `Paybeta failed | REFUND FAILED: ${e?.message}` }).eq("id", order.id);
     await alertFounder("🚨 REFUND FAILED — manual action needed", `Order ${order.id} (${label})\nPaybeta reported the vend failed but the refund failed: ${e?.message}\n${paymentRefLabel(order)}`);
+    await sendOrderRefundDelayedEmail(order as any);
     return NextResponse.json({ received: true, state: "failed", order: "refund_failed" });
   }
 }

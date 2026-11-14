@@ -18,6 +18,7 @@ import { alertFounder } from "@/lib/alerts";
 import { sendReceipt } from "@/lib/whatsapp";
 import { waOnFulfilled, waOnFailedRefunded, waOnNeedsReview } from "@/lib/wa/hooks";
 import { tgNotifyOrder } from "@/lib/tg/notify";
+import { sendOrderRefundEmail, sendOrderCheckingEmail, sendOrderRefundDelayedEmail } from "@/lib/order-status-mail";
 
 // Orders placed in the Telegram bot hear their outcome in the chat (never throws; web orders skip it).
 const tgTell = (o: { id: string; source?: string | null }) => (o.source === "telegram" ? tgNotifyOrder(o.id) : Promise.resolve(false));
@@ -151,6 +152,7 @@ export async function fulfilClaimedOrder(order: ClaimedOrder, hooks: FulfilHooks
           `Order ${order.id} (${order.biller_name} ${sym}${amountLocal.toLocaleString()} ${currency})\nVend outcome unknown after error: ${errMsg}\nCheck the ${providerLabel()} dashboard for reference ${reference}: refund (${hooks.paymentLabel}) if NOT delivered.`
         );
         await waOnNeedsReview(order as any);
+        await sendOrderCheckingEmail(order as any);
         await tgTell(order);
         return { outcome: "needs_review" };
       }
@@ -165,6 +167,7 @@ export async function fulfilClaimedOrder(order: ClaimedOrder, hooks: FulfilHooks
         `Order ${order.id} (${order.biller_name} ${sym}${amountLocal.toLocaleString()} ${currency})\n${hooks.paymentLabel}\nError: ${errMsg}`
       );
       await waOnFailedRefunded(order as any);
+      await sendOrderRefundEmail(order as any);
       await tgTell(order);
       return { outcome: "refunded" };
     } catch (refundErr: any) {
@@ -177,6 +180,7 @@ export async function fulfilClaimedOrder(order: ClaimedOrder, hooks: FulfilHooks
         `Order ${order.id}\nVend error: ${errMsg}\nRefund error: ${refundErr?.message}\n${hooks.paymentLabel}`
       );
       await waOnNeedsReview(order as any);
+      await sendOrderRefundDelayedEmail(order as any);
       await tgTell(order);
       return { outcome: "refund_failed" };
     }
