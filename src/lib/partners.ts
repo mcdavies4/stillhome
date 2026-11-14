@@ -5,6 +5,7 @@
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
 import { createHash, createHmac, randomBytes } from "node:crypto";
 import { flwBase, flwExtraHeaders } from "@/lib/flutterwave";
+import { vtPay, vtStatus, vtRequestId } from "@/lib/vtpass";
 
 // ------------------------------------------------------------------
 // Supabase (service role — bypasses RLS; never expose to the browser)
@@ -211,6 +212,56 @@ export async function flwVend(params: {
     return { ok: null, error: json?.message ?? `Ambiguous response (HTTP ${res.status}).` };
   } catch (e: any) {
     return { ok: null, error: e?.message ?? "Network error during vend." };
+  }
+}
+
+// ------------------------------------------------------------------
+// Partner vend provider. Partners can use VTpass while the website uses Paybeta.
+// PARTNER_BILLS_PROVIDER=vtpass (default) | flutterwave.
+// Partner biller_code / item_code are VTpass codes (serviceID / variation_code) when vtpass is used.
+// ------------------------------------------------------------------
+
+export async function partnerVend(params: {
+  orderId: string;
+  orderCreatedAt: string;
+  billerCode: string;
+  itemCode: string;
+  identifier: string;
+  amountNgn: number;
+}): Promise<VendResult> {
+  const provider = (process.env.PARTNER_BILLS_PROVIDER ?? "vtpass").trim().toLowerCase();
+  if (provider !== "vtpass") {
+    return flwVend({
+      reference: `NOLGIC-${params.orderId}`,
+      billerCode: params.billerCode,
+      itemCode: params.itemCode,
+      identifier: params.identifier,
+      amountNgn: params.amountNgn,
+    });
+  }
+
+  // Stable across retries: built from the order's creation time, not "now", so a retry can never double-vend.
+  const reference = vtRequestId(params.orderId, new Date(params.orderCreatedAt));
+  try {
+    const r = await vtPay({
+      identifier: params.identifier,
+      amountLocal: params.amountNgn,
+      itemCode: params.itemCode,
+      billerCode: params.billerCode,
+      reference,
+    });
+    return { ok: true, token: r.extra ?? null, flwRef: r.flw_ref || reference };
+  } catch (e: any) {
+    if (e?.notVended) return { ok: false, error: e.message ?? "Vend rejected by provider." };
+    // Unclear answer: ask VTpass what happened before deciding anything.
+    try {
+      const s = await vtStatus(reference);
+      if (s.state === "success") return { ok: true, token: s.token, flwRef: reference };
+      if (s.state === "failed") return { ok: false, error: s.detail || "Vend failed at provider." };
+    } catch {
+      /* status unavailable: stays ambiguous */
+    }
+    return { ok: null, error: e?.message ?? "Ambiguous vend response." };
   }
 }
 
