@@ -15,7 +15,7 @@
 import {
   requirePartner,
   priceOrder,
-  flwVend,
+  partnerVend,
   queueWebhookEvent,
   supabaseAdmin,
   publicOrder,
@@ -127,9 +127,9 @@ export async function POST(req: Request) {
       });
     }
 
-    const reference = `NOLGIC-${order.id}`;
-    const result = await flwVend({
-      reference,
+    const result = await partnerVend({
+      orderId: order.id,
+      orderCreatedAt: order.created_at,
       billerCode: String(body.biller_code),
       itemCode: String(body.item_code),
       identifier: String(body.identifier),
