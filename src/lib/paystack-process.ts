@@ -39,9 +39,12 @@ export async function confirmPaystackPayment(orderId: string): Promise<PsConfirm
   }
   if (tx.status !== "success") return { state: "unpaid", note: tx.status || "no status" };
 
-  // Never vend on an underpayment or a wrong-currency charge.
+  // Never vend on an underpayment or a wrong-currency charge. Paystack can add its own card charge to what the customer
+  // pays (the "customer pays fees" setting), so a payment above the expected total is accepted, up to Paystack's ₦2,000
+  // cap plus ₦1 of rounding. Anything else is held for review.
   const expectedKobo = Math.round((Number(order.amount_ngn) + Number(order.service_fee_local ?? 0)) * 100);
-  if (tx.currency !== "NGN" || tx.amountKobo !== expectedKobo) {
+  const maxKobo = expectedKobo + 200_000 + 100;
+  if (tx.currency !== "NGN" || tx.amountKobo < expectedKobo || tx.amountKobo > maxKobo) {
     await db
       .from("orders")
       .update({
