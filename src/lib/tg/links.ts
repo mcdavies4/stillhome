@@ -64,7 +64,7 @@ ${extra.tokens.map((t) => `<code>${esc(t)}</code>`).join("\n")}` : "";
   return null;
 }
 
-export async function tgLinksSweep(): Promise<{ checked: number; sent: number }> {
+export async function tgLinksSweep(deadline?: number): Promise<{ checked: number; sent: number }> {
   if (!telegramConfigured()) return { checked: 0, sent: 0 };
   const db = supabaseAdmin();
   const since = new Date(Date.now() - 9 * 86400_000).toISOString();
@@ -72,6 +72,7 @@ export async function tgLinksSweep(): Promise<{ checked: number; sent: number }>
   const open = (links ?? []).filter((l: any) => !(FINAL[l.kind as LinkKind] ?? []).includes(l.last ?? "")).slice(0, 60);
   let sent = 0;
   for (const l of open as any[]) {
+    if (deadline && Date.now() >= deadline) break; // the rest waits for the next sweep
     try {
       const kind = l.kind as LinkKind;
       const prev: string | null = l.last ?? null;

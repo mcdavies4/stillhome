@@ -66,6 +66,9 @@ export function estimateCommission(s: Settings, product: ProductKey, bill: numbe
   return r2((bill * pct) / 100);
 }
 export const estimateProcessorFee = (s: Settings, total: number) => r2(Math.min(s.processor.cap, (total * s.processor.pct) / 100));
+// Paystack (Nigeria, local cards): 1.5% of the whole payment, +₦100 on payments of ₦2,500 and above, capped at ₦2,000.
+// Used until Paystack's own fee is stored on the order (it is now saved when a payment is confirmed).
+export const estimatePaystackFee = (total: number) => r2(Math.min(2000, total * 0.015 + (total >= 2500 ? 100 : 0)));
 
 export type Econ = {
   id: string; at: string; product: ProductKey; item: string; email: string | null;
@@ -77,7 +80,7 @@ export function econOfOrder(o: OrderRow, s: Settings): Econ {
   const product = productOf(o);
   const commission = o.commission_ngn != null ? n(o.commission_ngn) : estimateCommission(s, product, bill, o.biller_code);
   const processorActual = o.processor_fee_ngn != null;
-  const processor = processorActual ? n(o.processor_fee_ngn) : estimateProcessorFee(s, bill + fee);
+  const processor = processorActual ? n(o.processor_fee_ngn) : o.payment_provider === "paystack" ? estimatePaystackFee(bill + fee) : estimateProcessorFee(s, bill + fee);
   return { id: o.id, at: o.created_at, product, item: o.biller_name ?? "", email: o.email, bill, fee, commission, processor, income: r2(fee + commission), gross: r2(fee + commission - processor), processorActual };
 }
 

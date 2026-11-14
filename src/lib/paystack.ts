@@ -92,11 +92,13 @@ export async function verifyTransaction(reference: string): Promise<{
   amountKobo: number;
   currency: string;
   reference: string;
+  feeKobo: number;
 }> {
-  const r = await ps<{ data: { status: string; amount: number; currency: string; reference?: string } }>(
+  const r = await ps<{ data: { status: string; amount: number; currency: string; reference?: string; fees?: number | null } }>(
     `/transaction/verify/${encodeURIComponent(reference)}`
   );
-  return { status: String(r.data.status ?? "").toLowerCase(), amountKobo: Number(r.data.amount), currency: String(r.data.currency ?? "").toUpperCase(), reference: String(r.data.reference ?? "") };
+  // `fees` is what Paystack actually charged us on this payment, in kobo (0 if Paystack hasn't reported it yet).
+  return { status: String(r.data.status ?? "").toLowerCase(), amountKobo: Number(r.data.amount), currency: String(r.data.currency ?? "").toUpperCase(), reference: String(r.data.reference ?? ""), feeKobo: Math.max(0, Math.round(Number(r.data.fees ?? 0))) };
 }
 
 /** "No such transaction yet" is an answer (the customer has not paid), not an error. */

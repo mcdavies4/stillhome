@@ -246,12 +246,13 @@ export async function broadcastSweep(budgetMs = 35_000): Promise<number> {
 // ───────────────────────── reminders the customer chose ─────────────────────────
 
 /** Sends every reminder that is due. Once-only reminders switch off; repeating ones move on to their next date. */
-export async function remindersSweep(): Promise<{ checked: number; sent: number }> {
+export async function remindersSweep(deadline?: number): Promise<{ checked: number; sent: number }> {
   const db = supabaseAdmin();
   const nowIso = new Date().toISOString();
   const { data: due } = await db.from("tg_reminders").select("*").eq("active", true).lt("due_at", nowIso).limit(100);
   let sent = 0;
   for (const r of (due ?? []) as any[]) {
+    if (deadline && Date.now() >= deadline) break; // still due: the next sweep sends it
     const prevDue: string = r.due_at;
     const next = r.repeat_days ? dueAt(Number(r.repeat_days)).toISOString() : null;
     // Claim it first: a second sweep at the same moment finds due_at already moved (or active off) and skips it.
