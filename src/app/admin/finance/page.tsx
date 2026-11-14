@@ -92,7 +92,7 @@ export default function FinancePage() {
     try {
       const res = await api("/api/admin/finance/sync", { method: "POST", body: JSON.stringify(range) });
       const j = await res.json().catch(() => null);
-      setMsg(res.ok ? `Done. Commission saved on ${j.commissionSet} orders, real Flutterwave fees fetched for ${j.feesFetched}.${j.remaining ? ` ${j.remaining} more to fetch: press Sync again.` : ""}` : j?.error ?? "Sync failed");
+      setMsg(res.ok ? `Done. Commission saved on ${j.commissionSet} orders, real card fees (Paystack) fetched for ${j.feesFetched}.${j.remaining ? ` ${j.remaining} more to fetch: press Sync again.` : ""}` : j?.error ?? "Sync failed");
       await load();
     } finally { setBusy(null); }
   }
@@ -165,7 +165,7 @@ export default function FinancePage() {
         {(r.notes.processorEstimated > 0 || !r.notes.econColumns) && (
           <div className={`${card} mt-4 flex items-center justify-between gap-4 flex-wrap`}>
             <p className="text-sm text-haze max-w-xl">
-              {r.notes.processorEstimated} of {t.orders} orders still use an <b>estimated</b> Flutterwave fee, and commission is calculated from your rates. Sync pulls the real Flutterwave fee for each payment and locks in today's commission rates on those orders.
+              {r.notes.processorEstimated} of {t.orders} orders still use an <b>estimated</b> card fee, and commission is calculated from your rates. Sync pulls the real Paystack fee for each payment and locks in today's commission rates on those orders.
             </p>
             <button type="button" className={btn} onClick={sync} disabled={busy === "sync" || !r.notes.econColumns}>{busy === "sync" ? "Syncing…" : "Sync real fees"}</button>
           </div>
@@ -181,7 +181,7 @@ export default function FinancePage() {
         <h2 className="font-display font-bold text-lg mt-8">By product</h2>
         <div className="mt-3 overflow-x-auto rounded-2xl border border-line">
           <table className="w-full text-sm">
-            <thead className="bg-sunk text-haze text-left"><tr>{["Product", "Orders", "Our fees", "Commission", "Processor", "Gross profit"].map((h, i) => <th key={h} className={`px-3 py-2 font-medium ${i ? "text-right" : ""}`}>{h}</th>)}</tr></thead>
+            <thead className="bg-sunk text-haze text-left"><tr>{["Product", "Orders", "Our fees", "Commission", "Card fees", "Gross profit"].map((h, i) => <th key={h} className={`px-3 py-2 font-medium ${i ? "text-right" : ""}`}>{h}</th>)}</tr></thead>
             <tbody>
               {r.products.filter((p) => p.orders > 0).map((p) => (
                 <tr key={p.key} className="border-t border-line"><td className="px-3 py-2">{p.label}</td><td className="px-3 py-2 text-right">{p.orders}</td><td className="px-3 py-2 text-right">{ngn(p.fees)}</td><td className="px-3 py-2 text-right">{ngn(p.commission)}</td><td className="px-3 py-2 text-right">{ngn(p.processor)}</td><td className="px-3 py-2 text-right font-medium">{ngn(p.gross)}</td></tr>
@@ -279,7 +279,7 @@ function SettingsTab({ r, api, reload }: { r: Report; api: (p: string, i?: Reque
   const rate = useMemo(() => [
     ["Airtime commission %", ["commission", "airtime_pct"]], ["Data commission %", ["commission", "data_pct"]], ["TV commission %", ["commission", "tv_pct"]],
     ["Electricity commission %", ["commission", "electricity_pct"]], ["Exam PIN commission %", ["commission", "exam_pct"]], ["JAMB flat commission ₦", ["commission", "jamb_flat"]],
-    ["Flutterwave fee % (estimate)", ["processor", "pct"]], ["Flutterwave fee cap ₦", ["processor", "cap"]],
+    ["Old Flutterwave orders: fee % (estimate)", ["processor", "pct"]], ["Old Flutterwave orders: fee cap ₦", ["processor", "cap"]],
   ] as [string, string[]][], []);
   const get = (path: string[]) => path.reduce((o: any, k) => o?.[k], s) as number;
 
@@ -296,8 +296,8 @@ function SettingsTab({ r, api, reload }: { r: Report; api: (p: string, i?: Reque
   return (
     <div className="mt-6 grid gap-4">
       <div className={card}>
-        <p className="font-medium">Paybeta commission and Flutterwave fees</p>
-        <p className="text-sm text-haze mt-1">These start as estimates. Compare them with your Paybeta statement and Flutterwave settlement, then correct them here. Real Flutterwave fees replace the estimate when you press Sync.</p>
+        <p className="font-medium">Paybeta commission and card fees (Paystack)</p>
+        <p className="text-sm text-haze mt-1">These start as estimates. Compare them with your Paybeta statement and your Paystack settlement, then correct them here. Real Paystack fees replace the estimate when you press Sync. The Flutterwave % above only affects old orders paid before the move to Paystack.</p>
         <div className="mt-3 grid grid-cols-1 sm:grid-cols-4 gap-3">
           {rate.map(([l, p]) => <label key={l} className="text-xs text-haze">{l}<input inputMode="decimal" className={`${input} mt-1`} value={String(get(p))} onChange={(e) => num(p, e.target.value)} /></label>)}
         </div>

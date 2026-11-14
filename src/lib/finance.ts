@@ -6,7 +6,7 @@
 //   fee          our service fee on top (orders.service_fee_local).
 //   commission   what Paybeta pays us on the sale. Calculated from the rates in Settings until the Paybeta statement confirms them.
 //   income       fee + commission (our real revenue).
-//   processor    Flutterwave's charge. Real figure once Synced, estimate before that.
+//   processor    the card processor's charge (Paystack for new orders, Flutterwave for older ones). Real figure once Synced, estimate before that.
 //   gross profit income - processor fees.
 //   net profit   gross profit - expenses (and - VAT on income, if the business is VAT-registered).
 
