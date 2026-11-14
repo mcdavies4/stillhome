@@ -226,37 +226,43 @@ export async function tgNotifyBulk(bulkId: string, opts: { force?: boolean } = {
  * Catches everything the live notifications couldn't: a token that arrived late, an order someone resolved in the
  * admin, a message Telegram refused once. Cheap to run often. Also prunes old update ids.
  */
-export async function tgSweep(): Promise<{ checked: number; sent: number }> {
+export async function tgSweep(budgetMs = 22_000): Promise<{ checked: number; sent: number }> {
   if (!telegramConfigured()) return { checked: 0, sent: 0 };
+  // cron-job.org gives up on a request after 30 s, so the sweep stops starting new work at ~22 s and finishes the rest on
+  // the next run (everything here is safe to repeat).
+  const deadline = Date.now() + budgetMs;
   const db = supabaseAdmin();
   const since = new Date(Date.now() - 3 * 86400_000).toISOString();
   const { data: rows } = await db.from("tg_orders").select("order_id,notified").gte("created_at", since).limit(200);
   const open = (rows ?? []).filter((r: any) => r.notified !== "done").slice(0, 60);
   let sent = 0;
-  for (const r of open) {
-    try {
-      const { data: o } = await db.from("orders").select("*").eq("id", r.order_id).maybeSingle();
-      if (!o) continue;
-      if (o.status === "fulfilled" && !o.flw_token && expectsToken(o)) await tryRecoverToken(db, o);
-      if (await tgNotifyOrder(r.order_id)) sent++;
-    } catch (e: any) {
-      console.error("[telegram] sweep item failed", r.order_id, e?.message ?? e);
-    }
+  for (let i = 0; i < open.length && Date.now() < deadline; i += 6) {
+    await Promise.all(open.slice(i, i + 6).map(async (r: any) => {
+      try {
+        const { data: o } = await db.from("orders").select("*").eq("id", r.order_id).maybeSingle();
+        if (!o) return;
+        if (o.status === "fulfilled" && !o.flw_token && expectsToken(o)) await tryRecoverToken(db, o);
+        if (await tgNotifyOrder(r.order_id)) sent++;
+      } catch (e: any) {
+        console.error("[telegram] sweep item failed", r.order_id, e?.message ?? e);
+      }
+    }));
   }
   // Bulk batches that settled (or got stuck) while no one was looking.
   try {
     const { data: bl } = await db.from("tg_bulk").select("bulk_id,notified").gte("created_at", since).limit(100);
     for (const r of ((bl ?? []) as any[]).filter((x) => x.notified !== "settled").slice(0, 40)) {
+      if (Date.now() >= deadline) break;
       if (await tgNotifyBulk(r.bulk_id)) sent++;
     }
   } catch (e: any) {
     console.error("[telegram] bulk sweep failed", e?.message ?? e);
   }
-  const links = await tgLinksSweep();
+  const links = await tgLinksSweep(deadline);
   sent += links.sent;
   // The customer's own reminders, and any announcement still going out. Each is isolated: one failing never stops the rest.
-  try { const r = await remindersSweep(); sent += r.sent; } catch (e: any) { console.error("[telegram] reminders sweep failed", e?.message ?? e); }
-  try { sent += await broadcastSweep(); } catch (e: any) { console.error("[telegram] broadcast sweep failed", e?.message ?? e); }
+  try { const r = await remindersSweep(deadline); sent += r.sent; } catch (e: any) { console.error("[telegram] reminders sweep failed", e?.message ?? e); }
+  try { const left = deadline - Date.now(); if (left > 3000) sent += await broadcastSweep(Math.min(6000, left - 1000)); } catch (e: any) { console.error("[telegram] broadcast sweep failed", e?.message ?? e); }
   await db.from("tg_updates").delete().lt("created_at", new Date(Date.now() - 3 * 86400_000).toISOString());
   return { checked: open.length + links.checked, sent };
 }

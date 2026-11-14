@@ -72,7 +72,7 @@ export async function confirmPaystackPayment(orderId: string): Promise<PsConfirm
   // Claim atomically: only one caller (webhook or poll) gets to flip pending_payment -> paid.
   const { data: claimed } = await db
     .from("orders")
-    .update({ status: "paid", paystack_reference: expectedRef })
+    .update({ status: "paid", paystack_reference: expectedRef, ...(tx.feeKobo > 0 ? { processor_fee_ngn: tx.feeKobo / 100, econ_at: new Date().toISOString() } : {}) })
     .eq("id", order.id)
     .eq("status", "pending_payment")
     .select("*")
