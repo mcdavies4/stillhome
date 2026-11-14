@@ -61,16 +61,22 @@ export function ngnFeeSettings(): FeeSettings {
   return feeSettingsFor("electricity");
 }
 
+// Card processing: Paystack charges a flat ₦100 on payments of ₦2,500 and above. That charge is added to the
+// customer's fee on those orders, so the flat cost is theirs, not ours. Set NEXT_PUBLIC_NG_CARD_FEE_NGN=0 to switch it off.
+export const PROCESSING_FEE_NGN = num(process.env.NEXT_PUBLIC_NG_CARD_FEE_NGN, 100);
+export const PROCESSING_FROM_NGN = num(process.env.NEXT_PUBLIC_NG_CARD_FEE_FROM, 2500);
+
 export function ngnServiceFee(amountNgn: number, kind: FeeKind = "electricity"): number {
   const { pct, min, max } = feeSettingsFor(kind);
   const raw = Math.round((Number(amountNgn) * pct) / 100);
-  return Math.min(max, Math.max(min, raw));
+  const service = Math.min(max, Math.max(min, raw));
+  return Number(amountNgn) + service >= PROCESSING_FROM_NGN ? service + PROCESSING_FEE_NGN : service;
 }
 
 /** Lowest and highest fee across all kinds — for the "What does it cost?" line. */
 export function ngnFeeRange(): { from: number; to: number } {
   const all = (["airtime_data", "tv", "electricity"] as FeeKind[]).map(feeSettingsFor);
-  return { from: Math.min(...all.map((s) => s.min)), to: Math.max(...all.map((s) => s.max)) };
+  return { from: Math.min(...all.map((s) => s.min)), to: Math.max(...all.map((s) => s.max)) + PROCESSING_FEE_NGN };
 }
 
 /** Biggest naira order allowed. Applies on top of the country limit. */
