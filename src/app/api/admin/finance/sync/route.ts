@@ -1,11 +1,12 @@
 // POST /api/admin/finance/sync {from,to} — fills in the two real-money columns on delivered orders in the period:
 //   commission_ngn      snapshot of the commission at the rates in Settings (so changing a rate later doesn't rewrite history)
-//   processor_fee_ngn   what Flutterwave actually charged, read from Flutterwave's own record of the payment (app_fee)
-// Touches nothing about payments or delivery. Up to 40 Flutterwave lookups per click; press again if "remaining" is above 0.
+//   processor_fee_ngn   what the card processor actually charged: Paystack's own record of the payment (fees), or Flutterwave's (app_fee) for older orders
+// Touches nothing about payments or delivery. Up to 40 lookups per click; press again if "remaining" is above 0.
 import { NextResponse } from "next/server";
 import { adminGate } from "@/lib/admin-auth";
 import { supabaseAdmin } from "@/lib/supabase";
 import { flwBase, flwExtraHeaders } from "@/lib/flutterwave";
+import { verifyTransaction } from "@/lib/paystack";
 import { dayAfterIso, dayStartIso, estimateCommission, loadSettings, logAudit, periodFrom, productOf } from "@/lib/finance";
 
 export const dynamic = "force-dynamic";
@@ -35,7 +36,7 @@ export async function POST(req: Request) {
   const now = new Date().toISOString();
 
   const { data: orders, error } = await db.from("orders")
-    .select("id,biller_code,item_code,biller_name,amount_ngn,service_fee_local,flw_pay_id,commission_ngn,processor_fee_ngn,is_test")
+    .select("id,biller_code,item_code,biller_name,amount_ngn,service_fee_local,flw_pay_id,payment_provider,paystack_reference,commission_ngn,processor_fee_ngn,is_test")
     .eq("status", "fulfilled").gte("created_at", dayStartIso(from)).lt("created_at", dayAfterIso(to)).limit(1000);
   if (error) return NextResponse.json({ error: "Couldn't read orders. Has migration 0020 been run in Supabase?" }, { status: 500 });
 
@@ -56,6 +57,21 @@ export async function POST(req: Request) {
       if (fee == null) return;
       const { error: e } = await db.from("orders").update({ processor_fee_ngn: fee, econ_at: now }).eq("id", o.id);
       if (!e) feesFetched++;
+    }));
+  }
+
+  // Paystack orders: Paystack's own record of the fee for each payment (kobo, converted to naira).
+  const psTodo = ((orders ?? []) as any[]).filter((o) => o.processor_fee_ngn == null && o.payment_provider === "paystack" && o.paystack_reference && !o.is_test).slice(0, 40);
+  for (let i = 0; i < psTodo.length; i += 4) {
+    await Promise.all(psTodo.slice(i, i + 4).map(async (o) => {
+      try {
+        const tx = await verifyTransaction(String(o.paystack_reference));
+        if (!(tx.feeKobo > 0)) return;
+        const { error: e } = await db.from("orders").update({ processor_fee_ngn: tx.feeKobo / 100, econ_at: now }).eq("id", o.id);
+        if (!e) feesFetched++;
+      } catch (e: any) {
+        console.error("[finance] paystack fee lookup failed", o.id, e?.message ?? e);
+      }
     }));
   }
 
