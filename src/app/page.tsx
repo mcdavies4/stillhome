@@ -17,6 +17,7 @@ import { readAcctEmail } from "@/lib/account-client";
 import { GIFTS, OCCASIONS, NOTE_MAX, NAME_MAX, cleanText, clearGift, isGiftKey, rememberGift } from "@/lib/gift";
 import BackSoon, { isBackSoon } from "@/components/BackSoon";
 import { notPower } from "@/lib/not-power";
+import { guessNetwork, localPhone, parseNetwork } from "@/lib/bulk-shared";
 import FeatureShowcase, { NewStrip } from "@/components/FeatureShowcase";
 
 type BillerItem = {
@@ -308,6 +309,16 @@ export default function Home() {
     }
     return Array.from(m.entries()).sort((a, b) => niceName(a[0]).localeCompare(niceName(b[0])));
   }, [tabItems]);
+
+  // Hint only, never a switch: numbers can be ported, so the customer always chooses the network.
+  const guessedName = useMemo(() => {
+    if (tab !== "airtime" && tab !== "data") return null;
+    const local = localPhone(identifier);
+    const net = local ? guessNetwork(local) : null;
+    if (!net) return null;
+    const hit = providers.find(([n]) => parseNetwork(n.replace(/\b(airtime|vtu|data)\b/gi, "")) === net);
+    return hit ? hit[0] : null;
+  }, [tab, identifier, providers]);
 
   const plans = useMemo(() => {
     const group = providers.find(([n]) => n === provider)?.[1] ?? [];
@@ -673,6 +684,12 @@ export default function Home() {
                       inputMode={isNoValidate(item) ? "tel" : "numeric"}
                       enterKeyHint="go" maxLength={isNoValidate(item) ? 16 : 20}
                       autoComplete={isNoValidate(item) ? "tel" : "off"} autoCorrect="off" autoCapitalize="off" spellCheck={false} />
+                    {guessedName && provider && guessedName !== provider && (
+                      <p className="text-sm text-haze mt-2">
+                        This number looks like <strong className="text-paper">{niceName(guessedName)}</strong>.{" "}
+                        <button type="button" className="underline text-tungsten" onClick={() => chooseProvider(guessedName)}>Switch to it</button>
+                      </p>
+                    )}
 
                     {!fixedAmount && (
                       <div className="mt-3">
