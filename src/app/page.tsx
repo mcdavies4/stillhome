@@ -783,11 +783,14 @@ export default function Home() {
             {ANY_PAY && validated && (
               <div className="tear bg-sunk rounded-b-3xl px-5 sm:px-6 pt-6 pb-5 sm:pb-6 stub-in">
                 {inNgn && billAmount > 0 && (
-                  <dl className="text-sm space-y-1.5 num">
-                    <div className="flex justify-between gap-4"><dt className="text-haze truncate">{item?.name}</dt><dd className="shrink-0">{fmtLocal(billAmount)}</dd></div>
-                    <div className="flex justify-between gap-4"><dt className="text-haze">Service fee</dt><dd className="shrink-0">{fmtLocal(ngnFee)}</dd></div>
-                    <div className="flex justify-between gap-4 items-baseline pt-2.5 mt-2.5 border-t border-line"><dt className="font-semibold">Total</dt><dd className="font-display font-bold text-2xl">{fmtLocal(ngnTotal)}</dd></div>
-                  </dl>
+                  // All-in price first: the total you pay is the headline, and the fee is shown in small print beneath it.
+                  <div className="num">
+                    <p className="text-sm text-haze">You pay</p>
+                    <p className="font-display font-bold text-3xl">{fmtLocal(ngnTotal)}</p>
+                    <p className="text-xs text-haze mt-1.5 break-words">
+                      {item?.name} {fmtLocal(billAmount)} · includes {fmtLocal(ngnFee)} service fee
+                    </p>
+                  </div>
                 )}
                 <p className="mt-4 text-xs text-haze leading-relaxed">
                   {email
