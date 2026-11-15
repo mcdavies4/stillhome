@@ -16,6 +16,7 @@ import { ngnPayProvider, flwPayConfigured, initializePayment as flwInitialize } 
 import { ngnServiceFee, ngnMaxOrder, feeKindOf } from "@/lib/ngn-fee";
 import { orderIsTest } from "@/lib/test-mode";
 import { walletCovers } from "@/lib/capacity";
+import { findRecentPaidDuplicate, duplicateMessage } from "@/lib/dup-guard";
 import { BACK_SOON_MESSAGE } from "@/lib/back-soon";
 import { pfmNoValidate, pfmIsExam } from "@/lib/payforme-shared";
 import { checkExamItem } from "@/lib/payforme";
@@ -75,6 +76,10 @@ export async function createTelegramOrder(i: { chatId: number; email: string; it
         }
       }
     }
+
+    // Same meter / number, same plan and amount, already paid a few minutes ago? Don't take it twice.
+    const dup = await findRecentPaidDuplicate({ identifier: i.identifier, billerCode: i.item.biller_code, itemCode: i.item.item_code, amountNgn: amount });
+    if (dup) return { ok: false, error: duplicateMessage(dup.id) };
 
     // Can we deliver right now? Asked before a payment link exists, so nobody pays for something we can't vend.
     const cover = await walletCovers(amount, { context: billerName, failover: true });
