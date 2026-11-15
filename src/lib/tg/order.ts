@@ -77,7 +77,7 @@ export async function createTelegramOrder(i: { chatId: number; email: string; it
     }
 
     // Can we deliver right now? Asked before a payment link exists, so nobody pays for something we can't vend.
-    const cover = await walletCovers(amount, { context: billerName });
+    const cover = await walletCovers(amount, { context: billerName, failover: true });
     if (!cover.ok) return { ok: false, error: BACK_SOON_MESSAGE };
 
     const db = supabaseAdmin();

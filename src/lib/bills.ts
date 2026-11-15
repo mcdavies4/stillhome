@@ -171,11 +171,95 @@ export async function checkBillStatus(reference: string): Promise<BillStatus> {
 
 // ───────────────────────── wallet ─────────────────────────
 
-export async function getBalance(currency: string = "NGN"): Promise<number> {
-  const p = activeProvider();
+export async function balanceOf(p: BillsProviderName, currency: string = "NGN"): Promise<number> {
   if (p === "vtpass" || p === "paybeta") {
     if (currency.toUpperCase() !== "NGN") throw new flw.FlwError(`${providerLabel(p)} wallet is NGN only`);
     return p === "vtpass" ? vtp.vtBalance() : pb.pbBalance();
   }
   return flw.getBalance(currency);
+}
+
+export async function getBalance(currency: string = "NGN"): Promise<number> {
+  return balanceOf(activeProvider(), currency);
+}
+
+// ───────────────────────── failover ─────────────────────────
+// An optional second provider, used ONLY when the first has definitely not delivered:
+//   (a) its wallet can't fund the vend, so nothing was attempted, or
+//   (b) it rejected the purchase request synchronously (notVended), so nothing was bought.
+// Never used on a timeout or an unclear answer, because the first provider may still deliver and a
+// second vend would then be a double delivery. Off unless BILLS_FAILOVER_PROVIDER names a different,
+// configured provider.
+
+const ALL_PROVIDERS: BillsProviderName[] = ["flutterwave", "vtpass", "paybeta"];
+
+export function providerConfigured(p: BillsProviderName): boolean {
+  if (p === "vtpass") return vtp.vtpassConfigured();
+  if (p === "paybeta") return pb.paybetaConfigured();
+  return !!(process.env.FLW_SECRET_KEY ?? "").trim();
+}
+
+export function failoverProvider(): BillsProviderName | null {
+  const v = (process.env.BILLS_FAILOVER_PROVIDER ?? "").trim().toLowerCase();
+  const p = ALL_PROVIDERS.find((x) => x === v) ?? null;
+  if (!p || p === activeProvider()) return null;
+  return providerConfigured(p) ? p : null;
+}
+
+export function makeReferenceFor(p: BillsProviderName, orderId: string): string {
+  if (p === "paybeta") return pb.pbReference(orderId);
+  return p === "vtpass" ? vtp.vtRequestId(orderId) : `NOLGIC-${orderId}`;
+}
+
+export async function catalogueOf(p: BillsProviderName, country: string = "NG"): Promise<flw.BillerItem[]> {
+  if (p === "vtpass") return country.toUpperCase() === "NG" ? vtp.vtGetBillCategories() : [];
+  if (p === "paybeta") return country.toUpperCase() === "NG" ? pb.pbGetBillCategories() : [];
+  return flw.getBillCategories(country);
+}
+
+export async function validateVia(p: BillsProviderName, itemCode: string, billerCode: string, identifier: string): Promise<flw.ValidateResult> {
+  if (p === "vtpass") return vtp.vtValidate(itemCode, billerCode, identifier);
+  if (p === "paybeta") return pb.pbValidate(itemCode, billerCode, identifier);
+  return flw.validateCustomer(itemCode, billerCode, identifier);
+}
+
+/**
+ * Finds the same product on another provider's catalogue. Codes differ between providers, so the match is
+ * by biller name (letters and digits only), then by kind (airtime or not) and, for fixed-price plans, by price.
+ * Returns null unless exactly one product matches: a guess here would sell the wrong plan.
+ */
+export function findEquivalentItem(
+  src: { biller_name: string; item_code: string; amount: number },
+  catalogue: flw.BillerItem[]
+): flw.BillerItem | null {
+  const norm = (s: string) => String(s ?? "").toLowerCase().replace(/[^a-z0-9]/g, "");
+  // Airtime names carry provider-specific suffixes ("MTN Airtime" vs "MTN Airtime VTU"), so compare the network only.
+  const wantAirtime = src.item_code === "airtime";
+  const key = (s: string) => (wantAirtime ? norm(String(s ?? "").toLowerCase().replace(/\b(airtime|vtu|top ?up|recharge)\b/g, "")) : norm(s));
+  const name = key(src.biller_name);
+  if (!name) return null;
+  const amount = Math.round(Number(src.amount));
+  const hits = catalogue.filter((i) => {
+    if (key(i.biller_name) !== name) return false;
+    const isAirtime = i.item_code === "airtime" || !!i.is_airtime;
+    if (isAirtime !== wantAirtime) return false;
+    if (wantAirtime) return true;
+    return !i.amount || Math.round(i.amount) === amount; // fixed-price plans must match the price paid; variable (0) matches any
+  });
+  return hits.length === 1 ? hits[0] : null;
+}
+
+/** Vend on a named provider (used by failover; createBillPayment is this for the active provider). */
+export async function vendVia(p: BillsProviderName, params: Parameters<typeof createBillPayment>[0]): Promise<flw.BillPaymentResult> {
+  if (p === "vtpass") return vtp.vtPay(params);
+  if (p === "paybeta") return pb.pbPay(params);
+  return flw.createBillPayment(params);
+}
+
+/** Highest NGN wallet across the active provider and the failover provider, for "can we deliver this order?" */
+export async function bestNgnBalance(): Promise<number> {
+  const alt = failoverProvider();
+  const reads = [balanceOf(activeProvider()), alt ? balanceOf(alt) : Promise.reject(new Error("no failover"))];
+  const values = await Promise.all(reads.map((r) => r.catch(() => -Infinity)));
+  return Math.max(...values);
 }

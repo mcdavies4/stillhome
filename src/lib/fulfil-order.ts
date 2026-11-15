@@ -5,6 +5,8 @@
 //
 // Flow: wallet check -> vend (idempotent reference = NOLGIC-<order id>) ->
 //   success   : store token, receipt email + WhatsApp, status=fulfilled
+//   failover  : if the primary can't fund the vend, or rejects it outright (nothing bought), the same product is
+//               tried once on BILLS_FAILOVER_PROVIDER. Never on a timeout or unclear answer (double-delivery risk).
 //   failure   : requery the bills provider before refunding:
 //                 success   -> treat as fulfilled
 //                 ambiguous -> needs_review, alert founder, NO refund
@@ -12,7 +14,11 @@
 //                 (refund itself fails -> refund_failed + alert)
 
 import { supabaseAdmin } from "@/lib/supabase";
-import { createBillPayment, checkBillStatus, getBalance, FlwError, makeReference, billsTestMode, providerLabel, activeProvider } from "@/lib/bills";
+import {
+  checkBillStatus, FlwError, makeReference, makeReferenceFor, providerLabel, activeProvider, balanceOf, billsTestMode,
+  failoverProvider, catalogueOf, findEquivalentItem, validateVia, vendVia,
+  type BillsProviderName, type BillPaymentResult,
+} from "@/lib/bills";
 import { getCountry } from "@/lib/countries";
 import { alertFounder } from "@/lib/alerts";
 import { sendReceipt } from "@/lib/whatsapp";
@@ -41,6 +47,8 @@ export interface ClaimedOrder {
   [k: string]: unknown;
 }
 
+type Route = { provider: BillsProviderName; reference: string; biller_code: string; item_code: string; biller_name: string };
+
 export interface FulfilHooks {
   /** Refund the customer in full via the rail they paid with. Throw if it fails. */
   refund: () => Promise<void>;
@@ -64,8 +72,16 @@ export async function fulfilClaimedOrder(order: ClaimedOrder, hooks: FulfilHooks
   const sym = country.currencySymbol;
   const amountLocal = Number(order.amount_ngn);
   // Provider-specific, and stable across replays (reuses a reference already stored on the order).
-  const reference = makeReference(order.id, order.flw_reference);
-  let vendAttempted = false;
+  const primary = activeProvider();
+  const primaryRoute: Route = {
+    provider: primary,
+    reference: makeReference(order.id, order.flw_reference),
+    biller_code: order.biller_code,
+    item_code: order.item_code,
+    biller_name: order.biller_name,
+  };
+  // The last route we actually sent a vend on (null = nothing was sent, so nothing can have been bought).
+  const state: { route: Route | null; failedOver: boolean } = { route: null, failedOver: false };
 
   const deliver = async (token: string | null) => {
     if (order.email) {
@@ -78,39 +94,91 @@ export async function fulfilClaimedOrder(order: ClaimedOrder, hooks: FulfilHooks
     await tgTell(order);
   };
 
-  try {
-    // Fail fast if the float for THIS currency can't cover the vend — live only.
-    const isTestMode = billsTestMode() && activeProvider() === "flutterwave"; // VTpass sandbox has a real (fake-money) balance
-    const balance = isTestMode
-      ? Number.MAX_SAFE_INTEGER
-      : await getBalance(currency).catch(() => Number.MAX_SAFE_INTEGER);
-
+  // Can `p`'s wallet fund this vend? Returns the shortfall message, or null. Live only (test modes skip it).
+  const fundsProblem = async (p: BillsProviderName): Promise<string | null> => {
+    if (p === "flutterwave" && billsTestMode()) return null; // Flutterwave TEST key: nothing real to fund
+    const balance = await balanceOf(p, currency).catch(() => Number.MAX_SAFE_INTEGER);
     if (balance < amountLocal) {
-      throw new FlwError(
-        `Insufficient ${currency} wallet balance (${sym}${balance.toLocaleString()}) for ${sym}${amountLocal.toLocaleString()} vend`
-      );
+      return `Insufficient ${currency} wallet balance (${sym}${balance.toLocaleString()}) for ${sym}${amountLocal.toLocaleString()} vend`;
     }
-    const lowWater = Number(process.env[`LOW_BALANCE_${currency}`] ?? (currency === "NGN" ? "100000" : "500"));
-    if (balance !== Number.MAX_SAFE_INTEGER && balance - amountLocal < lowWater) {
+    if (p === primary && balance !== Number.MAX_SAFE_INTEGER) {
+      const lowWater = Number(process.env[`LOW_BALANCE_${currency}`] ?? (currency === "NGN" ? "100000" : "500"));
+      if (balance - amountLocal < lowWater) {
+        alertFounder(
+          `${currency} wallet running low`,
+          `${currency} wallet will be ~${sym}${(balance - amountLocal).toLocaleString()} after order ${order.id}. Top up.`
+        );
+      }
+    }
+    return null;
+  };
+
+  // The same product on the failover provider, if one is configured, can be funded, and matches exactly.
+  // Returns null (no failover) on any doubt, so the order falls back to the normal refund path.
+  const failoverRoute = async (): Promise<Route | null> => {
+    if (state.failedOver) return null;
+    const alt = failoverProvider();
+    if (!alt) return null;
+    if (await fundsProblem(alt)) return null;
+    const item = await catalogueOf(alt, countryCode)
+      .then((cat) => findEquivalentItem({ biller_name: order.biller_name, item_code: order.item_code, amount: amountLocal }, cat))
+      .catch(() => null);
+    if (!item) return null;
+    // Meters and smartcards get a name check first; airtime has nothing to check.
+    if (item.item_code !== "airtime" && !item.is_airtime) {
+      const v = await validateVia(alt, item.item_code, item.biller_code, order.identifier).catch(() => null);
+      if (!v || v.response_code !== "00") return null;
+    }
+    return {
+      provider: alt,
+      reference: makeReferenceFor(alt, order.id),
+      biller_code: item.biller_code,
+      item_code: item.item_code,
+      biller_name: item.biller_name,
+    };
+  };
+
+  // Sends one vend. A synchronous "not bought" rejection moves the order to the failover route, once.
+  const vendOn = async (r: Route): Promise<BillPaymentResult> => {
+    state.route = r;
+    await db.from("orders").update({ flw_reference: r.reference }).eq("id", order.id);
+    try {
+      return await vendVia(r.provider, {
+        country: countryCode,
+        identifier: order.identifier,
+        amountLocal,
+        billerName: r.biller_name,
+        itemCode: r.item_code,
+        billerCode: r.biller_code,
+        reference: r.reference,
+        phone: order.recipient_whatsapp ?? null,
+      });
+    } catch (e: any) {
+      if (!e?.notVended) throw e;
+      const alt = await failoverRoute();
+      if (!alt) throw e;
+      state.failedOver = true;
       alertFounder(
-        `${currency} wallet running low`,
-        `${currency} wallet will be ~${sym}${(balance - amountLocal).toLocaleString()} after order ${order.id}. Top up.`
+        "Order moved to backup provider",
+        `Order ${order.id} (${order.biller_name} ${sym}${amountLocal.toLocaleString()}) was rejected by ${providerLabel(r.provider)} (${e?.message ?? "no detail"}), so it is being sent through ${providerLabel(alt.provider)}. No action needed unless it fails.`
       );
+      return vendOn(alt);
+    }
+  };
+
+  try {
+    // Start on the primary. If its wallet can't fund the vend, nothing has been sent, so the failover is safe to try.
+    let start: Route = primaryRoute;
+    const shortfall = await fundsProblem(primary);
+    if (shortfall) {
+      const alt = await failoverRoute();
+      if (!alt) throw new FlwError(shortfall);
+      state.failedOver = true;
+      start = alt;
     }
 
-    await db.from("orders").update({ flw_reference: reference }).eq("id", order.id);
-
-    vendAttempted = true;
-    const result = await createBillPayment({
-      country: countryCode,
-      identifier: order.identifier,
-      amountLocal,
-      billerName: order.biller_name,
-      itemCode: order.item_code,
-      billerCode: order.biller_code,
-      reference,
-      phone: order.recipient_whatsapp ?? null,
-    });
+    const result = await vendOn(start);
+    const reference = state.route!.reference;
 
     let token: string | null = (result as any)?.extra ?? null;
     if (!token) {
@@ -129,7 +197,9 @@ export async function fulfilClaimedOrder(order: ClaimedOrder, hooks: FulfilHooks
     const errMsg = e instanceof FlwError ? e.message : String(e);
     console.error(`[fulfil] order ${order.id} failed:`, errMsg);
 
-    if (vendAttempted) {
+    const attempted = state.route;
+    const reference = attempted?.reference ?? primaryRoute.reference;
+    if (attempted) {
       let outcome = await requeryOutcome(reference);
       // The provider flatly rejected the purchase request (4xx / "product not enabled" / "wallet empty"):
       // nothing was bought. If the status lookup is merely inconclusive, that is enough to refund.
@@ -149,7 +219,7 @@ export async function fulfilClaimedOrder(order: ClaimedOrder, hooks: FulfilHooks
         await db.from("orders").update({ status: "needs_review", error: `AMBIGUOUS: ${errMsg}` }).eq("id", order.id);
         await alertFounder(
           "🔍 Order needs review — do NOT ignore",
-          `Order ${order.id} (${order.biller_name} ${sym}${amountLocal.toLocaleString()} ${currency})\nVend outcome unknown after error: ${errMsg}\nCheck the ${providerLabel()} dashboard for reference ${reference}: refund (${hooks.paymentLabel}) if NOT delivered.`
+          `Order ${order.id} (${order.biller_name} ${sym}${amountLocal.toLocaleString()} ${currency})\nVend outcome unknown after error: ${errMsg}\nCheck the ${providerLabel(attempted!.provider)} dashboard for reference ${reference}: refund (${hooks.paymentLabel}) if NOT delivered.`
         );
         await waOnNeedsReview(order as any);
         await sendOrderCheckingEmail(order as any);

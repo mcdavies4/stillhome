@@ -1,4 +1,4 @@
-import { billsTestMode, getBalance, providerLabel } from "@/lib/bills";
+import { billsTestMode, getBalance, bestNgnBalance, providerLabel } from "@/lib/bills";
 import { alertFounder } from "@/lib/alerts";
 
 // "Can we deliver this order right now?" Asked BEFORE the customer is sent to pay, so nobody pays for something we cannot
@@ -16,32 +16,37 @@ const OK_TTL_MS = 45_000;
 const FAIL_TTL_MS = 20_000;
 const ALERT_EVERY_MS = 30 * 60_000;
 
-let cache: { at: number; balance: number | null } | null = null;
+// One cache per reading, so a bulk check and a single-order check never share a number.
+const caches = new Map<string, { at: number; balance: number | null }>();
 let lastAlert = -Infinity;
 
-export const resetCapacityCache = () => { cache = null; lastAlert = -Infinity; };
+export const resetCapacityCache = () => { caches.clear(); lastAlert = -Infinity; };
 
-async function readBalance(now: number, read: () => Promise<number>): Promise<number | null> {
+async function readBalance(key: string, now: number, read: () => Promise<number>): Promise<number | null> {
+  const cache = caches.get(key);
   if (cache && now - cache.at < (cache.balance === null ? FAIL_TTL_MS : OK_TTL_MS)) return cache.balance;
   let balance: number | null = null;
   try {
     const v = Number(await read());
     balance = Number.isFinite(v) ? v : null;
   } catch { balance = null; }
-  cache = { at: now, balance };
+  caches.set(key, { at: now, balance });
   return balance;
 }
 
 export async function walletCovers(
   neededNgn: number,
-  opts: { now?: number; read?: () => Promise<number>; testMode?: boolean; alert?: (subject: string, text: string) => unknown; context?: string } = {}
+  opts: { now?: number; read?: () => Promise<number>; testMode?: boolean; alert?: (subject: string, text: string) => unknown; context?: string; failover?: boolean } = {}
 ): Promise<Capacity> {
   const now = opts.now ?? Date.now();
   if (opts.testMode ?? billsTestMode()) return { ok: true };
   if (!Number.isFinite(neededNgn) || neededNgn <= 0) return { ok: true };
 
   const reserve = Math.max(0, Number(process.env.WALLET_RESERVE_NGN ?? 0) || 0);
-  const balance = await readBalance(now, opts.read ?? (() => getBalance("NGN")));
+  // Single orders can fall back to the failover provider's wallet (see fulfil-order); bulk and exams cannot yet.
+  const balance = opts.failover
+    ? await readBalance("best", now, opts.read ?? bestNgnBalance)
+    : await readBalance("active", now, opts.read ?? (() => getBalance("NGN")));
   if (balance === null) return { ok: true }; // can't tell: don't block a customer on a guess
   if (balance >= neededNgn + reserve) return { ok: true };
 
