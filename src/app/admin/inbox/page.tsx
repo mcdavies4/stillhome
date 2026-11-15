@@ -16,6 +16,7 @@ export default function Inbox() {
   const [msgs, setMsgs] = useState<Msg[]>([]);
   const [reply, setReply] = useState("");
   const [busy, setBusy] = useState(false);
+  const [drafting, setDrafting] = useState(false);
   const [note, setNote] = useState("");
 
   useEffect(() => { try { setAuthed(sessionStorage.getItem("nolgic-admin")); } catch {} setReady(true); }, []);
@@ -51,6 +52,17 @@ export default function Inbox() {
       setReply(""); setNote(d.emailed ? "Sent and emailed." : "Saved. The email didn’t send (it will still show in their chat).");
       open(sel);
     } catch {} finally { setBusy(false); }
+  }
+  // Fills the reply box with an AI draft. Nothing is sent: read it, edit it, then press Send reply.
+  async function draft() {
+    if (!sel) return;
+    setDrafting(true); setNote("");
+    try {
+      const r = await api("/api/admin/support/draft", { method: "POST", body: JSON.stringify({ id: sel }) });
+      const d = await r.json();
+      if (!r.ok) { setNote(d.error ?? "Couldn't draft a reply."); return; }
+      setReply(d.draft); setNote("Draft loaded. Read and edit it before you send.");
+    } catch { setNote("Couldn't draft a reply. Try again."); } finally { setDrafting(false); }
   }
   async function setStatus(action: "close" | "reopen") {
     if (!sel) return;
@@ -117,6 +129,7 @@ export default function Inbox() {
                 className="mt-4 w-full rounded-xl bg-sunk border border-line p-3 focus:outline-none focus:ring-2 focus:ring-cta/60" aria-label="Reply" />
               <div className="mt-3 flex items-center gap-3">
                 <button type="button" onClick={send} disabled={busy || !reply.trim()} className="h-11 px-6 rounded-xl bg-cta text-oncta font-display font-bold disabled:opacity-40">{busy ? "Sending…" : "Send reply"}</button>
+                <button type="button" onClick={draft} disabled={drafting || busy} className="h-11 px-5 rounded-xl border border-line font-semibold disabled:opacity-40">{drafting ? "Drafting…" : "Draft with AI"}</button>
                 {note && <span className="text-sm text-haze" role="status">{note}</span>}
               </div>
             </>
