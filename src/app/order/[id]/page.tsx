@@ -265,6 +265,10 @@ export default function OrderPage() {
         <ShareReceipt order={{ biller_name: order.biller_name, identifier: order.identifier, identifier_label: order.identifier_label, amount_ngn: order.amount_ngn, flw_token: order.flw_token, customer_name: order.customer_name }} />
       )}
 
+      {(order.status === "fulfilled" || order.status === "failed_refunded" || order.status === "refunded") && (
+        <a href={`/api/receipt?id=${order.id}`} className="mt-4 inline-flex h-11 px-5 items-center rounded-xl border border-paper/25 font-semibold hover:bg-sunk">Download receipt (PDF)</a>
+      )}
+
       {order.status === "fulfilled" && <SaveAfterPay billerName={order.biller_name} identifier={order.identifier} />}
       {order.status === "fulfilled" && <ReferCard orderId={order.id} />}
 
