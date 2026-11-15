@@ -240,7 +240,9 @@ export function findEquivalentItem(
   if (!name) return null;
   const amount = Math.round(Number(src.amount));
   const hits = catalogue.filter((i) => {
-    if (key(i.biller_name) !== name) return false;
+    // Flutterwave lists every airtime network under biller_name "AIRTIME" and names the network in name/short_name.
+    const names = wantAirtime ? [i.biller_name, i.name, i.short_name] : [i.biller_name];
+    if (!names.some((n) => key(n) === name)) return false;
     const isAirtime = i.item_code === "airtime" || !!i.is_airtime;
     if (isAirtime !== wantAirtime) return false;
     if (wantAirtime) return true;
