@@ -104,7 +104,7 @@ export async function POST(req: Request) {
     }
 
     // Can we deliver this right now? Asked before any payment link exists, so nobody pays for something we can't vend.
-    const cover = await walletCovers(Number(amountLocal), { context: `${b.billerName}` });
+    const cover = await walletCovers(Number(amountLocal), { context: `${b.billerName}`, failover: true });
     if (!cover.ok) return NextResponse.json({ error: BACK_SOON_MESSAGE, busy: true }, { status: 503, headers: { "Retry-After": "120" } });
 
     // ---- Naira path (Nigeria domestic, paid via Paystack) -----------------
