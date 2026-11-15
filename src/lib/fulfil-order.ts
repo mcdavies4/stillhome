@@ -25,6 +25,7 @@ import { sendReceipt } from "@/lib/whatsapp";
 import { waOnFulfilled, waOnFailedRefunded, waOnNeedsReview } from "@/lib/wa/hooks";
 import { tgNotifyOrder } from "@/lib/tg/notify";
 import { sendOrderRefundEmail, sendOrderCheckingEmail, sendOrderRefundDelayedEmail } from "@/lib/order-status-mail";
+import { providerHealth, noteBreakerOpen } from "@/lib/breaker";
 
 // Orders placed in the Telegram bot hear their outcome in the chat (never throws; web orders skip it).
 const tgTell = (o: { id: string; source?: string | null }) => (o.source === "telegram" ? tgNotifyOrder(o.id) : Promise.resolve(false));
@@ -120,6 +121,7 @@ export async function fulfilClaimedOrder(order: ClaimedOrder, hooks: FulfilHooks
     const alt = failoverProvider();
     if (!alt) return null;
     if (await fundsProblem(alt)) return null;
+    if ((await providerHealth(alt)).open) return null; // don't hand an order to a backup that is failing too
     const item = await catalogueOf(alt, countryCode)
       .then((cat) => findEquivalentItem({ biller_name: order.biller_name, item_code: order.item_code, amount: amountLocal }, cat))
       .catch(() => null);
@@ -170,11 +172,19 @@ export async function fulfilClaimedOrder(order: ClaimedOrder, hooks: FulfilHooks
     // Start on the primary. If its wallet can't fund the vend, nothing has been sent, so the failover is safe to try.
     let start: Route = primaryRoute;
     const shortfall = await fundsProblem(primary);
-    if (shortfall) {
+    // Breaker: the primary has been failing recently. Only skip it if the backup can take the order;
+    // nothing is sent to the primary in that case, so nothing can be vended twice.
+    const health = shortfall ? null : await providerHealth(primary);
+    const down = !!health?.open;
+    if (shortfall || down) {
       const alt = await failoverRoute();
-      if (!alt) throw new FlwError(shortfall);
-      state.failedOver = true;
-      start = alt;
+      if (alt) {
+        state.failedOver = true;
+        start = alt;
+        if (down && health) noteBreakerOpen(primary, health, alt.provider);
+      } else if (shortfall) {
+        throw new FlwError(shortfall);
+      }
     }
 
     const result = await vendOn(start);
