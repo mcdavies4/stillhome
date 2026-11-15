@@ -6,6 +6,7 @@ import { quoteGbp, gbp, money } from "@/lib/fx";
 import { getCountry, isSupportedCountry, DEFAULT_COUNTRY } from "@/lib/countries";
 import { rateLimit } from "@/lib/ratelimit";
 import { velocityCheck } from "@/lib/velocity";
+import { findRecentPaidDuplicate, duplicateMessage } from "@/lib/dup-guard";
 import { alertFounder } from "@/lib/alerts";
 import { initializeTransaction, paystackConfigured } from "@/lib/paystack";
 import { ngnPayProvider, flwPayConfigured, initializePayment as flwInitialize } from "@/lib/flwpay";
@@ -135,6 +136,10 @@ export async function POST(req: Request) {
       const waiver = await planFeeWaiver({ email: b.email, ref: b.ref, feeNgn: ngnServiceFee(amountNgn, feeKind) });
       const feeNgn = waiver.fee;
       const totalNgn = amountNgn + feeNgn;
+
+      // Same meter / number, same plan, same amount, already paid for a few minutes ago? Don't take it twice.
+      const dupN = await findRecentPaidDuplicate({ identifier, billerCode: b.billerCode, itemCode: b.itemCode, amountNgn });
+      if (dupN) return NextResponse.json({ error: duplicateMessage(dupN.id), duplicate: true, orderId: dupN.id }, { status: 409 });
 
       // Velocity check works in pence; approximate with the NGN rate (reference only).
       const approxPence = Math.round((totalNgn / Number(process.env.NGN_PER_GBP ?? country.fxDefault)) * 100);
