@@ -25,10 +25,12 @@ const markup = (kb?: Keyboard) =>
 async function call<T = any>(method: string, body: Record<string, unknown>): Promise<T> {
   const t = token();
   if (!t) throw new TgError("TELEGRAM_BOT_TOKEN is not set");
+  // A 20 second limit, so a stalled Telegram call returns an error instead of hanging the request.
   const res = await fetch(`https://api.telegram.org/bot${t}/${method}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
+    signal: AbortSignal.timeout(20000),
   });
   const j: any = await res.json().catch(() => null);
   if (!res.ok || !j?.ok) {
