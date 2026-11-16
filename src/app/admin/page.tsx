@@ -141,6 +141,26 @@ export default function Admin() {
         <div className="flex items-center gap-3 text-xs text-haze font-mono">
           <span>{loading ? "refreshing…" : `updated ${new Date(stats.generated_at).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}`}</span>
           <button onClick={load} className="underline underline-offset-2 hover:text-paper">Refresh</button>
+          <button
+            onClick={async () => {
+              try {
+                const r = await api("/api/admin/customers/export?scope=all");
+                if (!r.ok) throw new Error("export failed");
+                const blob = await r.blob();
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement("a");
+                a.href = url;
+                a.download = `nolgic-customers-${new Date().toISOString().slice(0, 10)}.csv`;
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                URL.revokeObjectURL(url);
+              } catch {
+                setErr("Couldn't export customers. Try again.");
+              }
+            }}
+            className="underline underline-offset-2 hover:text-paper"
+          >Export customers</button>
           <button onClick={() => logout()} className="underline underline-offset-2 hover:text-paper">Log out</button>
         </div>
       </div>
