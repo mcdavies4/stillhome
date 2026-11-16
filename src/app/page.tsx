@@ -393,7 +393,7 @@ export default function Home() {
     document.getElementById("pay")?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
-  async function pay() {
+  async function pay(method: "card" | "transfer" = "card") {
     if (!item || !validated) return;
     track("checkout_click", tab);
     setBusy("pay"); setError(null);
@@ -404,6 +404,7 @@ export default function Home() {
         body: JSON.stringify({
           country,
           payIn: inNgn ? "ngn" : "gbp",
+          ...(method === "transfer" ? { payMethod: "transfer" } : {}),
           email,
           billerCode: item.biller_code,
           itemCode: item.item_code,
@@ -802,10 +803,16 @@ export default function Home() {
                     ? <>Your receipt and token will be emailed to <span className="text-paper font-medium break-all">{email}</span> and shown on the next page. Check it&rsquo;s right.</>
                     : "Add your email above. We email your receipt and token there, and show them on the next page too."}
                 </p>
-                <button onClick={pay} disabled={payDisabled}
+                <button onClick={() => pay("card")} disabled={payDisabled}
                   className="mt-3 w-full h-14 rounded-2xl bg-cta text-oncta font-display font-bold text-lg hover:brightness-105 active:brightness-95 disabled:opacity-40 disabled:hover:brightness-100 num">
                   {busy === "pay" ? "Opening secure checkout…" : inNgn && billAmount > 0 ? `Pay ${fmtLocal(ngnTotal)}` : "Continue to payment"}
                 </button>
+                {inNgn && billAmount > 0 && (
+                  <button type="button" onClick={() => pay("transfer")} disabled={payDisabled}
+                    className="mt-2 w-full h-12 rounded-2xl border border-paper/25 font-semibold hover:bg-sunk disabled:opacity-40">
+                    Pay by bank transfer
+                  </button>
+                )}
                 <p className="text-haze text-xs mt-3 text-center leading-relaxed">
                   {inNgn
                     ? "Pay by card, bank transfer or USSD. If delivery fails, you’re refunded automatically."
