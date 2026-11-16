@@ -68,6 +68,31 @@ export default function Admin() {
   const [err, setErr] = useState<string | null>(null);
   const [expFrom, setExpFrom] = useState("");
   const [expTo, setExpTo] = useState("");
+  const [testTo, setTestTo] = useState("");
+  const [sendMsg, setSendMsg] = useState<string | null>(null);
+
+  async function sendThanks(mode: "preview" | "test" | "send") {
+    setSendMsg(null);
+    try {
+      let body: Record<string, unknown> = { mode, from: expFrom || null, to: expTo || null, testTo };
+      if (mode === "send") {
+        const pre = await api("/api/admin/customers/send", { method: "POST", body: JSON.stringify({ mode: "preview", from: expFrom || null, to: expTo || null }) }).then((r) => r.json());
+        const n = pre.count ?? 0;
+        if (!n) { setSendMsg("No buyers in this range."); return; }
+        const typed = window.prompt(`This sends the thank-you email to ${n} buyers. Type SEND ${n} to continue.`);
+        if (typed !== `SEND ${n}`) { setSendMsg("Cancelled. Nothing was sent."); return; }
+        body = { ...body, confirm: typed };
+      }
+      const r = await api("/api/admin/customers/send", { method: "POST", body: JSON.stringify(body) });
+      const d = await r.json();
+      if (!r.ok) { setSendMsg(d.error ?? "Something went wrong."); return; }
+      if (mode === "preview") setSendMsg(`${d.count} buyers in this range.`);
+      else if (mode === "test") setSendMsg(d.sent ? "Test sent. Check your inbox." : "Test failed. Check Resend.");
+      else setSendMsg(`Sent ${d.sent}. Failed ${d.failed}.`);
+    } catch {
+      setSendMsg("Couldn't reach the server.");
+    }
+  }
 
   async function exportCustomers(scope: "all" | "buyers") {
     try {
@@ -173,6 +198,18 @@ export default function Admin() {
           <button onClick={() => logout()} className="underline underline-offset-2 hover:text-paper">Log out</button>
         </div>
       </div>
+
+      <section className="mb-6 rounded-xl border border-haze/30 p-4 text-sm">
+        <div className="font-bold mb-2">Thank-you email to buyers</div>
+        <p className="text-xs text-haze mb-3">Goes to fulfilled buyers only, in the date range above. Sender: hello@mail.nolgic.com.</p>
+        <div className="flex flex-wrap items-center gap-2">
+          <button onClick={() => sendThanks("preview")} className="px-3 py-1.5 rounded-lg border border-haze/40 text-xs font-bold">Count buyers</button>
+          <input type="email" value={testTo} onChange={(e) => setTestTo(e.target.value)} placeholder="your email for a test" className="bg-transparent border border-haze/40 rounded px-2 py-1 text-xs w-56" aria-label="Test email address" />
+          <button onClick={() => sendThanks("test")} className="px-3 py-1.5 rounded-lg border border-haze/40 text-xs font-bold">Send test</button>
+          <button onClick={() => sendThanks("send")} className="px-3 py-1.5 rounded-lg bg-tungsten text-white dark:text-night text-xs font-bold">Send to buyers</button>
+        </div>
+        {sendMsg && <p className="mt-2 text-xs">{sendMsg}</p>}
+      </section>
 
       <div className="flex gap-1 mb-8 p-1 rounded-xl bg-panel border border-line w-fit">
         {tabBtn("overview", "Overview", needs)}
