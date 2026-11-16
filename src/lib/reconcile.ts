@@ -376,40 +376,86 @@ export function reconSubject(r: ReconResult): string {
 export function reconEmailHtml(r: ReconResult): string {
   const site = (process.env.NEXT_PUBLIC_APP_URL ?? "https://www.nolgic.com").replace(/\/+$/, "");
   const statusLine = (m: Record<string, number>) => Object.entries(m).map(([k, v]) => `${k.replace(/_/g, " ")} ${v}`).join(", ") || "none";
-  const row = (k: string, v: string, sub = "", bold = false) => `<tr><td style="padding:7px 0;color:#667085">${k}${sub ? `<div style="font-size:12px;color:#98a2b3">${sub}</div>` : ""}</td><td style="text-align:right;vertical-align:top;padding:7px 0;${bold ? "font-weight:700;" : ""}">${v}</td></tr>`;
-  const head = r.verdict === "attention"
-    ? `<p style="color:#b42318;font-weight:700;font-size:16px;margin:0 0 8px">${r.flags.length} thing${r.flags.length === 1 ? "" : "s"} to look at</p><ul style="padding-left:18px;margin:0">${r.flags.map((f) => `<li style="margin-bottom:8px;color:${f.level === "danger" ? "#b42318" : "#8a6100"}">${f.level === "danger" ? "<b>Act now:</b> " : ""}${esc(f.msg)}</li>`).join("")}</ul>`
+  const NAVY = "#14172B", AMBER = "#FFB627", CREAM = "#FAF8F3", MUTE = "#667085", LINE = "#EAE7DD";
+
+  // The verdict card: one colour, one sentence, so the first thing you read is the answer.
+  const card = r.verdict === "attention"
+    ? { bg: "#FDECEA", edge: "#B42318", title: `${r.flags.length} thing${r.flags.length === 1 ? "" : "s"} to look at`, sub: "Money in does not match our records. Read these first." }
     : r.verdict === "quiet"
-      ? `<p style="color:#344054;font-weight:700;font-size:16px;margin:0">Quiet day. Nobody paid, so there was nothing to match.</p>`
-      : `<p style="color:#067647;font-weight:700;font-size:16px;margin:0">All clear. Every payment has an order, and every delivered order is known to the bills provider.</p>`;
-  const money = r.paid.count || r.received.ngn ? `
-    ${row("Paid orders", `${r.paid.count}`, `${ngn(r.paid.ngn)} collected from customers (our records)`)}
-    ${row("Received by payment providers", ngn(r.received.ngn), [r.received.flutterwave != null ? `Flutterwave ${ngn(r.received.flutterwave)}` : "", r.received.paystack != null ? `Paystack ${ngn(r.received.paystack)}` : ""].filter(Boolean).join(", "))}
-    ${row("Delivered value", ngn(r.money.bill), "passes through to the bills provider, not our income")}
-    ${row("Our fees", ngn(r.money.fees))}
-    ${row("Commission", ngn(r.money.commission), r.money.processorEstimated ? "estimated from your rates" : "")}
-    ${row("Payment fees", `−${ngn(r.money.processor)}`, r.money.processorEstimated ? "estimated until you press Sync in Finance" : "confirmed")}
-    ${row("Gross profit", ngn(r.money.gross), "", true)}
-    ${r.refunded.count ? row("Refunded to customers", `${r.refunded.count} (${ngn(r.refunded.ngn)})`) : ""}` : "";
-  const products = r.products.length ? `<p style="color:#667085;font-size:13px;margin:12px 0 0">${r.products.map((p) => `${esc(p.label)}: ${p.orders} (${ngn(p.bill)})`).join(" &nbsp;|&nbsp; ")}</p>` : "";
-  const checks = r.checks.map((c) => `<li style="margin-bottom:3px;color:${c.ran ? "#475467" : "#8a6100"}">${c.ran ? "✓" : "–"} ${esc(c.name)}: ${esc(c.note)}</li>`).join("");
+      ? { bg: "#F2F4F7", edge: "#667085", title: "Quiet day", sub: "Nobody paid today, so there was nothing to match." }
+      : { bg: "#E8FBF2", edge: "#067647", title: "All clear", sub: "Every payment matches an order, and every delivered order is known to the bills provider." };
+
+  const flagRows = r.flags.map((f) => {
+    const dot = f.level === "danger" ? "#B42318" : "#B54708";
+    return `<tr><td style="padding:10px 0;border-top:1px solid #F3C4C0;vertical-align:top;width:18px"><span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:${dot};margin-top:6px"></span></td>
+      <td style="padding:10px 0;border-top:1px solid #F3C4C0;color:#101828;font-size:14px;line-height:1.5">${f.level === "danger" ? `<b style="color:#B42318">Act now.</b> ` : ""}${esc(f.msg)}</td></tr>`;
+  }).join("");
+
+  const flagsBlock = r.verdict === "attention"
+    ? `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:14px">${flagRows}</table>` : "";
+
+  const tile = (label: string, value: string, sub = "") => `<td style="width:33%;padding:0 4px 0 0;vertical-align:top">
+      <div style="background:#FFFFFF;border:1px solid ${LINE};border-radius:12px;padding:14px 12px">
+        <div style="font-size:11px;letter-spacing:.04em;text-transform:uppercase;color:${MUTE}">${label}</div>
+        <div style="font-size:20px;font-weight:700;color:${NAVY};margin-top:4px">${value}</div>
+        ${sub ? `<div style="font-size:12px;color:${MUTE};margin-top:2px">${sub}</div>` : ""}
+      </div></td>`;
+
+  const tiles = r.paid.count || r.received.ngn
+    ? `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:18px"><tr>
+        ${tile("Paid orders", `${r.paid.count}`, `${ngn(r.paid.ngn)} from customers`)}
+        ${tile("Received", ngn(r.received.ngn), [r.received.flutterwave != null ? `Flutterwave ${ngn(r.received.flutterwave)}` : "", r.received.paystack != null ? `Paystack ${ngn(r.received.paystack)}` : ""].filter(Boolean).join(" · "))}
+        ${tile("Gross profit", ngn(r.money.gross), r.money.processorEstimated ? "payment fees estimated" : "payment fees confirmed")}
+      </tr></table>` : "";
+
+  const line = (k: string, v: string, sub = "", bold = false) => `<tr><td style="padding:9px 0;border-top:1px solid ${LINE};color:${MUTE};font-size:14px">${k}${sub ? `<div style="font-size:12px;color:#98a2b3;margin-top:2px">${sub}</div>` : ""}</td><td style="padding:9px 0;border-top:1px solid ${LINE};text-align:right;vertical-align:top;font-size:14px;color:${NAVY};${bold ? "font-weight:700;" : ""}">${v}</td></tr>`;
+
+  const breakdown = r.paid.count || r.received.ngn ? `
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:18px">
+      ${line("Delivered value", ngn(r.money.bill), "passes through to the bills provider, not our income")}
+      ${line("Our fees", ngn(r.money.fees))}
+      ${line("Commission", ngn(r.money.commission), r.money.processorEstimated ? "estimated from your rates" : "")}
+      ${line("Payment fees", `−${ngn(r.money.processor)}`, r.money.processorEstimated ? "estimated until you press Sync in Finance" : "confirmed")}
+      ${r.refunded.count ? line("Refunded to customers", `${r.refunded.count} (${ngn(r.refunded.ngn)})`) : ""}
+    </table>` : "";
+
+  const orders = `
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:18px">
+      ${line("Orders", `${r.orders.total}`, esc(statusLine(r.orders.byStatus)))}
+      ${line("Bulk airtime batches", `${r.bulk.total}`, esc(statusLine(r.bulk.byStatus)))}
+      ${r.wallet.ngn != null ? line(`${esc(r.wallet.provider)} wallet`, `<span style="${r.wallet.low ? "color:#B42318;font-weight:700" : ""}">${ngn(r.wallet.ngn)}</span>`, r.wallet.low ? "low, top it up" : "") : ""}
+    </table>`;
+
+  const products = r.products.length
+    ? `<p style="margin:14px 0 0;font-size:13px;color:${MUTE}">${r.products.map((p) => `<span style="display:inline-block;background:#FFFFFF;border:1px solid ${LINE};border-radius:999px;padding:3px 10px;margin:0 6px 6px 0">${esc(p.label)} · ${p.orders} · ${ngn(p.bill)}</span>`).join("")}</p>` : "";
+
+  const checks = r.checks.map((c) => `<li style="margin-bottom:4px;color:${c.ran ? "#475467" : "#B54708"}">${c.ran ? "✓" : "–"} ${esc(c.name)}: ${esc(c.note)}</li>`).join("");
+
+  const button = (href: string, label: string, primary = false) => `<a href="${href}" style="display:inline-block;padding:10px 16px;margin:0 8px 8px 0;border-radius:999px;font-size:13px;font-weight:600;text-decoration:none;${primary ? `background:${NAVY};color:#FFFFFF;` : `background:#FFFFFF;color:${NAVY};border:1px solid ${LINE};`}">${label}</a>`;
+
   return `
-  <div style="font-family:system-ui,Arial,sans-serif;max-width:580px;margin:0 auto;color:#101828">
-    <h2 style="margin:0 0 2px">Nolgic daily check</h2>
-    <p style="color:#667085;margin:0 0 16px">${prettyDay(r.date)}, Nigeria time</p>
-    ${head}
-    <hr style="border:none;border-top:1px solid #eaecf0;margin:18px 0"/>
-    <table style="width:100%;border-collapse:collapse;font-size:15px">
-      ${row("Orders", `${r.orders.total}`, esc(statusLine(r.orders.byStatus)))}
-      ${row("Bulk airtime batches", `${r.bulk.total}`, esc(statusLine(r.bulk.byStatus)))}
-      ${money}
-      ${r.wallet.ngn != null ? row(`${esc(r.wallet.provider)} wallet`, `<span style="${r.wallet.low ? "color:#b42318;font-weight:700" : ""}">${ngn(r.wallet.ngn)}</span>`, r.wallet.low ? "low, top it up" : "") : ""}
-    </table>
-    ${products}
-    <p style="color:#667085;font-size:13px;margin:18px 0 6px">What was checked</p>
-    <ul style="padding-left:18px;margin:0;font-size:13px">${checks}</ul>
-    <p style="margin:18px 0 0;font-size:13px"><a href="${site}/admin/finance" style="color:#175cd3">Finance</a> &nbsp;|&nbsp; <a href="${site}/admin" style="color:#175cd3">Admin</a> &nbsp;|&nbsp; <a href="${site}/admin/feedback" style="color:#175cd3">Abandoned orders</a></p>
-    <p style="color:#98a2b3;font-size:12px;margin-top:14px">Read-only report. It changes nothing. Profit figures are not accounting advice.</p>
+  <div style="background:${CREAM};padding:24px 12px;font-family:system-ui,-apple-system,Segoe UI,Arial,sans-serif;color:#101828">
+   <div style="max-width:580px;margin:0 auto">
+    <div style="background:${NAVY};border-radius:16px 16px 0 0;padding:20px 22px">
+      <div style="font-size:13px;color:${AMBER};font-weight:700;letter-spacing:.02em">Nolgic daily check</div>
+      <div style="font-size:14px;color:#D8D9E4;margin-top:4px">${prettyDay(r.date)}, Nigeria time</div>
+    </div>
+    <div style="background:#FFFFFF;border-radius:0 0 16px 16px;border:1px solid ${LINE};border-top:none;padding:20px 22px">
+      <div style="background:${card.bg};border-left:4px solid ${card.edge};border-radius:10px;padding:14px 16px">
+        <div style="font-size:18px;font-weight:700;color:${card.edge}">${card.title}</div>
+        <div style="font-size:14px;color:#344054;margin-top:4px;line-height:1.5">${card.sub}</div>
+        ${flagsBlock}
+      </div>
+      ${tiles}
+      ${breakdown}
+      ${orders}
+      ${products}
+      <p style="margin:22px 0 8px;font-size:12px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:${MUTE}">What was checked</p>
+      <ul style="padding-left:18px;margin:0;font-size:13px;line-height:1.5">${checks}</ul>
+      <div style="margin-top:22px">${button(`${site}/admin/finance`, "Open Finance", true)}${button(`${site}/admin`, "Admin")}${button(`${site}/admin/feedback`, "Abandoned orders")}</div>
+    </div>
+    <p style="color:#98a2b3;font-size:12px;text-align:center;margin:16px 0 0">Read-only report. It changes nothing. Profit figures are not accounting advice.</p>
+   </div>
   </div>`;
 }
 
