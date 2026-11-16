@@ -66,6 +66,29 @@ export default function Admin() {
   const [authed, setAuthed] = useState<string | null>(null);
   const [stats, setStats] = useState<Stats | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [expFrom, setExpFrom] = useState("");
+  const [expTo, setExpTo] = useState("");
+
+  async function exportCustomers(scope: "all" | "buyers") {
+    try {
+      const q = new URLSearchParams({ scope });
+      if (expFrom) q.set("from", expFrom);
+      if (expTo) q.set("to", expTo);
+      const r = await api(`/api/admin/customers/export?${q.toString()}`);
+      if (!r.ok) throw new Error("export failed");
+      const blob = await r.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `nolgic-customers-${scope}-${expFrom || "all"}_${expTo || "today"}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch {
+      setErr("Couldn't export customers. Check the dates and try again.");
+    }
+  }
   const [tab, setTab] = useState<"overview" | "orders" | "health">("overview");
   const [loading, setLoading] = useState(false);
 
@@ -141,26 +164,12 @@ export default function Admin() {
         <div className="flex items-center gap-3 text-xs text-haze font-mono">
           <span>{loading ? "refreshing…" : `updated ${new Date(stats.generated_at).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}`}</span>
           <button onClick={load} className="underline underline-offset-2 hover:text-paper">Refresh</button>
-          <button
-            onClick={async () => {
-              try {
-                const r = await api("/api/admin/customers/export?scope=all");
-                if (!r.ok) throw new Error("export failed");
-                const blob = await r.blob();
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement("a");
-                a.href = url;
-                a.download = `nolgic-customers-${new Date().toISOString().slice(0, 10)}.csv`;
-                document.body.appendChild(a);
-                a.click();
-                a.remove();
-                URL.revokeObjectURL(url);
-              } catch {
-                setErr("Couldn't export customers. Try again.");
-              }
-            }}
-            className="underline underline-offset-2 hover:text-paper"
-          >Export customers</button>
+          <span className="flex items-center gap-2">
+            <input type="date" value={expFrom} onChange={(e) => setExpFrom(e.target.value)} className="bg-transparent border border-haze/40 rounded px-1 py-0.5 text-paper" aria-label="From date" />
+            <input type="date" value={expTo} onChange={(e) => setExpTo(e.target.value)} className="bg-transparent border border-haze/40 rounded px-1 py-0.5 text-paper" aria-label="To date" />
+          </span>
+          <button onClick={() => exportCustomers("all")} className="underline underline-offset-2 hover:text-paper">Export all</button>
+          <button onClick={() => exportCustomers("buyers")} className="underline underline-offset-2 hover:text-paper">Export buyers</button>
           <button onClick={() => logout()} className="underline underline-offset-2 hover:text-paper">Log out</button>
         </div>
       </div>

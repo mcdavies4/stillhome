@@ -1,8 +1,10 @@
-// GET /api/admin/customers/export?scope=all|buyers
+// GET /api/admin/customers/export?scope=all|buyers&from=YYYY-MM-DD&to=YYYY-MM-DD
 // Downloads a CSV of customers, one row per email address, built from the orders table.
 // Columns: email, first_order, last_order, orders, fulfilled. No phone numbers, meter numbers or names are included.
 // scope=all (default): every email that has ever placed an order (test orders excluded).
 // scope=buyers: only emails with at least one fulfilled order.
+// from / to (optional, inclusive, UTC dates): only count orders placed in that range.
+// With scope=buyers and a range, this gives "people who bought in these days".
 // Auth: the same admin password as the rest of /api/admin. The export is logged with its row count, never its contents.
 
 import { NextResponse } from "next/server";
@@ -45,7 +47,14 @@ export async function GET(req: Request) {
   const denied = await adminGate(req);
   if (denied) return denied;
 
-  const scope = new URL(req.url).searchParams.get("scope") === "buyers" ? "buyers" : "all";
+  const params = new URL(req.url).searchParams;
+  const scope = params.get("scope") === "buyers" ? "buyers" : "all";
+  const from = params.get("from");
+  const to = params.get("to");
+  const dateOk = (d: string | null) => !d || /^\d{4}-\d{2}-\d{2}$/.test(d);
+  if (!dateOk(from) || !dateOk(to)) {
+    return NextResponse.json({ error: "Dates must be YYYY-MM-DD" }, { status: 400 });
+  }
 
   let orders: Row[];
   try {
@@ -58,6 +67,9 @@ export async function GET(req: Request) {
   const byEmail = new Map<string, Agg>();
   for (const o of orders) {
     if ((o as any).is_test) continue;
+    const day = (o.created_at ?? "").slice(0, 10);
+    if (from && day < from) continue;
+    if (to && day > to) continue;
     const email = (o.email ?? "").trim().toLowerCase();
     if (!email || !email.includes("@") || TEST_EMAILS.has(email) || email.endsWith("@example.com")) continue;
     const a = byEmail.get(email) ?? { first: o.created_at, last: o.created_at, orders: 0, fulfilled: 0 };
@@ -78,14 +90,14 @@ export async function GET(req: Request) {
   }
   const csv = "﻿" + lines.join("\n") + "\n";
 
-  console.log(`[admin/customers/export] scope=${scope} rows=${rows.length}`);
+  console.log(`[admin/customers/export] scope=${scope} from=${from ?? "-"} to=${to ?? "-"} rows=${rows.length}`);
 
   const day = new Date().toISOString().slice(0, 10);
   return new NextResponse(csv, {
     status: 200,
     headers: {
       "Content-Type": "text/csv; charset=utf-8",
-      "Content-Disposition": `attachment; filename="nolgic-customers-${scope}-${day}.csv"`,
+      "Content-Disposition": `attachment; filename="nolgic-customers-${scope}-${from ?? "all"}_${to ?? "today"}-${day}.csv"`,
       "Cache-Control": "no-store",
     },
   });
