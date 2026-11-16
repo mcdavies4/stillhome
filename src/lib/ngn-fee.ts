@@ -61,11 +61,27 @@ export function ngnFeeSettings(): FeeSettings {
   return feeSettingsFor("electricity");
 }
 
+// Promotion (e.g. Black Friday): a percentage off the service fee, for orders placed inside a date window.
+//   NEXT_PUBLIC_NG_FEE_PROMO_PCT   e.g. 50 for half off the fee (0 or unset = no promotion)
+//   NEXT_PUBLIC_NG_FEE_PROMO_FROM  e.g. 2026-11-27T00:00:00+01:00   (Nigeria time)
+//   NEXT_PUBLIC_NG_FEE_PROMO_TO    e.g. 2026-11-27T23:59:59+01:00
+// Applied after the minimum, so a ₦20 fee becomes ₦10 at 50% off. Both the server and the page read the same
+// variables and the same clock, so the fee shown is the fee charged. Redeploy after changing them.
+export function promoPct(now: number = Date.now()): number {
+  const pct = num(process.env.NEXT_PUBLIC_NG_FEE_PROMO_PCT, 0);
+  if (pct <= 0) return 0;
+  const from = Date.parse(process.env.NEXT_PUBLIC_NG_FEE_PROMO_FROM ?? "");
+  const to = Date.parse(process.env.NEXT_PUBLIC_NG_FEE_PROMO_TO ?? "");
+  if (!Number.isFinite(from) || !Number.isFinite(to) || now < from || now > to) return 0;
+  return Math.min(100, pct);
+}
+
 export function ngnServiceFee(amountNgn: number, kind: FeeKind = "electricity"): number {
   const { pct, min, max } = feeSettingsFor(kind);
   const raw = Math.round((Number(amountNgn) * pct) / 100);
   const service = Math.min(max, Math.max(min, raw));
-  return service;
+  const off = promoPct();
+  return off > 0 ? Math.round((service * (100 - off)) / 100) : service;
 }
 
 /** Lowest and highest fee across all kinds — for the "What does it cost?" line. */
