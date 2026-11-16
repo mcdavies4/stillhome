@@ -97,3 +97,18 @@ label { @apply block text-sm font-medium text-paper mb-1.5; }
 }
 .tear::before { left: -11px; clip-path: inset(0 0 0 50%); }
 .tear::after { right: -11px; clip-path: inset(0 50% 0 0); }
+
+/* Hero demo (VerifyDemo): one 7-second loop. Name check first, then the token. */
+@keyframes vd-typed { 0%,4% { opacity: 0; } 8%,100% { opacity: 1; } }
+@keyframes vd-check { 0%,30% { opacity: 0; transform: translateY(6px); } 36%,54% { opacity: 1; transform: none; } 60%,100% { opacity: 0; } }
+@keyframes vd-token { 0%,62% { opacity: 0; transform: translateY(6px); } 68%,92% { opacity: 1; transform: none; } 98%,100% { opacity: 0; } }
+@keyframes vd-bar { 0% { width: 0%; } 30% { width: 45%; } 60% { width: 100%; } 100% { width: 100%; } }
+.vd-meter { animation: vd-typed 7s ease-out infinite; }
+.vd-check { animation: vd-check 7s ease-out infinite; }
+.vd-token { animation: vd-token 7s ease-out infinite; opacity: 0; }
+.vd-bar { animation: vd-bar 7s linear infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .vd-meter, .vd-check, .vd-token, .vd-bar { animation: none !important; opacity: 1 !important; transform: none !important; }
+  .vd-token { display: none; }
+  .vd-check { position: static; }
+}

@@ -19,6 +19,7 @@ import BackSoon, { isBackSoon } from "@/components/BackSoon";
 import { notPower } from "@/lib/not-power";
 import { guessNetwork, localPhone, parseNetwork } from "@/lib/bulk-shared";
 import FeatureShowcase, { NewStrip } from "@/components/FeatureShowcase";
+import VerifyDemo from "@/components/VerifyDemo";
 
 type BillerItem = {
   biller_code: string;
@@ -466,6 +467,10 @@ export default function Home() {
           <p className="text-haze mt-5 sm:mt-6 text-lg leading-relaxed max-w-[34rem]">
             {heroSub ?? <>Electricity, TV, airtime and data for Nigeria and Ghana. {payLine}</>}
           </p>
+
+          <div className="mt-8 sm:mt-10">
+            <VerifyDemo />
+          </div>
 
           <ul className="mt-8 sm:mt-10 grid gap-5 max-w-[34rem]">
             {CHECKS.map((c) => (
