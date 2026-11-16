@@ -807,12 +807,6 @@ export default function Home() {
                   className="mt-3 w-full h-14 rounded-2xl bg-cta text-oncta font-display font-bold text-lg hover:brightness-105 active:brightness-95 disabled:opacity-40 disabled:hover:brightness-100 num">
                   {busy === "pay" ? "Opening secure checkout…" : inNgn && billAmount > 0 ? `Pay ${fmtLocal(ngnTotal)}` : "Continue to payment"}
                 </button>
-                {inNgn && billAmount > 0 && (
-                  <button type="button" onClick={() => pay("transfer")} disabled={payDisabled}
-                    className="mt-2 w-full h-12 rounded-2xl border border-paper/25 font-semibold hover:bg-sunk disabled:opacity-40">
-                    Pay by bank transfer
-                  </button>
-                )}
                 <p className="text-haze text-xs mt-3 text-center leading-relaxed">
                   {inNgn
                     ? "Pay by card, bank transfer or USSD. If delivery fails, you’re refunded automatically."
