@@ -21,6 +21,14 @@ import { parsePfmRef } from "@/lib/payforme-shared";
 import { buildReport, dayAfterIso, dayStartIso, fetchBulk, loadSettings, validYmd, watDay, productLabel, type BulkRow, type OrderRow, type Report } from "@/lib/finance";
 
 export type Flag = { level: "danger" | "warn"; msg: string };
+
+// Paystack's "customer pays fees" setting adds its card charge on top of the order total. The payment is then
+// vended (see paystack-process.ts), so the daily check accepts the same overpayment: at least the expected amount,
+// and no more than Paystack's ₦2,000 cap plus ₦1 of rounding. Anything else is still flagged.
+export const CARD_CHARGE_CAP_NGN = 2000 + 1;
+export function cardChargeOk(expectedNgn: number, paidNgn: number): boolean {
+  return paidNgn >= expectedNgn - 0.5 && paidNgn <= expectedNgn + CARD_CHARGE_CAP_NGN + 0.5;
+}
 export type Check = { name: string; ran: boolean; note: string };
 
 export interface ReconResult {
@@ -219,6 +227,7 @@ export async function runReconcile(dateStr: string = yesterdayWAT(), deep = true
 
   // 1a. Our records that say "paid" must have a successful payment of the right size.
   const toVerify: Expect[] = [];
+  let cardCharges = 0; // paid above the order total by Paystack's card charge, and accepted
   for (const e of expects) {
     if (!railOk(e.provider)) continue;
     const tx = byRef.get(e.ref);
@@ -227,16 +236,22 @@ export async function runReconcile(dateStr: string = yesterdayWAT(), deep = true
       if (tx && tx.currency === "NGN") flags.push({ level: "danger", msg: `Money received but ${e.label} is still "${e.status}": ${ngn(tx.ngn)} was paid and nothing was delivered.` });
       continue;
     }
-    if (!tx) toVerify.push(e); else if (Math.abs(tx.ngn - e.ngn) > 0.5) flags.push({ level: "danger", msg: `Amount differs: ${e.label} should be ${ngn(e.ngn)} but ${rails[e.provider].name} took ${ngn(tx.ngn)}.` });
+    if (!tx) toVerify.push(e);
+    else if (cardChargeOk(e.ngn, tx.ngn)) { if (tx.ngn > e.ngn + 0.5) cardCharges++; }
+    else if (Math.abs(tx.ngn - e.ngn) > 0.5) flags.push({ level: "danger", msg: `Amount differs: ${e.label} should be ${ngn(e.ngn)} but ${rails[e.provider].name} took ${ngn(tx.ngn)}.` });
   }
   let unverifiable = 0;
   await pool(toVerify, 4, async (e) => {
     const v = await verifyOne(e.provider, e.ref);
-    if (v.state === "paid") { if (Math.abs(v.ngn - e.ngn) > 0.5) flags.push({ level: "danger", msg: `Amount differs: ${e.label} should be ${ngn(e.ngn)} but ${rails[e.provider].name} took ${ngn(v.ngn)}.` }); }
+    if (v.state === "paid") {
+      if (cardChargeOk(e.ngn, v.ngn)) { if (v.ngn > e.ngn + 0.5) cardCharges++; }
+      else if (Math.abs(v.ngn - e.ngn) > 0.5) flags.push({ level: "danger", msg: `Amount differs: ${e.label} should be ${ngn(e.ngn)} but ${rails[e.provider].name} took ${ngn(v.ngn)}.` });
+    }
     else if (v.state === "unpaid") flags.push({ level: "danger", msg: `${e.label} is "${e.status}" but ${rails[e.provider].name} has no successful payment for it. Nothing was received.` });
     else unverifiable++;
   });
   if (unverifiable) flags.push({ level: "warn", msg: `${unverifiable} paid record(s) could not be confirmed with the payment provider (it did not answer). Check them by hand.` });
+  if (cardCharges) checks.push({ name: "Card charges", ran: true, note: `${cardCharges} payment${cardCharges === 1 ? "" : "s"} included Paystack's card charge (customer pays fees). Accepted, not flagged.` });
 
   // 1b. Every successful payment in the day must belong to an order or bulk batch that agrees with it.
   const known = new Map(expects.map((e) => [e.ref, e] as const));
