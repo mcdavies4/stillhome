@@ -26,7 +26,9 @@ async function call<T = any>(method: string, body: Record<string, unknown>): Pro
   const t = token();
   if (!t) throw new TgError("TELEGRAM_BOT_TOKEN is not set");
   // A 20 second limit, so a stalled Telegram call returns an error instead of hanging the request.
-  const res = await fetch(`https://api.telegram.org/bot${t}/${method}`, {
+  // TELEGRAM_API_BASE lets the calls go through a relay that can reach Telegram (defaults to Telegram directly).
+  const base = (process.env.TELEGRAM_API_BASE ?? "https://api.telegram.org").replace(/\/+$/, "");
+  const res = await fetch(`${base}/bot${t}/${method}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
