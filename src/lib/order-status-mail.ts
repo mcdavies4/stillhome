@@ -24,11 +24,12 @@ function frame(o: StatusOrder, kind: "refunded" | "checking" | "refund_delayed")
   const copy = {
     refunded: {
       subject: `Nolgic refund — ${item} ${naira(total)}`,
-      title: "Your payment has been refunded",
-      body: `<p>We couldn't complete <strong>${esc(item)}</strong> (order ${ref}), so we've refunded <strong>${naira(total)}</strong> in full.</p>
-             <p>Refunds can take a few working days to show on your statement. Nothing more is needed from you.</p>
+      title: "Sorry, your payment has been refunded",
+      body: `<p>We're sorry. We couldn't complete your <strong>${esc(item)}</strong> (order ${ref}). The bill provider we work with did not confirm the payment on their side, so the order could not go through. That is a problem we should have handled better, and we know it is frustrating when you have paid for something you needed.</p>
+             <p>We've refunded <strong>${naira(total)}</strong> in full. Refunds can take a few working days to show on your statement. You don't need to do anything else.</p>
+             <p>If you still need this bill paid, you can place the order again, and reply to this email if you'd like help with it.</p>
              ${button(`${appUrl()}/order/${o.id}`, "View your order")}`,
-      text: `We couldn't complete ${item} (order ${ref}), so we've refunded ${naira(total)} in full. Refunds can take a few working days to show on your statement.`,
+      text: `We're sorry. We couldn't complete your ${item} (order ${ref}). The bill provider we work with did not confirm the payment on their side, so the order could not go through. That is a problem we should have handled better.\n\nWe've refunded ${naira(total)} in full. Refunds can take a few working days to show on your statement. You don't need to do anything else.\n\nIf you still need this bill paid, you can place the order again, and reply to this email if you'd like help with it.`,
     },
     checking: {
       subject: `Nolgic — we're checking your ${item} order`,

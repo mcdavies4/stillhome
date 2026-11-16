@@ -113,7 +113,9 @@ export async function POST(req: Request) {
       if (countryCode !== "NG") {
         return NextResponse.json({ error: "Naira payment is only available for Nigeria." }, { status: 400 });
       }
-      const rail = ngnPayProvider();
+      // "transfer" orders are paid by bank transfer to a Flutterwave account (see /api/flutterwave/transfer-account).
+      const transfer = raw.payMethod === "transfer";
+      const rail = transfer ? "flutterwave" : ngnPayProvider();
       if (rail === "flutterwave" ? !flwPayConfigured() : !paystackConfigured()) {
         return NextResponse.json({ error: "Naira payments aren't available yet — please check back soon." }, { status: 503 });
       }
@@ -187,6 +189,10 @@ export async function POST(req: Request) {
       await tagRep(orderN.id, b.rep); // credit the sales rep whose link brought this customer (best effort, never blocks payment)
 
       const appUrlN = process.env.NEXT_PUBLIC_APP_URL!;
+      if (transfer) {
+        // No hosted payment here: the order page issues the bank account and shows it.
+        return NextResponse.json({ url: `/order/${orderN.id}?pay=transfer`, orderId: orderN.id, total: `₦${totalNgn.toLocaleString()}` });
+      }
       if (rail === "flutterwave") {
         const fw = await flwInitialize({
           email: b.email,

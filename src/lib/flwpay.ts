@@ -194,3 +194,42 @@ export function parseFlwWebhook(payload: unknown): { event: string; id: string |
     status: String(d.status ?? "").toLowerCase(),
   };
 }
+
+// ---- Pay by bank transfer (Flutterwave temporary virtual account) ----
+// The account carries the exact order amount and tx_ref NLGFW-<orderId>, so the existing
+// webhook -> confirmFlutterwavePayment path verifies and fulfils it. Temporary accounts expire
+// (Flutterwave default: one hour); a transfer after expiry is not matched to a live order.
+
+export interface TransferAccount {
+  accountNumber: string;
+  bankName: string;
+  amountNgn: number;
+  expiresAt: string | null;
+  reference: string;
+}
+
+export async function createTransferAccount(p: { orderId: string; email: string; amountNgn: number }): Promise<TransferAccount> {
+  const reference = flwPayReferenceFor(p.orderId);
+  const body = await fw("/virtual-account-numbers", {
+    method: "POST",
+    body: JSON.stringify({
+      email: p.email,
+      amount: p.amountNgn,
+      currency: "NGN",
+      tx_ref: reference,
+      firstname: "Nolgic",
+      lastname: "Customer",
+      narration: "Nolgic bill payment",
+    }),
+  });
+  const d = body?.data ?? {};
+  const accountNumber = String(d.account_number ?? "");
+  if (!/^\d{6,12}$/.test(accountNumber)) throw new FlwPayError("Flutterwave returned no account number", 0, body);
+  return {
+    accountNumber,
+    bankName: String(d.bank_name ?? "Flutterwave MFB"),
+    amountNgn: Number(d.amount ?? p.amountNgn),
+    expiresAt: typeof d.expiry_date === "string" ? d.expiry_date : null,
+    reference,
+  };
+}
