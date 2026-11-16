@@ -7,6 +7,7 @@ import GetOnPlay from "@/components/GetOnPlay";
 import SaveAfterPay from "@/components/SaveAfterPay";
 import ShareReceipt from "@/components/ShareReceipt";
 import ReferCard from "@/components/ReferCard";
+import PayByTransfer from "@/components/PayByTransfer";
 import { supportLink } from "@/lib/support-contact";
 
 type Order = {
@@ -247,6 +248,10 @@ export default function OrderPage() {
           </dl>
         </div>
       </div>
+
+      {order.status === "pending_payment" && order.payment_provider === "flutterwave" && (order.currency ?? "NGN") === "NGN" && (
+        <PayByTransfer orderId={order.id} autoStart={typeof window !== "undefined" && new URLSearchParams(window.location.search).get("pay") === "transfer"} />
+      )}
 
       {order.status === "fulfilled" && (
         <div className="mt-6 rounded-2xl border border-line p-5">
