@@ -15,6 +15,9 @@ export const referralsEnabled = () => process.env.NEXT_PUBLIC_REFERRALS_ENABLED 
 const num = (v: string | undefined, d: number) => { const n = Number(v); return v !== undefined && v !== "" && Number.isFinite(n) && n >= 0 ? n : d; };
 export const maxWaiveNgn = () => num(process.env.REFERRAL_MAX_WAIVE_NGN, 500);
 export const maxReferralsPerPerson = () => Math.max(1, Math.floor(num(process.env.REFERRAL_MAX_PER_PERSON, 10)));
+/** Most a person can have waived from referral credits in one calendar month (naira of service fee). */
+export const monthlyCapNgn = () => num(process.env.REFERRAL_MONTHLY_CAP_NGN, 500);
+const startOfThisMonthUtc = () => { const d = new Date(); return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1)).toISOString(); };
 
 const ALPHABET = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ"; // no 0/O/1/I
 export { CODE_RE } from "@/lib/referral-client";
@@ -63,14 +66,21 @@ export async function planFeeWaiver(i: { email: string; ref?: string | null; fee
     const mineRows = (mine ?? []) as any[];
     if (mineRows.length) {
       const ids = Array.from(new Set(mineRows.flatMap((r) => [r.referee_order_id, r.referrer_credit_order_id]).filter(Boolean)));
-      const { data: ords } = ids.length ? await db.from("orders").select("id,status,is_test").in("id", ids) : { data: [] as any[] };
+      const { data: ords } = ids.length ? await db.from("orders").select("id,status,is_test,created_at").in("id", ids) : { data: [] as any[] };
       const by = new Map(((ords ?? []) as any[]).map((o) => [o.id, o]));
-      const earned = mineRows.find((r) => {
+      // Monthly cap: credits already spent this calendar month on paid orders count against this person.
+      const monthStart = startOfThisMonthUtc();
+      const spentThisMonth = mineRows.reduce((sum, r) => {
+        const used = r.referrer_credit_order_id ? by.get(r.referrer_credit_order_id) : null;
+        return used && PAID_LIKE.includes(used.status) && used.created_at >= monthStart ? sum + Number(r.referrer_waived_ngn ?? 0) : sum;
+      }, 0);
+      const withinMonthlyCap = spentThisMonth + waive <= monthlyCapNgn();
+      const earned = withinMonthlyCap ? mineRows.find((r) => {
         const friend = by.get(r.referee_order_id);
         if (!friend || friend.is_test || friend.status !== "fulfilled") return false;
         const used = r.referrer_credit_order_id ? by.get(r.referrer_credit_order_id) : null;
         return !used || !PAID_LIKE.includes(used.status);
-      });
+      }) : undefined;
       if (earned) return { mode: "referrer", fee: fee - waive, waived: waive, referralId: earned.id, previousOrderId: earned.referrer_credit_order_id ?? null };
     }
 
