@@ -121,6 +121,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 { href: "/find-order", label: "Find my order or token" },
                 { href: playUrl("header"), label: "Get the Android app", external: true },
                 ...(telegramUrl("header") ? [{ href: telegramUrl("header") as string, label: "Buy on Telegram", external: true }] : []),
+                { href: "/blog", label: "Blog: how to pay bills" },
                 { href: "/legal", label: "Terms, refunds & privacy" },
               ]} />
               <ThemeToggle />

@@ -953,6 +953,7 @@ export default function Home() {
             <ul className="[&_a]:inline-flex [&_a]:items-center [&_a]:min-h-[40px]">
               {process.env.NEXT_PUBLIC_ACCOUNTS_ENABLED === "1" && <li><Link href="/account" className="hover:text-paper">My account</Link></li>}
               <li><Link href="/find-order" className="hover:text-paper">Find my order or token</Link></li>
+              <li><Link href="/blog" className="hover:text-paper">Blog: how to pay bills</Link></li>
               <li><a href="mailto:nolgichq@gmail.com" className="hover:text-paper">nolgichq@gmail.com</a></li>
               <li><Link href="/legal" className="hover:text-paper">Terms, refunds &amp; privacy</Link></li>
             </ul>
