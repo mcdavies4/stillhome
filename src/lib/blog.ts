@@ -88,6 +88,84 @@ export const posts: Post[] = [
       },
     ],
   },
+  {
+    slug: "how-to-pay-electricity-bill-online-nigeria",
+    title: "How to pay your electricity bill online in Nigeria",
+    description: "Pay prepaid electricity from your phone in naira. Check the meter number and account name before you pay.",
+    date: "2026-11-17",
+    sections: [
+      {
+        heading: "What you need",
+        paras: [
+          "You need your meter number, which is printed on the meter and on past receipts. Check that it is the meter for the property you are paying for.",
+        ],
+      },
+      {
+        heading: "Steps",
+        paras: [
+          "Open the electricity section on nolgic.com and enter your meter number. Where the provider supports it, Nolgic shows the account name linked to that meter. Confirm it before you continue.",
+          "Enter the amount you want to buy. The total shown includes a small service fee, listed on its own line, before you pay.",
+          "Pay in naira on the secure payment page. Your token is sent for delivery to the meter you confirmed.",
+        ],
+      },
+      {
+        heading: "Before you pay",
+        paras: [
+          "Once a token has been delivered to the meter you confirmed, it cannot be moved to a different meter. If the account name does not match, stop and check the number.",
+        ],
+      },
+    ],
+  },
+  {
+    slug: "how-to-buy-jamb-and-waec-exam-pins-online",
+    title: "How to buy JAMB and WAEC exam PINs online",
+    description: "Buy exam PINs for JAMB and WAEC from your phone in naira, and check your details before you pay.",
+    date: "2026-11-17",
+    sections: [
+      {
+        heading: "Before you start",
+        paras: [
+          "Check which exam and year you are registering for, and make sure you have the details the exam body asks for. Look at the exam body's own instructions if you are unsure.",
+        ],
+      },
+      {
+        heading: "Steps",
+        paras: [
+          "Open the exams page on nolgic.com and choose the exam you need.",
+          "Enter the details requested on the page. Check them carefully, because a PIN that has been delivered cannot be reversed.",
+          "Review the total, which includes a small service fee shown on its own line, and pay in naira.",
+        ],
+      },
+      {
+        heading: "If you need help",
+        paras: [
+          "If something on your order looks wrong, contact us before you use the PIN. Our refund policy explains what happens if a delivery fails.",
+        ],
+      },
+    ],
+  },
+  {
+    slug: "what-to-do-if-a-bill-payment-fails",
+    title: "What to do if a bill payment fails on Nolgic",
+    description: "What happens to your money if a bill payment does not go through, and how to get help quickly.",
+    date: "2026-11-17",
+    sections: [
+      {
+        heading: "What happens to your money",
+        paras: [
+          "If delivery fails for any reason, Nolgic refunds you in full to the card or account you paid with. The refund is automatic and does not need a request from you.",
+          "Banks can take a few working days to show the refund on your statement. The timing depends on your bank.",
+        ],
+      },
+      {
+        heading: "When to contact us",
+        paras: [
+          "If a payment is still showing as pending after a while, or you were charged but have no confirmation, contact us with the order details. Keep your payment receipt.",
+          "If you believe a bill was delivered to the wrong number despite showing the correct account name, contact us within 48 hours so we can investigate with the provider.",
+        ],
+      },
+    ],
+  },
 ];
 
 export const getPost = (slug: string) => posts.find((p) => p.slug === slug);
