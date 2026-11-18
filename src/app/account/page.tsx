@@ -8,7 +8,10 @@ import { ACCT_EMAIL_KEY } from "@/lib/account-client";
 import { recentMonths } from "@/lib/statement-months";
 
 type Order = { id: string; name: string; tail: string; amountNgn: number; status: string; statusText: string; at: string };
-type Me = { email: string; orders: Order[]; saved: Saved[] };
+type MonthlyPlan = { id: string; biller_name: string; identifier: string; identifier_label: string; amount_ngn: number; pending_amount_ngn: number | null; status: string; next_run_on: string | null; card_last4: string | null };
+type Me = { email: string; orders: Order[]; saved: Saved[]; plans?: MonthlyPlan[] };
+
+const PLAN_STATUS: Record<string, string> = { active: "Active", on_hold: "Paused", needs_action: "Action needed", paused: "Paused after failed payments" };
 
 const naira = (n: number) => `₦${Math.round(n).toLocaleString("en-NG")}`;
 const day = (iso: string) => new Date(iso).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
@@ -27,6 +30,16 @@ export default function Account() {
   const [month, setMonth] = useState(months[0].key);
   const [dl, setDl] = useState<"" | "pdf" | "csv">("");
   const [dlError, setDlError] = useState("");
+  const [planMsg, setPlanMsg] = useState("");
+
+  async function planAct(planId: string, action: "pause" | "resume" | "cancel" | "approve_price") {
+    setPlanMsg("");
+    const r = await post("/api/account/plans", { planId, do: action }).catch(() => null);
+    const d = r ? await r.json().catch(() => ({})) : {};
+    if (!r || !r.ok) { setPlanMsg(d.error ?? "Could not change this plan. Try again."); return; }
+    setMe((prev) => (prev ? { ...prev, plans: d.plans } : prev));
+    setPlanMsg(action === "pause" ? "Paused. We won't charge it until you resume." : action === "resume" ? "Resumed. We've emailed you the next charge date." : action === "approve_price" ? "New price approved." : "Cancelled.");
+  }
 
   // Signed in: copy this device's saved list up, then keep the server's list (now the full one) on this device too.
   const load = useCallback(async (syncLocal: boolean) => {
@@ -186,6 +199,40 @@ export default function Account() {
             <p className="text-haze text-xs mt-2 leading-relaxed">Months are Nigerian time. Meter tokens and PINs are never included.</p>
           </section>
 
+          <section className="mt-10" aria-labelledby="acct-plans">
+            <h2 id="acct-plans" className="font-display font-bold text-xl">Monthly payments</h2>
+            {(me.plans ?? []).length === 0 ? (
+              <p className="text-haze mt-2 leading-relaxed">No monthly payments set up. Tick &ldquo;Repeat monthly&rdquo; when you pay a bill on the <Link href="/" className="underline">home page</Link>.</p>
+            ) : (
+              <ul className="mt-3 divide-y divide-line border-y border-line">
+                {(me.plans ?? []).map((p) => (
+                  <li key={p.id} className="py-3">
+                    <div className="flex flex-wrap justify-between gap-2">
+                      <div>
+                        <div className="font-semibold">{p.biller_name}</div>
+                        <div className="text-haze text-sm">{p.identifier_label} {p.identifier}{p.card_last4 ? ` · card ending ${p.card_last4}` : ""}</div>
+                      </div>
+                      <div className="text-right">
+                        <div className="font-semibold">₦{Math.round(p.amount_ngn).toLocaleString("en-NG")} a month</div>
+                        <div className="text-haze text-sm">{PLAN_STATUS[p.status] ?? p.status}{p.status === "active" && p.next_run_on ? ` · next ${p.next_run_on}` : ""}</div>
+                      </div>
+                    </div>
+                    {p.status === "needs_action" && p.pending_amount_ngn ? (
+                      <p className="text-sm mt-2">The price changed to ₦{Math.round(p.pending_amount_ngn).toLocaleString("en-NG")}. Nothing is charged until you approve it.</p>
+                    ) : null}
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {p.status === "needs_action" && p.pending_amount_ngn ? <PlanBtn label={`Approve ₦${Math.round(p.pending_amount_ngn).toLocaleString("en-NG")}`} onClick={() => planAct(p.id, "approve_price")} /> : null}
+                      {p.status === "active" ? <PlanBtn label="Pause" onClick={() => planAct(p.id, "pause")} /> : null}
+                      {p.status === "on_hold" || p.status === "paused" ? <PlanBtn label="Resume" onClick={() => planAct(p.id, "resume")} /> : null}
+                      <PlanBtn label="Cancel" danger onClick={() => { if (window.confirm(`Cancel the monthly payment for ${p.biller_name}?`)) planAct(p.id, "cancel"); }} />
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+            {planMsg && <p role="status" className="text-sm mt-2">{planMsg}</p>}
+          </section>
+
           <section className="mt-10" aria-labelledby="acct-orders">
             <h2 id="acct-orders" className="font-display font-bold text-xl">Your orders</h2>
             {me.orders.length === 0 ? (
@@ -209,5 +256,13 @@ export default function Account() {
         </>
       )}
     </main>
+  );
+}
+
+function PlanBtn({ label, onClick, danger }: { label: string; onClick: () => void; danger?: boolean }) {
+  return (
+    <button type="button" onClick={onClick} className={`h-9 px-3 rounded-lg border text-sm font-semibold hover:bg-sunk ${danger ? "border-bad text-bad" : "border-paper/25"}`}>
+      {label}
+    </button>
   );
 }
