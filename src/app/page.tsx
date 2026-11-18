@@ -823,6 +823,42 @@ export default function Home() {
       <FeatureShowcase />
 
       {/* ───────── WHAT YOU CAN PAY ───────── */}
+      {/* ───────── FOR NIGERIANS ABROAD ───────── */}
+      <section id="abroad" className="max-w-6xl mx-auto px-5 py-16 sm:py-24 scroll-mt-20">
+        <div className="grid lg:grid-cols-[1fr_24rem] gap-12 lg:gap-16 items-center">
+          <div>
+            <h2 className={`${h2} max-w-xl`}>Their light stays on. You pay from wherever you are.</h2>
+            <p className="text-haze leading-relaxed mt-6 max-w-lg">
+              Pay Mum&rsquo;s electricity, a sibling&rsquo;s DStv or the household&rsquo;s airtime, in naira, from abroad.
+              You choose the bill. They don&rsquo;t have to ask, and you don&rsquo;t need a Nigerian bank account.
+            </p>
+            <ol className="mt-8 space-y-5 max-w-lg">
+              <li className="flex gap-4"><span className="num font-display font-bold text-lg w-6 shrink-0">1</span><span className="text-haze leading-relaxed">Pick the bill and the amount, and check the total.</span></li>
+              <li className="flex gap-4"><span className="num font-display font-bold text-lg w-6 shrink-0">2</span><span className="text-haze leading-relaxed">Pay with your card from abroad.</span></li>
+              <li className="flex gap-4"><span className="num font-display font-bold text-lg w-6 shrink-0">3</span><span className="text-haze leading-relaxed">It goes to their meter, smartcard or phone number. You get a receipt.</span></li>
+            </ol>
+            {PFM_ON && (
+              <Link href="/ask" className="mt-10 inline-flex items-center h-12 px-6 rounded-xl bg-cta text-oncta font-display font-bold hover:brightness-105">
+                Ask someone back home to send you the bill
+              </Link>
+            )}
+          </div>
+
+          <div className="rounded-3xl border border-line bg-panel p-7 sm:p-8 shadow-sm rotate-[-1.5deg]">
+            <p className="font-display font-bold text-xl">Payment receipt</p>
+            <p className="text-haze text-sm mt-1">Nolgic · naira</p>
+            <dl className="mt-6 divide-y divide-line text-[15px]">
+              <div className="flex justify-between py-3"><dt className="text-haze">Paid from</dt><dd>Abroad</dd></div>
+              <div className="flex justify-between py-3"><dt className="text-haze">For</dt><dd>Mum, Lagos</dd></div>
+              <div className="flex justify-between py-3"><dt className="text-haze">Electricity</dt><dd className="num">₦10,000</dd></div>
+              <div className="flex justify-between py-3"><dt className="text-haze">Service fee</dt><dd className="num">Shown before you pay</dd></div>
+              <div className="flex justify-between py-3"><dt className="text-haze">Delivered to</dt><dd className="num">Meter ending 4821</dd></div>
+            </dl>
+            <p className="text-haze text-xs mt-5">Example only. Your receipt shows your own bill and total.</p>
+          </div>
+        </div>
+      </section>
+
       <section className="border-y border-line bg-panel">
         <div className="max-w-6xl mx-auto px-5 py-16 sm:py-24">
           <h2 className={`${h2} max-w-2xl`}>Four things that keep a household running.</h2>
