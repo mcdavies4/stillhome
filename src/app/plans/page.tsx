@@ -1,5 +1,5 @@
-import UpcomingBoard from "@/components/UpcomingBoard";
 "use client";
+import UpcomingBoard from "@/components/UpcomingBoard";
 
 // /plans — see, pause, resume or cancel every monthly payment set up with one email.
 // Opened from a sign-in link (?token=…). Without a token, asks for the email and sends a link.

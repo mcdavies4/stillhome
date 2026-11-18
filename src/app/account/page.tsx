@@ -1,5 +1,5 @@
-import UpcomingBoard from "@/components/UpcomingBoard";
 "use client";
+import UpcomingBoard from "@/components/UpcomingBoard";
 
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
