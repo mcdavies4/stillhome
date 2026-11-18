@@ -59,18 +59,26 @@ export default function PlansPage() {
     setPlans(data.plans);
   }
 
-  async function requestLink(e: React.FormEvent) {
-    e.preventDefault();
-    setBusy(true); setError(null); setNotice(null);
-    const res = await fetch("/api/plans", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "request", email }),
-    });
-    const data = await res.json().catch(() => ({}));
-    setBusy(false);
-    if (!res.ok) { setError(data.error ?? "Something went wrong. Try again."); return; }
-    setNotice(data.message);
+  async function requestLink(e?: React.FormEvent) {
+    e?.preventDefault();
+    const clean = email.trim().toLowerCase();
+    setError(null); setNotice(null);
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(clean)) { setError("Enter the email you paid with, for example name@example.com."); return; }
+    setBusy(true);
+    try {
+      const res = await fetch("/api/plans", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "request", email: clean }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) { setError(data.error ?? `Something went wrong (code ${res.status}). Try again.`); return; }
+      setNotice(data.message);
+    } catch {
+      setError("Could not reach Nolgic. Check your connection and try again.");
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function act(plan: Plan, action: "pause" | "resume" | "cancel") {
@@ -101,14 +109,14 @@ export default function PlansPage() {
     return shell(
       <>
         <p style={{ lineHeight: 1.6 }}>Enter the email you used at checkout. We'll send a link to see, pause or cancel your monthly payments.</p>
-        <form onSubmit={requestLink} style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 16 }}>
+        <form onSubmit={requestLink} noValidate style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 16 }}>
           <input
-            type="email" required value={email} onChange={(e) => setEmail(e.target.value)}
+            type="email" inputMode="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)}
             placeholder="you@example.com" aria-label="Email"
             style={{ flex: "1 1 260px", padding: "12px 14px", borderRadius: 10, border: "1px solid #cfd3de", fontSize: 16 }}
           />
-          <button type="submit" disabled={busy} style={{ background: AMBER, color: NAVY, fontWeight: 800, padding: "12px 18px", borderRadius: 10, border: 0, cursor: "pointer" }}>
-            Send me a link
+          <button type="button" onClick={() => requestLink()} disabled={busy} style={{ background: AMBER, color: NAVY, fontWeight: 800, padding: "12px 18px", borderRadius: 10, border: 0, cursor: "pointer", opacity: busy ? 0.6 : 1 }}>
+            {busy ? "Sending…" : "Send me a link"}
           </button>
         </form>
         {notice && <p role="status" style={{ marginTop: 16 }}>{notice}</p>}
