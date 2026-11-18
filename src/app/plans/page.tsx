@@ -1,3 +1,4 @@
+import UpcomingBoard from "@/components/UpcomingBoard";
 "use client";
 
 // /plans — see, pause, resume or cancel every monthly payment set up with one email.
@@ -205,6 +206,8 @@ export default function PlansPage() {
         ))}
       </ul>
       {error && <p role="alert" style={{ marginTop: 16, color: "#b42318" }}>{error}</p>}
+      <UpcomingBoard plans={plans} />
+
       <p style={{ marginTop: 20, fontSize: 14 }}>
         <a href="/#pay" style={{ color: NAVY, fontWeight: 700 }}>Add another monthly bill</a> · pay with card and tick "Repeat monthly".
       </p>

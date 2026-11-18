@@ -1,3 +1,4 @@
+import UpcomingBoard from "@/components/UpcomingBoard";
 "use client";
 
 import Link from "next/link";
@@ -198,6 +199,8 @@ export default function Account() {
             {dlError && <p className="text-bad text-sm mt-2" role="alert">{dlError}</p>}
             <p className="text-haze text-xs mt-2 leading-relaxed">Months are Nigerian time. Meter tokens and PINs are never included.</p>
           </section>
+
+          <UpcomingBoard plans={me.plans ?? []} />
 
           <section className="mt-10" aria-labelledby="acct-plans">
             <h2 id="acct-plans" className="font-display font-bold text-xl">Monthly payments</h2>
