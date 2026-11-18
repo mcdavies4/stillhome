@@ -3,7 +3,7 @@
 // /plans — see, pause, resume or cancel every monthly payment set up with one email.
 // Opened from a sign-in link (?token=…). Without a token, asks for the email and sends a link.
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 type Plan = {
   id: string;
@@ -42,6 +42,12 @@ export default function PlansPage() {
   const [busy, setBusy] = useState(false);
   const [plans, setPlans] = useState<Plan[] | null>(null);
   const [owner, setOwner] = useState<string | null>(null);
+  const noticeRef = useRef<HTMLDivElement>(null);
+
+  // Bring the confirmation into view, so it is never missed below the fold.
+  useEffect(() => {
+    if (notice) noticeRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [notice]);
 
   useEffect(() => {
     const t = new URLSearchParams(window.location.search).get("token");
@@ -119,7 +125,11 @@ export default function PlansPage() {
             {busy ? "Sending…" : "Send me a link"}
           </button>
         </form>
-        {notice && <p role="status" style={{ marginTop: 16 }}>{notice}</p>}
+        {notice && (
+          <div ref={noticeRef} role="status" style={{ marginTop: 16, padding: "14px 16px", borderRadius: 12, background: "#E7F6EC", border: "1px solid #7CC79A", color: "#14532d", fontWeight: 600, lineHeight: 1.5 }}>
+            ✓ {notice}
+          </div>
+        )}
         {error && <p role="alert" style={{ marginTop: 16, color: "#b42318" }}>{error}</p>}
       </>
     );
