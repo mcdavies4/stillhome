@@ -167,16 +167,6 @@ const FAQS_MORE = [
 
 const FAQS = [...(DOMESTIC ? FAQS_DOMESTIC : FAQS_DIASPORA).slice(0, 4), ...FAQS_MORE, ...(DOMESTIC ? FAQS_DOMESTIC : FAQS_DIASPORA).slice(4)];
 
-const STEPS = [
-  { n: "1", title: "Pick the bill", text: "Electricity token, DSTV, GOTV, airtime or data — for any meter, decoder or phone number." },
-  { n: "2", title: "See who you're paying", text: "We look the number up with the provider and show you the registered name. You confirm it's your people before any money moves." },
-  { n: "3", title: "Pay. Done.", text: DOMESTIC
-      ? "Pay by card, bank transfer or USSD. Delivery lands in seconds, and " + RECEIPT_TAIL
-      : NGN_ENABLED
-        ? "Card checkout in pounds, or pay in naira from inside Nigeria. Delivery lands in seconds, and " + RECEIPT_TAIL
-        : "Card checkout in pounds. Delivery lands in seconds, and " + RECEIPT_TAIL },
-];
-
 const BRANDS = "MTN, Airtel, Glo, 9mobile, DStv, GOtv, StarTimes and every major electricity company";
 
 const h2 = "font-display font-bold text-3xl md:text-[2.6rem] leading-[1.08] tracking-tight";
@@ -459,7 +449,7 @@ export default function Home() {
   return (
     <main id="content">
       {/* ───────── HERO + PAY FORM ───────── */}
-      <section className="max-w-6xl mx-auto px-5 pt-8 sm:pt-14 pb-16 sm:pb-24 grid lg:grid-cols-[1fr_28rem] xl:grid-cols-[1fr_30rem] gap-10 lg:gap-16 items-start">
+      <section className="max-w-6xl mx-auto px-5 pt-8 sm:pt-14 pb-12 sm:pb-16 grid lg:grid-cols-[1fr_28rem] xl:grid-cols-[1fr_30rem] gap-10 lg:gap-16 items-start">
         <div className="lg:pt-8">
           <NewStrip />
           <h1 className="font-display font-extrabold text-[2.5rem] sm:text-6xl lg:text-[4.25rem] leading-[1.03] tracking-tight max-w-[14ch] sm:max-w-[16ch]">
@@ -824,7 +814,7 @@ export default function Home() {
 
       {/* ───────── WHAT YOU CAN PAY ───────── */}
       {/* ───────── FOR NIGERIANS ABROAD ───────── */}
-      <section id="abroad" className="max-w-6xl mx-auto px-5 py-16 sm:py-24 scroll-mt-20">
+      <section id="abroad" className="max-w-6xl mx-auto px-5 py-10 sm:py-14 scroll-mt-20">
         <div className="grid lg:grid-cols-[1fr_24rem] gap-12 lg:gap-16 items-center">
           <div>
             <h2 className={`${h2} max-w-xl`}>Their light stays on. You pay from wherever you are.</h2>
@@ -834,7 +824,7 @@ export default function Home() {
             </p>
             <ol className="mt-8 space-y-5 max-w-lg">
               <li className="flex gap-4"><span className="num font-display font-bold text-lg w-6 shrink-0">1</span><span className="text-haze leading-relaxed">Pick the bill and the amount, and check the total.</span></li>
-              <li className="flex gap-4"><span className="num font-display font-bold text-lg w-6 shrink-0">2</span><span className="text-haze leading-relaxed">Pay with your card from abroad.</span></li>
+              <li className="flex gap-4"><span className="num font-display font-bold text-lg w-6 shrink-0">2</span><span className="text-haze leading-relaxed">We show the registered name on the meter or number. Confirm it, then pay with your card from abroad.</span></li>
               <li className="flex gap-4"><span className="num font-display font-bold text-lg w-6 shrink-0">3</span><span className="text-haze leading-relaxed">It goes to their meter, smartcard or phone number. You get a receipt.</span></li>
             </ol>
             {PFM_ON && (
@@ -860,49 +850,36 @@ export default function Home() {
       </section>
 
       <section className="border-y border-line bg-panel">
-        <div className="max-w-6xl mx-auto px-5 py-16 sm:py-24">
+        <div className="max-w-6xl mx-auto px-5 py-10 sm:py-14">
           <h2 className={`${h2} max-w-2xl`}>Four things that keep a household running.</h2>
-          <div className="mt-10 sm:mt-12 border-t border-line">
+          <div className="mt-8 sm:mt-10 grid sm:grid-cols-2 gap-4">
             {CATEGORIES.map((c, n) => (
-              <div key={c.title} className="grid sm:grid-cols-[3rem_1fr_auto] gap-x-6 gap-y-3 items-center py-6 border-b border-line">
-                <div className="w-12 h-12 rounded-2xl bg-cta text-oncta flex items-center justify-center">
-                  <svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true">{c.icon}</svg>
+              <div key={c.title} className="flex flex-col gap-4 rounded-2xl border border-line bg-night p-5 sm:p-6">
+                <div className="flex items-center gap-4">
+                  <div className="w-11 h-11 shrink-0 rounded-2xl bg-cta text-oncta flex items-center justify-center">
+                    <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true">{c.icon}</svg>
+                  </div>
+                  <h3 className="font-display font-bold text-xl">{c.title}</h3>
                 </div>
                 <div>
-                  <h3 className="font-display font-bold text-xl">{c.title}</h3>
-                  <p className="text-haze leading-relaxed mt-1 max-w-xl">{c.text}</p>
+                  <p className="text-haze leading-relaxed">{c.text}</p>
                   <p className="text-haze/80 text-sm mt-1.5">{c.names}</p>
                 </div>
                 {ANY_PAY && (
                   <button type="button" onClick={() => jumpTo(TABS[n].key)}
-                    className="justify-self-start sm:justify-self-end h-11 px-5 rounded-xl border border-paper/25 font-semibold hover:bg-sunk">
+                    className="mt-auto self-start h-11 px-5 rounded-xl border border-paper/25 font-semibold hover:bg-sunk">
                     Pay {c.title === "Cable TV" ? "TV" : c.title.toLowerCase()}
                   </button>
                 )}
               </div>
             ))}
           </div>
-
         </div>
-      </section>
-
-      {/* ───────── HOW IT WORKS ───────── */}
-      <section id="how" className="max-w-6xl mx-auto px-5 py-16 sm:py-24 scroll-mt-20">
-        <h2 className={`${h2} max-w-2xl`}>One minute from your phone to their light.</h2>
-        <ol className="mt-10 sm:mt-14 grid md:grid-cols-3 gap-10 md:gap-8 relative">
-          {STEPS.map((s) => (
-            <li key={s.n} className="relative">
-              <span className="w-11 h-11 rounded-full bg-paper text-night font-display font-bold text-lg flex items-center justify-center num">{s.n}</span>
-              <h3 className="font-display font-bold text-xl mt-5 mb-2">{s.title}</h3>
-              <p className="text-haze leading-relaxed max-w-sm">{s.text}</p>
-            </li>
-          ))}
-        </ol>
       </section>
 
       {/* ───────── THE PROMISE ───────── */}
       <section className="bg-[#0B1026] text-[#F5F2E9]">
-        <div className="max-w-6xl mx-auto px-5 py-16 sm:py-24 grid lg:grid-cols-[1.1fr_1fr] gap-10 lg:gap-20 items-start">
+        <div className="max-w-6xl mx-auto px-5 py-10 sm:py-14 grid lg:grid-cols-[1.1fr_1fr] gap-10 lg:gap-20 items-start">
           <h2 className="font-display font-bold text-3xl md:text-[2.6rem] leading-[1.08] tracking-tight max-w-lg">
             You can&rsquo;t pay for something that wasn&rsquo;t delivered.
           </h2>
@@ -916,7 +893,7 @@ export default function Home() {
 
       {/* ───────── COUNTRIES ───────── */}
       {!DOMESTIC && (
-      <section id="countries" className="max-w-6xl mx-auto px-5 py-16 sm:py-24 scroll-mt-20">
+      <section id="countries" className="max-w-6xl mx-auto px-5 py-10 sm:py-14 scroll-mt-20">
         <h2 className={`${h2} max-w-2xl`}>{DOMESTIC ? "One tool for paying bills across Africa. Starting in Nigeria." : "One tool for paying bills across Africa. Starting with two countries."}</h2>
         <div className="mt-10 sm:mt-12 border-t border-line">
           {countries.map((c) => (
@@ -946,7 +923,7 @@ export default function Home() {
       )}
 
       {/* ───────── FAQ ───────── */}
-      <section id="faq" className="max-w-2xl mx-auto px-5 pt-16 sm:pt-20 pb-20 sm:pb-28 scroll-mt-20">
+      <section id="faq" className="max-w-2xl mx-auto px-5 pt-10 sm:pt-14 pb-14 sm:pb-20 scroll-mt-20">
         <h2 className={`${h2} mb-8`}>Questions, answered.</h2>
         <div className="border-t border-line">
           {FAQS.map((f) => (
