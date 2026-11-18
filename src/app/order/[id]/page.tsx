@@ -276,6 +276,11 @@ export default function OrderPage() {
 
       {order.status === "fulfilled" && <SaveAfterPay billerName={order.biller_name} identifier={order.identifier} />}
       {order.status === "fulfilled" && <ReferCard orderId={order.id} />}
+      {order.status === "fulfilled" && process.env.NEXT_PUBLIC_RECURRING_ENABLED === "1" && (
+        <p className="mt-4 text-sm text-haze">
+          Paying this bill every month? <a className="underline underline-offset-4 text-ink" href="/plans">See, pause or cancel your monthly payments</a>.
+        </p>
+      )}
 
       {order.status === "fulfilled" && (
         <div className="mt-4 rounded-2xl border border-line p-5 flex flex-wrap items-center gap-x-5 gap-y-3">
