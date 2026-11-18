@@ -26,7 +26,7 @@ export async function POST(req: Request) {
   if (body.action === "request") {
     const email = String(body.email ?? "").trim().toLowerCase();
     if (!EMAIL_RE.test(email) || email.length > 200) return NextResponse.json({ error: "Enter a valid email" }, { status: 400 });
-    const rl = await rateLimit(req, "plans_request", 5, 60);
+    const rl = await rateLimit(req, "plans_request", 20, 60);
     if (!rl.ok) return NextResponse.json({ error: "Too many requests. Try again in an hour." }, { status: 429 });
     try { await sendPlansLink(email); } catch (e) { console.error("[plans] link email failed", e); }
     return NextResponse.json({ ok: true, message: "If this email has a monthly payment with us, a sign-in link is on its way. Check spam too." });
