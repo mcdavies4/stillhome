@@ -20,6 +20,7 @@ import { ngnServiceFee, ngnMaxOrder, type FeeKind } from "@/lib/ngn-fee";
 import { getCountry } from "@/lib/countries";
 import { orderIsTest } from "@/lib/test-mode";
 import { sendMail, shell, button, esc, appUrl, naira } from "@/lib/mailer";
+import { signLink, plansPageUrl } from "@/lib/plan-manage";
 
 export const RECURRING_CONSENT_VERSION = "2026-11-18";
 export const RECURRING_CONSENT_TEXT =
@@ -48,8 +49,12 @@ export function addOneMonth(dateYmd: string): string {
 const manageUrl = (key: string) => `${appUrl()}/api/recurring/cancel?key=${encodeURIComponent(key)}`;
 
 async function email(to: string, subject: string, title: string, bodyHtml: string, key: string) {
-  const html = shell({ title, bodyHtml: `${bodyHtml}${button(manageUrl(key), "Cancel this monthly payment")}` });
-  const text = `${title}\n\n${bodyHtml.replace(/<[^>]+>/g, "")}\n\nCancel any time: ${manageUrl(key)}`;
+  const plans = plansPageUrl(signLink("plans", to, 60 * 24 * 7));
+  const html = shell({
+    title,
+    bodyHtml: `${bodyHtml}${button(manageUrl(key), "Cancel this monthly payment")}<p style="font-size:13px">See or pause all your monthly payments: <a href="${plans}">${plans}</a></p>`,
+  });
+  const text = `${title}\n\n${bodyHtml.replace(/<[^>]+>/g, "")}\n\nCancel any time: ${manageUrl(key)}\nAll your monthly payments: ${plans}`;
   await sendMail(to, { subject, html, text });
 }
 
