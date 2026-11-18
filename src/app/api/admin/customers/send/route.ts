@@ -9,13 +9,28 @@ import { NextResponse } from "next/server";
 import { adminGate } from "@/lib/admin-auth";
 import { buyerEmails } from "@/lib/buyers";
 import { THANK_YOU_FROM, THANK_YOU_SUBJECT, thankYouHtml, thankYouText } from "@/lib/thank-you-email";
+import { optoutUrl, removeOptedOut } from "@/lib/plan-manage";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
 
 const MAX_SEND = 2000;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
-const sendOne = (to: string) => ({ from: THANK_YOU_FROM, reply_to: process.env.SUPPORT_EMAIL ?? "nolgichq@gmail.com", to, subject: THANK_YOU_SUBJECT, html: thankYouHtml(), text: thankYouText() });
+// Every marketing email carries a one-click unsubscribe link (RFC 8058 header included).
+const sendOne = (to: string) => {
+  const unsub = optoutUrl(to);
+  return {
+    from: THANK_YOU_FROM,
+    reply_to: process.env.SUPPORT_EMAIL ?? "nolgichq@gmail.com",
+    to,
+    subject: THANK_YOU_SUBJECT,
+    html: `${thankYouHtml()}<p style="font-family:Arial,sans-serif;font-size:12px;color:#777;text-align:center">Don't want these emails? <a href="${unsub}" style="color:#777">Unsubscribe</a></p>`,
+    text: `${thankYouText()}\n\nUnsubscribe: ${unsub}`,
+    headers: { "List-Unsubscribe": `<${unsub}>`, "List-Unsubscribe-Post": "List-Unsubscribe=One-Click" },
+  };
+};
+// Buyers minus anyone who has opted out.
+const sendable = async (from: string | null, to: string | null) => removeOptedOut(await buyerEmails(from, to));
 
 export async function POST(req: Request) {
   const denied = await adminGate(req);
@@ -31,7 +46,7 @@ export async function POST(req: Request) {
   const auth = { Authorization: `Bearer ${process.env.RESEND_API_KEY}`, "Content-Type": "application/json" };
 
   if (body.mode === "preview" || !body.mode) {
-    const emails = await buyerEmails(from, to);
+    const emails = await sendable(from, to);
     return NextResponse.json({ count: emails.length, from, to });
   }
 
@@ -44,7 +59,7 @@ export async function POST(req: Request) {
   }
 
   if (body.mode === "send") {
-    const emails = await buyerEmails(from, to);
+    const emails = await sendable(from, to);
     if (emails.length === 0) return NextResponse.json({ error: "No buyers in this range" }, { status: 400 });
     if (emails.length > MAX_SEND) return NextResponse.json({ error: `Over ${MAX_SEND} recipients. Narrow the dates.` }, { status: 400 });
     if (body.confirm !== `SEND ${emails.length}`) return NextResponse.json({ error: `Confirm with "SEND ${emails.length}"`, count: emails.length }, { status: 409 });

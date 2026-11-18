@@ -6,6 +6,7 @@ import { cronAuthorized } from "@/lib/security";
 import { sweepBulk } from "@/lib/bulk";
 import { sweepFollowups } from "@/lib/followup";
 import { sweepRecurring } from "@/lib/recurring";
+import { sendReminders } from "@/lib/plan-manage";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -52,6 +53,10 @@ export async function GET(req: Request) {
   let recurring: unknown = null;
   try { recurring = await sweepRecurring(); } catch (e) { console.error("[cron/tokens] recurring sweep failed", e); }
 
+  // Day-before reminders for tomorrow's monthly charges. Never blocks the rest of this run.
+  let reminders: number | null = null;
+  try { reminders = await sendReminders(); } catch (e) { console.error("[cron/tokens] reminders failed", e); }
+
   let reconcile: { ok: boolean; flags: number } | { error: string };
   try {
     reconcile = await sendReconcileEmail();
@@ -60,5 +65,5 @@ export async function GET(req: Request) {
     reconcile = { error: String(e) };
   }
 
-  return NextResponse.json({ checked: orders?.length ?? 0, recovered, reconcile, followups, recurring });
+  return NextResponse.json({ checked: orders?.length ?? 0, recovered, reconcile, followups, recurring, reminders });
 }
