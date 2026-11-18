@@ -66,6 +66,8 @@ export async function initializeTransaction(p: {
   /** Pay for Me: its own reference and metadata (one payment covers several orders). Everything else leaves these unset. */
   reference?: string;
   metadata?: Record<string, unknown>;
+  /** Repeat-monthly first payments are card-only, so Paystack returns a card token we can reuse. */
+  channels?: string[];
 }): Promise<{ authorizationUrl: string; reference: string }> {
   const reference = p.reference ?? paystackReferenceFor(p.orderId);
   const r = await ps<{ data: { authorization_url: string; reference: string } }>(
@@ -78,12 +80,46 @@ export async function initializeTransaction(p: {
         currency: "NGN",
         reference,
         callback_url: p.callbackUrl,
-        channels: ["card", "bank", "ussd", "bank_transfer"],
+        channels: p.channels ?? ["card", "bank", "ussd", "bank_transfer"],
         metadata: p.metadata ?? { order_id: p.orderId },
       }),
     }
   );
   return { authorizationUrl: r.data.authorization_url, reference: r.data.reference };
+}
+
+/**
+ * Charge a card the customer already authorised (monthly repeat). Only works for an authorization whose
+ * `reusable` flag was true, and only with the email that made the first payment.
+ * Returns Paystack's status; a challenged charge comes back with paused=true and an authorization_url.
+ */
+export async function chargeAuthorization(p: {
+  email: string;
+  amountNgn: number;
+  authorizationCode: string;
+  reference: string;
+  metadata?: Record<string, unknown>;
+}): Promise<{ status: string; paused: boolean; authorizationUrl: string | null; reference: string }> {
+  const r = await ps<{ data: { status?: string; paused?: boolean; authorization_url?: string; reference?: string } }>(
+    "/transaction/charge_authorization",
+    {
+      method: "POST",
+      body: JSON.stringify({
+        email: p.email,
+        amount: Math.round(p.amountNgn * 100), // kobo
+        currency: "NGN",
+        authorization_code: p.authorizationCode,
+        reference: p.reference,
+        metadata: p.metadata ?? {},
+      }),
+    }
+  );
+  return {
+    status: String(r.data?.status ?? "").toLowerCase(),
+    paused: r.data?.paused === true,
+    authorizationUrl: r.data?.authorization_url ?? null,
+    reference: String(r.data?.reference ?? p.reference),
+  };
 }
 
 /** Server-side re-check of a transaction (belt and braces after the webhook). */

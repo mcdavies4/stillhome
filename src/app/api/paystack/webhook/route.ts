@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
+import { activateFromWebhook } from "@/lib/recurring";
 import { alertFounder } from "@/lib/alerts";
 import { paystackReferenceFor, verifyWebhookSignature } from "@/lib/paystack";
 import { confirmPaystackPayment } from "@/lib/paystack-process";
@@ -73,6 +74,10 @@ export async function POST(req: Request) {
     );
     return NextResponse.json({ received: true, note: "mismatch" });
   }
+
+  // Monthly repeat: the first payment carries the plan id. Activation is non-fatal and only happens when the card is reusable.
+  const repeatPlanId: string | undefined = data.metadata?.recurring_plan_id;
+  if (repeatPlanId) await activateFromWebhook(repeatPlanId, data);
 
   // The webhook is only a nudge: the payment is re-verified with Paystack's own API before anything is vended
   // (amount, currency, reference), and the order page runs the same check if this webhook never arrives.

@@ -151,6 +151,8 @@ const FAQS_DOMESTIC = [
 ];
 
 const PFM_ON = process.env.NEXT_PUBLIC_PAYFORME_ENABLED === "1";
+const REPEAT_ON = process.env.NEXT_PUBLIC_RECURRING_ENABLED === "1";
+const REPEAT_TERMS = "Repeat this bill every month. Each month Nolgic charges the same card for the same bill and amount, plus the service fee shown before you pay. You get an email before each charge and a receipt after delivery. Cancel any time from the link in any of these emails. If your bank asks you to approve a monthly charge, we email you the link and wait for your approval.";
 const EXAMS_ON = process.env.NEXT_PUBLIC_EXAMS_ENABLED === "1";
 const BILLS_ON = PFM_ON && process.env.NEXT_PUBLIC_BILLSLINK_ENABLED === "1";
 // Questions about the features beyond one bill, so people who search for them find them.
@@ -216,6 +218,8 @@ export default function Home() {
   const [giftOpen, setGiftOpen] = useState(false);
   const [giftNote, setGiftNote] = useState("");
   const [giftFrom, setGiftFrom] = useState("");
+  const [repeatMonthly, setRepeatMonthly] = useState(false);
+  const [repeatConsent, setRepeatConsent] = useState(false);
   // From a reminder email (?rt=<private token>): the last order, fetched once, applied when the service list has loaded.
   const [remPrefill, setRemPrefill] = useState<{ tab: string; billerCode: string; itemCode: string; billerName: string; identifier: string; amount: number; email: string } | null>(null);
   const [validated, setValidated] = useState<{ name: string | null } | null>(null);
@@ -395,6 +399,7 @@ export default function Home() {
           country,
           payIn: inNgn ? "ngn" : "gbp",
           ...(method === "transfer" ? { payMethod: "transfer" } : {}),
+          ...(REPEAT_ON && repeatMonthly && method !== "transfer" ? { repeatMonthly: true, repeatConsent } : {}),
           email,
           billerCode: item.biller_code,
           itemCode: item.item_code,
@@ -793,7 +798,24 @@ export default function Home() {
                     ? <>Your receipt and token will be emailed to <span className="text-paper font-medium break-all">{email}</span> and shown on the next page. Check it&rsquo;s right.</>
                     : "Add your email above. We email your receipt and token there, and show them on the next page too."}
                 </p>
-                <button onClick={() => pay("card")} disabled={payDisabled}
+                {REPEAT_ON && inNgn && billAmount > 0 && (
+                  <div className="mt-4 rounded-2xl border border-line p-3.5 text-sm">
+                    <label className="flex gap-3 items-start cursor-pointer">
+                      <input type="checkbox" className="mt-1" checked={repeatMonthly} onChange={(e) => { setRepeatMonthly(e.target.checked); if (!e.target.checked) setRepeatConsent(false); }} />
+                      <span className="font-medium">Repeat this bill every month</span>
+                    </label>
+                    {repeatMonthly && (
+                      <>
+                        <p className="text-haze text-xs leading-relaxed mt-2">{REPEAT_TERMS}</p>
+                        <label className="flex gap-3 items-start cursor-pointer mt-3">
+                          <input type="checkbox" className="mt-1" checked={repeatConsent} onChange={(e) => setRepeatConsent(e.target.checked)} />
+                          <span>I agree to a monthly charge on my card for this bill, until I cancel.</span>
+                        </label>
+                      </>
+                    )}
+                  </div>
+                )}
+                <button onClick={() => pay("card")} disabled={payDisabled || (REPEAT_ON && repeatMonthly && !repeatConsent)}
                   className="mt-3 w-full h-14 rounded-2xl bg-cta text-oncta font-display font-bold text-lg hover:brightness-105 active:brightness-95 disabled:opacity-40 disabled:hover:brightness-100 num">
                   {busy === "pay" ? "Opening secure checkout…" : inNgn && billAmount > 0 ? `Pay ${fmtLocal(ngnTotal)}` : "Continue to payment"}
                 </button>
