@@ -14,6 +14,7 @@ const ITEMS: { href: string; label: string }[] = [
   { href: "/admin/growth", label: "Growth" },
   { href: "/admin/reps", label: "Sales reps" },
   { href: "/admin/feedback", label: "Abandoned orders" },
+  { href: "/admin/plans", label: "Monthly plans" },
   { href: "/admin/exams-check", label: "Exam PIN check" },
   { href: "/admin/partners", label: "Partners" },
 ];

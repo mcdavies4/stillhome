@@ -21,7 +21,7 @@ const sendOne = (to: string) => {
   const unsub = optoutUrl(to);
   return {
     from: THANK_YOU_FROM,
-    reply_to: process.env.SUPPORT_EMAIL ?? "nolgichq@gmail.com",
+    reply_to: process.env.CAMPAIGN_REPLY_TO ?? process.env.SUPPORT_EMAIL ?? "nolgichq@gmail.com",
     to,
     subject: THANK_YOU_SUBJECT,
     html: `${thankYouHtml()}<p style="font-family:Arial,sans-serif;font-size:12px;color:#777;text-align:center">Don't want these emails? <a href="${unsub}" style="color:#777">Unsubscribe</a></p>`,

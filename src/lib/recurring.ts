@@ -14,7 +14,7 @@ import { supabaseAdmin } from "@/lib/supabase";
 import { alertFounder } from "@/lib/alerts";
 import { chargeAuthorization, paystackReferenceFor, PaystackError } from "@/lib/paystack";
 import { confirmPaystackPayment } from "@/lib/paystack-process";
-import { checkPurchase, validateCustomer } from "@/lib/bills";
+import { checkPurchase, validateCustomer, currentItemPrice } from "@/lib/bills";
 import { walletCovers } from "@/lib/capacity";
 import { ngnServiceFee, ngnMaxOrder, type FeeKind } from "@/lib/ngn-fee";
 import { getCountry } from "@/lib/countries";
@@ -145,11 +145,23 @@ export async function activateFromWebhook(planId: string, data: any): Promise<vo
         updated_at: new Date().toISOString(),
       })
       .eq("id", planId);
+    // A new card for the same bill replaces the older plan, so the customer is never charged twice.
+    const { data: replaced } = await db
+      .from("recurring_plans")
+      .update({ status: "cancelled", cancelled_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+      .eq("email", plan.email)
+      .eq("biller_code", plan.biller_code)
+      .eq("item_code", plan.item_code)
+      .eq("identifier", plan.identifier)
+      .neq("id", planId)
+      .in("status", ["active", "on_hold", "paused", "needs_action"])
+      .select("id");
     await email(
       plan.email,
       `Monthly ${plan.biller_name} payment is set up`,
       "Your monthly payment is set up",
-      `<p>We'll pay <b>${esc(plan.biller_name)}</b> for <b>${esc(plan.identifier_label)} ${esc(plan.identifier)}</b> every month, on the same day, for ${naira(plan.amount_ngn)} plus the service fee shown at checkout.</p><p>We email you a day before each charge and send a receipt after delivery.</p>`,
+      `<p>We'll pay <b>${esc(plan.biller_name)}</b> for <b>${esc(plan.identifier_label)} ${esc(plan.identifier)}</b> every month, on the same day, for ${naira(plan.amount_ngn)} plus the service fee shown at checkout.</p><p>We email you a day before each charge and send a receipt after delivery.</p>` +
+        ((replaced ?? []).length ? `<p>This replaces your earlier monthly payment for this bill, which has been cancelled.</p>` : ""),
       plan.manage_key
     );
   } catch (e) {
@@ -200,7 +212,13 @@ async function runPlan(plan: any, today: string): Promise<"charged" | "failed" |
 
   // The bill must still be buyable at this price, and we must still be able to deliver it.
   const purchase = await checkPurchase(plan.biller_code, plan.item_code, amountNgn);
-  if (!purchase.ok) return needsAction(plan, "price or plan changed", purchase.error);
+  if (!purchase.ok) {
+    const newPrice = await currentItemPrice(plan.biller_code, plan.item_code).catch(() => null);
+    if (newPrice && newPrice !== amountNgn) {
+      return needsAction(plan, "price changed", `The price changed from ${naira(amountNgn)} to ${naira(newPrice)}.`, newPrice);
+    }
+    return needsAction(plan, "price or plan changed", purchase.error ?? "The bill or plan is no longer available.");
+  }
 
   if (amountNgn > ngnMaxOrder(getCountry("NG").maxLocal)) return needsAction(plan, "amount over limit", "The amount is now above our order limit.");
 
@@ -304,6 +322,15 @@ async function failCharge(plan: any): Promise<"failed"> {
     .from("recurring_plans")
     .update({ failures, status: paused ? "paused" : "active", updated_at: new Date().toISOString() })
     .eq("id", plan.id);
+  if (!paused) {
+    await email(
+      plan.email,
+      `We couldn't take your monthly ${plan.biller_name} payment`,
+      "We couldn't take this month's payment",
+      `<p>We couldn't take this month's payment for <b>${esc(plan.biller_name)}</b>, so nothing has been delivered for it yet. We'll try again tomorrow.</p><p>If it keeps failing, check that your card works online and that your bank allows it. You can also pause the plan below.</p>`,
+      plan.manage_key
+    );
+  }
   if (paused) {
     await email(
       plan.email,
@@ -317,14 +344,20 @@ async function failCharge(plan: any): Promise<"failed"> {
   return "failed";
 }
 
-async function needsAction(plan: any, reason: string, detail: string): Promise<"skipped"> {
-  await supabaseAdmin().from("recurring_plans").update({ status: "needs_action", updated_at: new Date().toISOString() }).eq("id", plan.id);
+async function needsAction(plan: any, reason: string, detail: string, pendingAmount?: number): Promise<"skipped"> {
+  await supabaseAdmin()
+    .from("recurring_plans")
+    .update({ status: "needs_action", pending_amount_ngn: pendingAmount ?? null, updated_at: new Date().toISOString() })
+    .eq("id", plan.id);
   await log(plan.id, "skipped", reason);
+  const next = pendingAmount
+    ? `<p>Approve the new price on your monthly payments page to keep this going. Nothing is charged at the new price until you approve it.</p>`
+    : `<p>Nothing has been charged. Set it up again at nolgic.com with the new details.</p>`;
   await email(
     plan.email,
-    `Your monthly ${plan.biller_name} payment needs a check`,
-    "Your monthly payment needs a check",
-    `<p>We couldn't repeat the payment for <b>${esc(plan.biller_name)}</b> this month: ${esc(detail)}</p><p>Nothing has been charged. Set it up again at nolgic.com with the new details.</p>`,
+    pendingAmount ? `Your monthly ${plan.biller_name} price has changed` : `Your monthly ${plan.biller_name} payment needs a check`,
+    pendingAmount ? "Your monthly payment has a new price" : "Your monthly payment needs a check",
+    `<p>${esc(detail)}</p>${next}`,
     plan.manage_key
   );
   return "skipped";

@@ -17,6 +17,8 @@ type Plan = {
   card_last4: string | null;
   card_brand: string | null;
   failures: number;
+  pending_amount_ngn: number | null;
+  history: { at: string; order_id: string | null; amount_ngn: number | null; fee_ngn: number | null }[];
 };
 
 const NAIRA = (n: number) => `₦${Math.round(n).toLocaleString("en-NG")}`;
@@ -42,6 +44,7 @@ export default function PlansPage() {
   const [busy, setBusy] = useState(false);
   const [plans, setPlans] = useState<Plan[] | null>(null);
   const [owner, setOwner] = useState<string | null>(null);
+  // Plans statuses that still have a card on file, so "replace card" makes sense.
   const noticeRef = useRef<HTMLDivElement>(null);
 
   // Bring the confirmation into view, so it is never missed below the fold.
@@ -87,8 +90,9 @@ export default function PlansPage() {
     }
   }
 
-  async function act(plan: Plan, action: "pause" | "resume" | "cancel") {
+  async function act(plan: Plan, action: "pause" | "resume" | "cancel" | "approve_price") {
     if (action === "cancel" && !window.confirm(`Cancel the monthly payment for ${plan.biller_name}? This can't be undone.`)) return;
+    if (action === "approve_price" && !window.confirm(`Approve the new price of ${NAIRA(plan.pending_amount_ngn ?? 0)} for ${plan.biller_name}? We'll charge it from your next charge date.`)) return;
     setBusy(true); setError(null);
     const res = await fetch("/api/plans", {
       method: "POST",
@@ -97,7 +101,7 @@ export default function PlansPage() {
     });
     const data = await res.json().catch(() => ({}));
     setBusy(false);
-    if (!res.ok) { setError(data.error ?? "Could not change this plan."); return; }
+    if (!res.ok) { setError(data.error ?? "Could not change this plan."); if (action === "approve_price") load(token!); return; }
     setPlans(data.plans);
   }
 
@@ -162,15 +166,33 @@ export default function PlansPage() {
             <div style={{ marginTop: 12, fontSize: 14, color: "#4b5266" }}>
               {p.status === "active" && p.next_run_on && <>Next charge: {DATE(p.next_run_on)}</>}
               {p.status === "on_hold" && <>No charges until you resume.</>}
-              {p.status === "needs_action" && <>We need you to check your email from Nolgic before the next charge.</>}
+              {p.status === "needs_action" && p.pending_amount_ngn && <>The price changed from {NAIRA(p.amount_ngn)} to <b>{NAIRA(p.pending_amount_ngn)}</b>. Approve it to keep this payment going. Nothing is charged at the new price until you do.</>}
+              {p.status === "needs_action" && !p.pending_amount_ngn && <>We need you to check your email from Nolgic before the next charge.</>}
               {p.status === "paused" && <>Paused after {p.failures} failed payments. Resume to try again.</>}
               {p.card_last4 && <> · Card ending {p.card_last4}</>}
             </div>
             <div style={{ display: "flex", gap: 8, marginTop: 14, flexWrap: "wrap" }}>
+              {p.status === "needs_action" && p.pending_amount_ngn && <Btn onClick={() => act(p, "approve_price")} disabled={busy}>Approve {NAIRA(p.pending_amount_ngn)}</Btn>}
               {p.status === "active" && <Btn onClick={() => act(p, "pause")} disabled={busy}>Pause</Btn>}
               {(p.status === "on_hold" || p.status === "paused") && <Btn onClick={() => act(p, "resume")} disabled={busy}>Resume</Btn>}
               <Btn onClick={() => act(p, "cancel")} disabled={busy} danger>Cancel</Btn>
             </div>
+              <p style={{ marginTop: 12, fontSize: 13, color: "#4b5266" }}>
+                Changed card? <a href="/#pay" style={{ color: NAVY, fontWeight: 700 }}>Pay this bill once with your new card</a> and tick "Repeat monthly". Your old plan for this bill is replaced automatically.
+              </p>
+            {p.history.length > 0 && (
+              <div style={{ marginTop: 14, borderTop: "1px solid #e3e6ee", paddingTop: 10 }}>
+                <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 6 }}>Past charges</div>
+                <ul style={{ listStyle: "none", padding: 0, margin: 0, display: "grid", gap: 4, fontSize: 14 }}>
+                  {p.history.map((h, i) => (
+                    <li key={i} style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+                      <span>{new Date(h.at).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "Africa/Lagos" })}{h.amount_ngn ? ` · ${NAIRA(h.amount_ngn + (h.fee_ngn ?? 0))}` : ""}</span>
+                      {h.order_id && <a href={`/order/${h.order_id}`} style={{ color: NAVY, fontWeight: 700 }}>Receipt</a>}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
           </li>
         ))}
       </ul>

@@ -5,6 +5,9 @@
 import crypto from "crypto";
 import { supabaseAdmin } from "@/lib/supabase";
 import { sendMail, shell, button, esc, appUrl, naira } from "@/lib/mailer";
+import { checkPurchase, currentItemPrice } from "@/lib/bills";
+import { ngnMaxOrder } from "@/lib/ngn-fee";
+import { getCountry } from "@/lib/countries";
 
 // ───────── signed links (no login: a link is valid for a short time, and is tied to one email) ─────────
 
@@ -83,13 +86,40 @@ export function nextRunOnAfter(fromYmd: string, dueYmd: string): string {
 const VISIBLE = ["active", "on_hold", "needs_action", "paused"];
 
 export async function listPlansForEmail(email: string) {
-  const { data } = await supabaseAdmin()
+  const db = supabaseAdmin();
+  const { data } = await db
     .from("recurring_plans")
-    .select("id, biller_name, identifier, identifier_label, customer_name, amount_ngn, status, next_run_on, card_last4, card_brand, failures")
+    .select("id, biller_name, identifier, identifier_label, customer_name, amount_ngn, pending_amount_ngn, status, next_run_on, card_last4, card_brand, failures")
     .eq("email", email.toLowerCase())
     .in("status", VISIBLE)
     .order("created_at", { ascending: false });
-  return data ?? [];
+  const plans = data ?? [];
+  if (plans.length === 0) return [];
+
+  // Past successful charges for these plans, newest first, with the amounts from their orders.
+  const { data: logs } = await db
+    .from("recurring_charge_log")
+    .select("plan_id, order_id, created_at")
+    .in("plan_id", plans.map((p) => p.id))
+    .eq("outcome", "charged")
+    .order("created_at", { ascending: false })
+    .limit(60);
+  const orderIds = (logs ?? []).map((l) => l.order_id).filter(Boolean) as string[];
+  const { data: orders } = orderIds.length
+    ? await db.from("orders").select("id, amount_ngn, service_fee_local").in("id", orderIds)
+    : { data: [] as any[] };
+  const byOrder = new Map((orders ?? []).map((o: any) => [o.id, o]));
+
+  return plans.map((p) => ({
+    ...p,
+    history: (logs ?? [])
+      .filter((l) => l.plan_id === p.id)
+      .slice(0, 6)
+      .map((l) => {
+        const o: any = byOrder.get(l.order_id);
+        return { at: l.created_at, order_id: l.order_id, amount_ngn: o?.amount_ngn ?? null, fee_ngn: o?.service_fee_local ?? null };
+      }),
+  }));
 }
 
 export async function anyPlanFor(email: string): Promise<boolean> {
@@ -101,7 +131,7 @@ export async function anyPlanFor(email: string): Promise<boolean> {
   return (count ?? 0) > 0;
 }
 
-export type PlanAction = "pause" | "resume" | "cancel";
+export type PlanAction = "pause" | "resume" | "cancel" | "approve_price";
 
 /** Acts on one plan, only if it belongs to the signed-in email. */
 export async function actOnPlan(email: string, planId: string, action: PlanAction): Promise<{ ok: boolean; error?: string }> {
@@ -122,6 +152,29 @@ export async function actOnPlan(email: string, planId: string, action: PlanActio
     const next = nextRunOnAfter(today, plan.next_run_on ?? today);
     await db.from("recurring_plans").update({ status: "active", paused_at: null, failures: 0, next_run_on: next, updated_at: now }).eq("id", planId);
     await db.from("recurring_charge_log").insert({ plan_id: planId, outcome: "skipped", note: "resumed by customer" });
+    return { ok: true };
+  }
+  if (action === "approve_price") {
+    if (plan.status !== "needs_action" || !plan.pending_amount_ngn) return { ok: false, error: "There is no new price to approve on this plan" };
+    const newAmt = Number(plan.pending_amount_ngn);
+    if (newAmt > ngnMaxOrder(getCountry("NG").maxLocal)) return { ok: false, error: "This amount is above our order limit, so it can't be approved." };
+    const check = await checkPurchase(plan.biller_code, plan.item_code, newAmt);
+    if (!check.ok) {
+      // The price moved again: store the latest one and ask again.
+      const latest = await currentItemPrice(plan.biller_code, plan.item_code).catch(() => null);
+      if (latest && latest !== newAmt) {
+        await db.from("recurring_plans").update({ pending_amount_ngn: latest, updated_at: now }).eq("id", planId);
+        return { ok: false, error: `The price changed again, to ${naira(latest)}. Check the new price and approve again.` };
+      }
+      return { ok: false, error: check.error ?? "This bill is not available right now. Try again later." };
+    }
+    await db.from("recurring_plans").update({ status: "active", amount_ngn: newAmt, pending_amount_ngn: null, failures: 0, updated_at: now }).eq("id", planId);
+    await db.from("recurring_charge_log").insert({ plan_id: planId, outcome: "skipped", note: "new price approved by customer" });
+    await sendMail(plan.email, {
+      subject: `Monthly ${plan.biller_name} payment: new price approved`,
+      html: shell({ title: "New price approved", bodyHtml: `<p>Your monthly payment for <b>${esc(plan.biller_name)}</b> is now ${naira(newAmt)} plus the service fee. We'll charge the new amount on your next charge date.</p>` }),
+      text: `Your monthly payment for ${plan.biller_name} is now ${naira(newAmt)} plus the service fee. We'll charge the new amount on your next charge date.`,
+    });
     return { ok: true };
   }
   if (action === "cancel") {
@@ -174,6 +227,14 @@ export async function sendReminders(now: Date = new Date()): Promise<number> {
     }
   }
   return sent;
+}
+
+// ───────── replies ─────────
+
+/** True when a customer's reply asks to stop: the first line starts with stop, unsubscribe, remove or opt out. */
+export function isStopReply(text: string): boolean {
+  const first = text.split(/\r?\n/).map((l) => l.trim()).find((l) => l.length > 0) ?? "";
+  return /^(stop|unsubscribe|opt[- ]?out|remove( me)?|cancel)\b/i.test(first);
 }
 
 // ───────── marketing opt-out ─────────

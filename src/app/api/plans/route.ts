@@ -1,7 +1,7 @@
 // /api/plans — powers the manage-plans page.
 //   GET  ?token=…                      → the signed-in email's plans
 //   POST {action:"request", email}     → emails a 30-minute sign-in link (same answer whether or not a plan exists)
-//   POST {action:"act", token, planId, do:"pause"|"resume"|"cancel"}
+//   POST {action:"act", token, planId, do:"pause"|"resume"|"cancel"|"approve_price"}
 // No login: the signed link ties access to one email and expires.
 
 import { NextResponse } from "next/server";
@@ -11,7 +11,7 @@ import { verifyLink, listPlansForEmail, actOnPlan, sendPlansLink } from "@/lib/p
 export const dynamic = "force-dynamic";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const ACTIONS = ["pause", "resume", "cancel"] as const;
+const ACTIONS = ["pause", "resume", "cancel", "approve_price"] as const;
 
 export async function GET(req: Request) {
   const email = verifyLink("plans", new URL(req.url).searchParams.get("token"));
