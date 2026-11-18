@@ -42,6 +42,7 @@ export default function PlansPage() {
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [done, setDone] = useState<string | null>(null);
   const [plans, setPlans] = useState<Plan[] | null>(null);
   const [owner, setOwner] = useState<string | null>(null);
   // Plans statuses that still have a card on file, so "replace card" makes sense.
@@ -103,6 +104,12 @@ export default function PlansPage() {
     setBusy(false);
     if (!res.ok) { setError(data.error ?? "Could not change this plan."); if (action === "approve_price") load(token!); return; }
     setPlans(data.plans);
+    setDone(
+      action === "pause" ? `${plan.biller_name} is paused. We won't charge it until you resume. We've emailed you a confirmation.`
+      : action === "resume" ? `${plan.biller_name} is back on. We've emailed you the next charge date.`
+      : action === "approve_price" ? `New price approved for ${plan.biller_name}. We'll charge it from your next charge date.`
+      : `${plan.biller_name} is cancelled. We've emailed you a confirmation.`
+    );
   }
 
   const shell = (children: React.ReactNode) => (
@@ -149,6 +156,7 @@ export default function PlansPage() {
   return shell(
     <>
       <p style={{ lineHeight: 1.6 }}>Signed in as <b>{owner}</b>. Pausing skips the next charge. You can restart any time.</p>
+      {done && <div role="status" style={{ marginTop: 16, padding: "14px 16px", borderRadius: 12, background: "#E7F6EC", border: "1px solid #7CC79A", color: "#14532d", fontWeight: 600, lineHeight: 1.5 }}>✓ {done}</div>}
       {plans.length === 0 && <p style={{ marginTop: 24 }}>You have no monthly payments set up.</p>}
       <ul style={{ listStyle: "none", padding: 0, margin: "24px 0 0", display: "grid", gap: 14 }}>
         {plans.map((p) => (

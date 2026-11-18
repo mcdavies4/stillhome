@@ -60,6 +60,8 @@ export async function sendPlansLink(email: string): Promise<void> {
 
 // ───────── dates (Lagos time) ─────────
 
+const DATE_ONLY = (ymd: string) => new Date(`${ymd}T12:00:00+01:00`).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric", timeZone: "Africa/Lagos" });
+
 export const lagosToday = (now: Date = new Date()) =>
   new Intl.DateTimeFormat("en-CA", { timeZone: "Africa/Lagos", year: "numeric", month: "2-digit", day: "2-digit" }).format(now);
 
@@ -144,6 +146,11 @@ export async function actOnPlan(email: string, planId: string, action: PlanActio
     if (plan.status !== "active") return { ok: false, error: "Only an active plan can be paused" };
     await db.from("recurring_plans").update({ status: "on_hold", paused_at: now, updated_at: now }).eq("id", planId);
     await db.from("recurring_charge_log").insert({ plan_id: planId, outcome: "skipped", note: "paused by customer" });
+    await sendMail(plan.email, {
+      subject: `Monthly ${plan.biller_name} payment paused`,
+      html: shell({ title: "Your monthly payment is paused", bodyHtml: `<p>We won't charge you for <b>${esc(plan.biller_name)}</b> until you restart it. Restart any time on your monthly payments page.</p>` + button(plansPageUrl(signLink("plans", plan.email, 60 * 24 * 7)), "Manage my monthly payments") }),
+      text: `Your monthly payment for ${plan.biller_name} is paused. We won't charge you until you restart it.`,
+    });
     return { ok: true };
   }
   if (action === "resume") {
@@ -152,6 +159,11 @@ export async function actOnPlan(email: string, planId: string, action: PlanActio
     const next = nextRunOnAfter(today, plan.next_run_on ?? today);
     await db.from("recurring_plans").update({ status: "active", paused_at: null, failures: 0, next_run_on: next, updated_at: now }).eq("id", planId);
     await db.from("recurring_charge_log").insert({ plan_id: planId, outcome: "skipped", note: "resumed by customer" });
+    await sendMail(plan.email, {
+      subject: `Monthly ${plan.biller_name} payment restarted`,
+      html: shell({ title: "Your monthly payment has restarted", bodyHtml: `<p>Your monthly payment for <b>${esc(plan.biller_name)}</b> is back on. The next charge is on ${esc(DATE_ONLY(next))}.</p>` }),
+      text: `Your monthly payment for ${plan.biller_name} is back on. The next charge is on ${DATE_ONLY(next)}.`,
+    });
     return { ok: true };
   }
   if (action === "approve_price") {
