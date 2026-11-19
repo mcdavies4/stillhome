@@ -156,7 +156,8 @@ export async function actOnPlan(email: string, planId: string, action: PlanActio
   if (action === "resume") {
     if (plan.status !== "on_hold") return { ok: false, error: "Only a paused plan can be resumed" };
     const today = lagosToday();
-    const next = nextRunOnAfter(today, plan.next_run_on ?? today);
+    // Never charge on the day of resuming or the day after: the next charge is on the plan's day of month, at least two days away.
+    const next = nextRunOnAfter(addDays(today, 2), plan.next_run_on ?? today);
     await db.from("recurring_plans").update({ status: "active", paused_at: null, failures: 0, next_run_on: next, updated_at: now }).eq("id", planId);
     await db.from("recurring_charge_log").insert({ plan_id: planId, outcome: "skipped", note: "resumed by customer" });
     await sendMail(plan.email, {
