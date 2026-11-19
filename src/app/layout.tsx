@@ -13,7 +13,7 @@ import RefCapture from "@/components/RefCapture";
 import RepCapture from "@/components/RepCapture";
 import { playUrl, telegramUrl } from "@/lib/app-links";
 import { themeInitScript } from "@/lib/theme-time";
-import { Analytics } from "@vercel/analytics/next";
+import { Analytics as VercelAnalytics } from "@vercel/analytics/next";
 
 const BASE = process.env.NEXT_PUBLIC_APP_URL ?? "https://stillhome-ten.vercel.app";
 
@@ -138,9 +138,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         </nav>
         {children}
         <RecentToast />
-        <Analytics />
         <SupportChat />
         <Analytics />
+        <VercelAnalytics />
       </body>
     </html>
   );
