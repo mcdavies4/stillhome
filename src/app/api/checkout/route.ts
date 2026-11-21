@@ -17,6 +17,7 @@ import { walletCovers } from "@/lib/capacity";
 import { BACK_SOON_MESSAGE } from "@/lib/back-soon";
 import { planFeeWaiver, commitFeeWaiver, cleanRef } from "@/lib/referral";
 import { cleanRep, tagRep } from "@/lib/rep";
+import { createPendingPlan, recurringEnabled } from "@/lib/recurring";
 
 // Creates the order row + a payment session:
 //   - default: Stripe Checkout in GBP (diaspora, any supported country)
@@ -116,6 +117,11 @@ export async function POST(req: Request) {
       // "transfer" orders are paid by bank transfer to a Flutterwave account (see /api/flutterwave/transfer-account).
       const transfer = raw.payMethod === "transfer";
       const rail = transfer ? "flutterwave" : ngnPayProvider();
+      // Repeat monthly: card on Paystack only, with the customer's explicit consent, and only when switched on.
+      const wantsRepeat = raw.repeatMonthly === true;
+      if (wantsRepeat && (transfer || rail !== "paystack" || raw.repeatConsent !== true || !recurringEnabled())) {
+        return NextResponse.json({ error: "Monthly repeat isn't available for this payment. Please pay once instead." }, { status: 400 });
+      }
       if (rail === "flutterwave" ? !flwPayConfigured() : !paystackConfigured()) {
         return NextResponse.json({ error: "Naira payments aren't available yet — please check back soon." }, { status: 503 });
       }
@@ -205,11 +211,28 @@ export async function POST(req: Request) {
         await dbN.from("orders").update({ flw_pay_ref: fw.txRef }).eq("id", orderN.id);
         return NextResponse.json({ url: fw.link, orderId: orderN.id, total: `₦${totalNgn.toLocaleString()}` });
       }
+      // The plan is stored as pending. It only becomes active when Paystack confirms a reusable card (see the webhook).
+      const repeatPlan = wantsRepeat
+        ? await createPendingPlan({
+            email: b.email,
+            billerCode: b.billerCode,
+            itemCode: b.itemCode,
+            billerName: b.billerName,
+            identifier,
+            identifierLabel: b.identifierLabel,
+            customerName: v.name,
+            feeKind,
+            amountNgn,
+            ip,
+          })
+        : null;
       const init = await initializeTransaction({
         email: b.email,
         amountNgn: totalNgn,
         orderId: orderN.id,
         callbackUrl: `${appUrlN}/order/${orderN.id}?paid=1`,
+        ...(repeatPlan ? { channels: ["card"] } : {}),
+        metadata: { order_id: orderN.id, ...(repeatPlan ? { recurring_plan_id: repeatPlan.id } : {}) },
       });
       await dbN.from("orders").update({ paystack_reference: init.reference }).eq("id", orderN.id);
 

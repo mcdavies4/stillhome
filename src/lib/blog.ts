@@ -167,6 +167,52 @@ export const posts: Post[] = [
     ],
   },
   {
+    slug: "is-it-safe-to-pay-bills-online-nigeria",
+    title: "Is it safe to pay bills online in Nigeria?",
+    description: "How to check a bill payment site before you pay: the account name, the total, the refund rule and the receipt.",
+    date: "2026-11-18",
+    sections: [
+      {
+        heading: "Short answer",
+        paras: [
+          "Paying a bill online is safe when the site shows you who the payment is for before you pay, makes the total clear, and says what happens if delivery fails. Check those three things every time.",
+        ],
+      },
+      {
+        heading: "Check the account name first",
+        paras: [
+          "Before any money moves, the meter, smartcard or phone number should come back with a name. On nolgic.com you see that name and confirm it is the right person or household.",
+          "If the name is not the one you expect, stop and check the number. A mistyped meter or smartcard number is the most common reason a bill goes to the wrong place.",
+        ],
+      },
+      {
+        heading: "Check the total",
+        paras: [
+          "The total you see before you pay should be everything you pay. On Nolgic the service fee is shown on its own line, so you know what the bill costs and what the service costs.",
+        ],
+      },
+      {
+        heading: "Check what happens if it fails",
+        paras: [
+          "Look for a clear refund rule. On Nolgic, if the provider rejects the payment or delivery fails, we refund you in full to the card or account you paid with. You do not need to ask for it.",
+          "Refunds show on your statement after your bank processes them, which can take a few working days.",
+        ],
+      },
+      {
+        heading: "Keep your receipt",
+        paras: [
+          "After you pay, keep the receipt or order number. If you are charged but have no confirmation, contact us with the order number so we can look it up.",
+        ],
+      },
+      {
+        heading: "Your card details",
+        paras: [
+          "Card payments happen on the secure payment page of our payment provider. Your card details never reach Nolgic.",
+        ],
+      },
+    ],
+  },
+  {
     slug: "pay-bills-online-in-nigeria-from-any-state",
     title: "Pay bills online in Nigeria from any state, or from abroad",
     description: "Pay for DStv, airtime, data, electricity and exam PINs in naira from wherever you live in Nigeria, or send a bill link to family from abroad.",

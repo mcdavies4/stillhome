@@ -151,6 +151,8 @@ const FAQS_DOMESTIC = [
 ];
 
 const PFM_ON = process.env.NEXT_PUBLIC_PAYFORME_ENABLED === "1";
+const REPEAT_ON = process.env.NEXT_PUBLIC_RECURRING_ENABLED === "1";
+const REPEAT_TERMS = "Repeat this bill every month. Each month Nolgic charges the same card for the same bill and amount, plus the service fee shown before you pay. You get an email before each charge and a receipt after delivery. Cancel any time from the link in any of these emails. If your bank asks you to approve a monthly charge, we email you the link and wait for your approval.";
 const EXAMS_ON = process.env.NEXT_PUBLIC_EXAMS_ENABLED === "1";
 const BILLS_ON = PFM_ON && process.env.NEXT_PUBLIC_BILLSLINK_ENABLED === "1";
 // Questions about the features beyond one bill, so people who search for them find them.
@@ -166,16 +168,6 @@ const FAQS_MORE = [
 ];
 
 const FAQS = [...(DOMESTIC ? FAQS_DOMESTIC : FAQS_DIASPORA).slice(0, 4), ...FAQS_MORE, ...(DOMESTIC ? FAQS_DOMESTIC : FAQS_DIASPORA).slice(4)];
-
-const STEPS = [
-  { n: "1", title: "Pick the bill", text: "Electricity token, DSTV, GOTV, airtime or data — for any meter, decoder or phone number." },
-  { n: "2", title: "See who you're paying", text: "We look the number up with the provider and show you the registered name. You confirm it's your people before any money moves." },
-  { n: "3", title: "Pay. Done.", text: DOMESTIC
-      ? "Pay by card, bank transfer or USSD. Delivery lands in seconds, and " + RECEIPT_TAIL
-      : NGN_ENABLED
-        ? "Card checkout in pounds, or pay in naira from inside Nigeria. Delivery lands in seconds, and " + RECEIPT_TAIL
-        : "Card checkout in pounds. Delivery lands in seconds, and " + RECEIPT_TAIL },
-];
 
 const BRANDS = "MTN, Airtel, Glo, 9mobile, DStv, GOtv, StarTimes and every major electricity company";
 
@@ -226,6 +218,8 @@ export default function Home() {
   const [giftOpen, setGiftOpen] = useState(false);
   const [giftNote, setGiftNote] = useState("");
   const [giftFrom, setGiftFrom] = useState("");
+  const [repeatMonthly, setRepeatMonthly] = useState(false);
+  const [repeatConsent, setRepeatConsent] = useState(false);
   // From a reminder email (?rt=<private token>): the last order, fetched once, applied when the service list has loaded.
   const [remPrefill, setRemPrefill] = useState<{ tab: string; billerCode: string; itemCode: string; billerName: string; identifier: string; amount: number; email: string } | null>(null);
   const [validated, setValidated] = useState<{ name: string | null } | null>(null);
@@ -405,6 +399,7 @@ export default function Home() {
           country,
           payIn: inNgn ? "ngn" : "gbp",
           ...(method === "transfer" ? { payMethod: "transfer" } : {}),
+          ...(REPEAT_ON && repeatMonthly && method !== "transfer" ? { repeatMonthly: true, repeatConsent } : {}),
           email,
           billerCode: item.biller_code,
           itemCode: item.item_code,
@@ -459,7 +454,7 @@ export default function Home() {
   return (
     <main id="content">
       {/* ───────── HERO + PAY FORM ───────── */}
-      <section className="max-w-6xl mx-auto px-5 pt-8 sm:pt-14 pb-16 sm:pb-24 grid lg:grid-cols-[1fr_28rem] xl:grid-cols-[1fr_30rem] gap-10 lg:gap-16 items-start">
+      <section className="max-w-6xl mx-auto px-5 pt-8 sm:pt-14 pb-12 sm:pb-16 grid lg:grid-cols-[1fr_28rem] xl:grid-cols-[1fr_30rem] gap-10 lg:gap-16 items-start">
         <div className="lg:pt-8">
           <NewStrip />
           <h1 className="font-display font-extrabold text-[2.5rem] sm:text-6xl lg:text-[4.25rem] leading-[1.03] tracking-tight max-w-[14ch] sm:max-w-[16ch]">
@@ -803,7 +798,24 @@ export default function Home() {
                     ? <>Your receipt and token will be emailed to <span className="text-paper font-medium break-all">{email}</span> and shown on the next page. Check it&rsquo;s right.</>
                     : "Add your email above. We email your receipt and token there, and show them on the next page too."}
                 </p>
-                <button onClick={() => pay("card")} disabled={payDisabled}
+                {REPEAT_ON && inNgn && billAmount > 0 && (
+                  <div className="mt-4 rounded-2xl border border-line p-3.5 text-sm">
+                    <label className="flex gap-3 items-start cursor-pointer">
+                      <input type="checkbox" className="mt-1" checked={repeatMonthly} onChange={(e) => { setRepeatMonthly(e.target.checked); if (!e.target.checked) setRepeatConsent(false); }} />
+                      <span className="font-medium">Repeat this bill every month</span>
+                    </label>
+                    {repeatMonthly && (
+                      <>
+                        <p className="text-haze text-xs leading-relaxed mt-2">{REPEAT_TERMS}</p>
+                        <label className="flex gap-3 items-start cursor-pointer mt-3">
+                          <input type="checkbox" className="mt-1" checked={repeatConsent} onChange={(e) => setRepeatConsent(e.target.checked)} />
+                          <span>I agree to a monthly charge on my card for this bill, until I cancel.</span>
+                        </label>
+                      </>
+                    )}
+                  </div>
+                )}
+                <button onClick={() => pay("card")} disabled={payDisabled || (REPEAT_ON && repeatMonthly && !repeatConsent)}
                   className="mt-3 w-full h-14 rounded-2xl bg-cta text-oncta font-display font-bold text-lg hover:brightness-105 active:brightness-95 disabled:opacity-40 disabled:hover:brightness-100 num">
                   {busy === "pay" ? "Opening secure checkout…" : inNgn && billAmount > 0 ? `Pay ${fmtLocal(ngnTotal)}` : "Continue to payment"}
                 </button>
@@ -823,50 +835,73 @@ export default function Home() {
       <FeatureShowcase />
 
       {/* ───────── WHAT YOU CAN PAY ───────── */}
+      {/* ───────── FOR NIGERIANS ABROAD ───────── */}
+      <section id="abroad" className="max-w-6xl mx-auto px-5 py-10 sm:py-14 scroll-mt-20">
+        <div className="grid lg:grid-cols-[1fr_24rem] gap-12 lg:gap-16 items-center">
+          <div>
+            <h2 className={`${h2} max-w-xl`}>Their light stays on. You pay from wherever you are.</h2>
+            <p className="text-haze leading-relaxed mt-6 max-w-lg">
+              Pay Mum&rsquo;s electricity, a sibling&rsquo;s DStv or the household&rsquo;s airtime, in naira, from abroad.
+              You choose the bill. They don&rsquo;t have to ask, and you don&rsquo;t need a Nigerian bank account.
+            </p>
+            <ol className="mt-8 space-y-5 max-w-lg">
+              <li className="flex gap-4"><span className="num font-display font-bold text-lg w-6 shrink-0">1</span><span className="text-haze leading-relaxed">Pick the bill and the amount, and check the total.</span></li>
+              <li className="flex gap-4"><span className="num font-display font-bold text-lg w-6 shrink-0">2</span><span className="text-haze leading-relaxed">We show the registered name on the meter or number. Confirm it, then pay with your card from abroad.</span></li>
+              <li className="flex gap-4"><span className="num font-display font-bold text-lg w-6 shrink-0">3</span><span className="text-haze leading-relaxed">It goes to their meter, smartcard or phone number. You get a receipt.</span></li>
+            </ol>
+            {PFM_ON && (
+              <Link href="/ask" className="mt-10 inline-flex items-center h-12 px-6 rounded-xl bg-cta text-oncta font-display font-bold hover:brightness-105">
+                Ask someone back home to send you the bill
+              </Link>
+            )}
+          </div>
+
+          <div className="rounded-3xl border border-line bg-panel p-7 sm:p-8 shadow-sm rotate-[-1.5deg]">
+            <p className="font-display font-bold text-xl">Payment receipt</p>
+            <p className="text-haze text-sm mt-1">Nolgic · naira</p>
+            <dl className="mt-6 divide-y divide-line text-[15px]">
+              <div className="flex justify-between py-3"><dt className="text-haze">Paid from</dt><dd>Abroad</dd></div>
+              <div className="flex justify-between py-3"><dt className="text-haze">For</dt><dd>Mum, Lagos</dd></div>
+              <div className="flex justify-between py-3"><dt className="text-haze">Electricity</dt><dd className="num">₦10,000</dd></div>
+              <div className="flex justify-between py-3"><dt className="text-haze">Service fee</dt><dd className="num">Shown before you pay</dd></div>
+              <div className="flex justify-between py-3"><dt className="text-haze">Delivered to</dt><dd className="num">Meter ending 4821</dd></div>
+            </dl>
+            <p className="text-haze text-xs mt-5">Example only. Your receipt shows your own bill and total.</p>
+          </div>
+        </div>
+      </section>
+
       <section className="border-y border-line bg-panel">
-        <div className="max-w-6xl mx-auto px-5 py-16 sm:py-24">
+        <div className="max-w-6xl mx-auto px-5 py-10 sm:py-14">
           <h2 className={`${h2} max-w-2xl`}>Four things that keep a household running.</h2>
-          <div className="mt-10 sm:mt-12 border-t border-line">
+          <div className="mt-8 sm:mt-10 grid sm:grid-cols-2 gap-4">
             {CATEGORIES.map((c, n) => (
-              <div key={c.title} className="grid sm:grid-cols-[3rem_1fr_auto] gap-x-6 gap-y-3 items-center py-6 border-b border-line">
-                <div className="w-12 h-12 rounded-2xl bg-cta text-oncta flex items-center justify-center">
-                  <svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true">{c.icon}</svg>
+              <div key={c.title} className="flex flex-col gap-4 rounded-2xl border border-line bg-night p-5 sm:p-6">
+                <div className="flex items-center gap-4">
+                  <div className="w-11 h-11 shrink-0 rounded-2xl bg-cta text-oncta flex items-center justify-center">
+                    <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true">{c.icon}</svg>
+                  </div>
+                  <h3 className="font-display font-bold text-xl">{c.title}</h3>
                 </div>
                 <div>
-                  <h3 className="font-display font-bold text-xl">{c.title}</h3>
-                  <p className="text-haze leading-relaxed mt-1 max-w-xl">{c.text}</p>
+                  <p className="text-haze leading-relaxed">{c.text}</p>
                   <p className="text-haze/80 text-sm mt-1.5">{c.names}</p>
                 </div>
                 {ANY_PAY && (
                   <button type="button" onClick={() => jumpTo(TABS[n].key)}
-                    className="justify-self-start sm:justify-self-end h-11 px-5 rounded-xl border border-paper/25 font-semibold hover:bg-sunk">
+                    className="mt-auto self-start h-11 px-5 rounded-xl border border-paper/25 font-semibold hover:bg-sunk">
                     Pay {c.title === "Cable TV" ? "TV" : c.title.toLowerCase()}
                   </button>
                 )}
               </div>
             ))}
           </div>
-
         </div>
-      </section>
-
-      {/* ───────── HOW IT WORKS ───────── */}
-      <section id="how" className="max-w-6xl mx-auto px-5 py-16 sm:py-24 scroll-mt-20">
-        <h2 className={`${h2} max-w-2xl`}>One minute from your phone to their light.</h2>
-        <ol className="mt-10 sm:mt-14 grid md:grid-cols-3 gap-10 md:gap-8 relative">
-          {STEPS.map((s) => (
-            <li key={s.n} className="relative">
-              <span className="w-11 h-11 rounded-full bg-paper text-night font-display font-bold text-lg flex items-center justify-center num">{s.n}</span>
-              <h3 className="font-display font-bold text-xl mt-5 mb-2">{s.title}</h3>
-              <p className="text-haze leading-relaxed max-w-sm">{s.text}</p>
-            </li>
-          ))}
-        </ol>
       </section>
 
       {/* ───────── THE PROMISE ───────── */}
       <section className="bg-[#0B1026] text-[#F5F2E9]">
-        <div className="max-w-6xl mx-auto px-5 py-16 sm:py-24 grid lg:grid-cols-[1.1fr_1fr] gap-10 lg:gap-20 items-start">
+        <div className="max-w-6xl mx-auto px-5 py-10 sm:py-14 grid lg:grid-cols-[1.1fr_1fr] gap-10 lg:gap-20 items-start">
           <h2 className="font-display font-bold text-3xl md:text-[2.6rem] leading-[1.08] tracking-tight max-w-lg">
             You can&rsquo;t pay for something that wasn&rsquo;t delivered.
           </h2>
@@ -880,7 +915,7 @@ export default function Home() {
 
       {/* ───────── COUNTRIES ───────── */}
       {!DOMESTIC && (
-      <section id="countries" className="max-w-6xl mx-auto px-5 py-16 sm:py-24 scroll-mt-20">
+      <section id="countries" className="max-w-6xl mx-auto px-5 py-10 sm:py-14 scroll-mt-20">
         <h2 className={`${h2} max-w-2xl`}>{DOMESTIC ? "One tool for paying bills across Africa. Starting in Nigeria." : "One tool for paying bills across Africa. Starting with two countries."}</h2>
         <div className="mt-10 sm:mt-12 border-t border-line">
           {countries.map((c) => (
@@ -910,7 +945,7 @@ export default function Home() {
       )}
 
       {/* ───────── FAQ ───────── */}
-      <section id="faq" className="max-w-2xl mx-auto px-5 pt-16 sm:pt-20 pb-20 sm:pb-28 scroll-mt-20">
+      <section id="faq" className="max-w-2xl mx-auto px-5 pt-10 sm:pt-14 pb-14 sm:pb-20 scroll-mt-20">
         <h2 className={`${h2} mb-8`}>Questions, answered.</h2>
         <div className="border-t border-line">
           {FAQS.map((f) => (
@@ -953,6 +988,7 @@ export default function Home() {
             <ul className="[&_a]:inline-flex [&_a]:items-center [&_a]:min-h-[40px]">
               {process.env.NEXT_PUBLIC_ACCOUNTS_ENABLED === "1" && <li><Link href="/account" className="hover:text-paper">My account</Link></li>}
               <li><Link href="/find-order" className="hover:text-paper">Find my order or token</Link></li>
+              <li><Link href="/blog" className="hover:text-paper">Blog: how to pay bills</Link></li>
               <li><a href="mailto:nolgichq@gmail.com" className="hover:text-paper">nolgichq@gmail.com</a></li>
               <li><Link href="/legal" className="hover:text-paper">Terms, refunds &amp; privacy</Link></li>
             </ul>

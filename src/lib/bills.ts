@@ -265,3 +265,13 @@ export async function bestNgnBalance(): Promise<number> {
   const values = await Promise.all(reads.map((r) => r.catch(() => -Infinity)));
   return Math.max(...values);
 }
+
+/** The provider's current price for a fixed-price item, or null if unknown or not fixed. Used to ask a payer to approve a new price. */
+export async function currentItemPrice(billerCode: string, itemCode: string): Promise<number | null> {
+  const prov = activeProvider();
+  if (prov === "flutterwave") return null;
+  const { item } = prov === "paybeta"
+    ? await pb.pbLookupItem(billerCode, itemCode)
+    : await vtp.vtLookupItem(billerCode, itemCode);
+  return item && item.amount > 0 ? Math.round(item.amount) : null;
+}
