@@ -16,6 +16,14 @@ export default function BlogIndex() {
       <ul className="space-y-8">
         {posts.map((p) => (
           <li key={p.slug}>
+            <img
+              src={`/blog/${p.slug}.webp`}
+              alt={`${p.title}: Nolgic`}
+              width={1200}
+              height={630}
+              loading="lazy"
+              className="w-full h-auto rounded-lg mb-4"
+            />
             <h2 className="font-display font-bold text-xl mb-2">
               <Link href={`/blog/${p.slug}`} className="underline underline-offset-4">{p.title}</Link>
             </h2>
