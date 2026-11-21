@@ -166,6 +166,48 @@ export const posts: Post[] = [
       },
     ],
   },
+  {
+    slug: "pay-bills-online-in-nigeria-from-any-state",
+    title: "Pay bills online in Nigeria from any state, or from abroad",
+    description: "Pay for DStv, airtime, data, electricity and exam PINs in naira from wherever you live in Nigeria, or send a bill link to family from abroad.",
+    date: "2026-11-21",
+    sections: [
+      {
+        heading: "Pay from your phone, wherever you are",
+        paras: [
+          "You do not need to travel to a shop or agent to pay a bill. Nolgic runs in your phone's browser, so you can pay from home, at work or in another city.",
+          "Pay with your card in naira on the secure payment page. Your card details never reach Nolgic.",
+        ],
+      },
+      {
+        heading: "What you can pay for",
+        paras: [
+          "You can pay a DStv subscription, buy airtime or data for MTN, Glo, Airtel or 9mobile, pay your electricity bill, and buy JAMB and WAEC exam PINs. Each guide on this blog walks through one of these.",
+          "Read the guide for the bill you are paying before you start, because each one asks for a different number: a smartcard or IUC number, a phone number or a meter number.",
+        ],
+      },
+      {
+        heading: "Check the name before you pay",
+        paras: [
+          "For DStv and electricity, Nolgic shows the account name linked to the number you enter. Check that it is yours before you continue.",
+          "Airtime and data have no account-name check, so double-check the phone number. A delivered top-up cannot be reversed.",
+        ],
+      },
+      {
+        heading: "Pay for family from abroad",
+        paras: [
+          "If you live outside Nigeria and want to pay a bill for a relative at home, they can create a Pay for Me request on nolgic.com listing the bills to be paid. They send you the link, and you pay it from wherever you are.",
+          "Read the full guide on paying a bill for someone in Nigeria from abroad before you send the link.",
+        ],
+      },
+      {
+        heading: "If a payment does not go through",
+        paras: [
+          "If a payment fails, Nolgic refunds you as described in our refund policy. Read what to do if a bill payment fails for the steps to take and when to contact us.",
+        ],
+      },
+    ],
+  },
 ];
 
 export const getPost = (slug: string) => posts.find((p) => p.slug === slug);
