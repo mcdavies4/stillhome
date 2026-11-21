@@ -281,6 +281,13 @@ export default function OrderPage() {
           Paying this bill every month? <a className="underline underline-offset-4 text-ink" href="/plans">See, pause or cancel your monthly payments</a>.
         </p>
       )}
+      {order.status === "fulfilled" && process.env.NEXT_PUBLIC_RECURRING_ENABLED === "1" && /dstv|gotv|startimes|electric|ekedc|ikedc|eedc|aedc|kedco|phed|ibadan/i.test(order.biller_name ?? "") && (
+        <div className="mt-4 rounded-2xl border border-line p-5">
+          <p className="font-display font-bold">Keep this bill paid?</p>
+          <p className="text-haze text-sm leading-relaxed mt-1">Set up a monthly payment for the same meter or smartcard. You can pause or cancel it any time.</p>
+          <a className="inline-block mt-3 underline underline-offset-4 text-ink" href="/#pay">Set up monthly payments</a>
+        </div>
+      )}
 
       {order.status === "fulfilled" && (
         <div className="mt-4 rounded-2xl border border-line p-5 flex flex-wrap items-center gap-x-5 gap-y-3">
