@@ -176,6 +176,12 @@ const h2 = "font-display font-bold text-3xl md:text-[2.6rem] leading-[1.08] trac
 // Provider names from the catalogue read better without the "VTU" suffix.
 const niceName = (n: string) => n.replace(/\s+VTU$/i, "");
 
+// Where to find the number, shown under the field so people don't have to guess.
+const IDENT_HINT: Record<string, string> = {
+  electricity: "Your meter number is printed on the meter, or on an earlier token receipt.",
+  cable: "Your smartcard or IUC number is on the back of the decoder card or on the decoder.",
+};
+
 const LABELS: Record<string, { provider: string; plan: string }> = {
   electricity: { provider: "Electricity company", plan: "Meter type" },
   cable: { provider: "TV provider", plan: "Package" },
@@ -509,6 +515,13 @@ export default function Home() {
                 )}
               </div>
 
+              <ol className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-haze" aria-label="How paying works">
+                <li>1. Pick the bill</li>
+                <li>2. Enter the number</li>
+                <li>3. Check the name</li>
+                <li>4. Pay</li>
+              </ol>
+
               {!ANY_PAY && (
                 <div className="py-10 text-center">
                   <p className="font-display font-bold text-2xl">Payments open very shortly.</p>
@@ -685,6 +698,9 @@ export default function Home() {
                       inputMode={isNoValidate(item) ? "tel" : "numeric"}
                       enterKeyHint="go" maxLength={isNoValidate(item) ? 16 : 20}
                       autoComplete={isNoValidate(item) ? "tel" : "off"} autoCorrect="off" autoCapitalize="off" spellCheck={false} />
+                    {!isNoValidate(item) && IDENT_HINT[tab] && (
+                      <p className="text-xs text-haze mt-2">{IDENT_HINT[tab]}</p>
+                    )}
                     {guessedName && provider && guessedName !== provider && (
                       <p className="text-sm text-haze mt-2">
                         This number looks like <strong className="text-paper">{niceName(guessedName)}</strong>.{" "}
@@ -821,7 +837,7 @@ export default function Home() {
                 </button>
                 <p className="text-haze text-xs mt-3 text-center leading-relaxed">
                   {inNgn
-                    ? "Pay by card, bank transfer or USSD. If delivery fails, you’re refunded automatically."
+                    ? (tab === "electricity" ? "Your token appears on this page and is emailed to you. " : "") + "Pay by card, bank transfer or USSD. If delivery fails, you’re refunded automatically."
                     : "Card payment handled by Stripe. If delivery fails, you’re refunded automatically — you can never lose money."}
                 </p>
               </div>
