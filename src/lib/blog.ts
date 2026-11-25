@@ -12,6 +12,35 @@ export type Post = {
 
 export const posts: Post[] = [
   {
+    slug: "how-to-pay-gotv-online-nigeria",
+    title: "How to pay GOtv online in Nigeria",
+    description: "Renew a GOtv subscription from your phone in naira. Find your IUC number and check the account name before you pay.",
+    date: "2026-11-25",
+    sections: [
+      {
+        heading: "What you need",
+        paras: [
+          "You need the 10-digit IUC number for your GOtv decoder. It is usually on a sticker under the decoder. You can also dial *288# to see it on screen. Choose the package you want to renew or change.",
+        ],
+      },
+      {
+        heading: "Steps",
+        paras: [
+          "Open the TV section on nolgic.com, pick GOtv, and enter the IUC number. Nolgic shows the account name linked to that number. Check that it is yours before you continue.",
+          "Choose the package and check the total. The total includes a small service fee, shown on its own line, before you pay.",
+          "Pay with your card in naira on the secure payment page. Your card details never reach Nolgic.",
+        ],
+      },
+      {
+        heading: "Before you pay",
+        paras: [
+          "Once a subscription has been delivered to the decoder you confirmed, it cannot be moved to a different decoder. Double-check the IUC number first.",
+          "If the number on the sticker is hard to read, call GOtv customer care before you pay rather than guessing a digit.",
+        ],
+      },
+    ],
+  },
+  {
     slug: "how-to-pay-dstv-online-nigeria",
     title: "How to pay DStv online in Nigeria",
     description: "Pay a DStv subscription from your phone in naira. Check the name on the smartcard before you pay.",
