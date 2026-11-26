@@ -38,6 +38,9 @@ export async function walletCovers(
   neededNgn: number,
   opts: { now?: number; read?: () => Promise<number>; testMode?: boolean; alert?: (subject: string, text: string) => unknown; context?: string; failover?: boolean } = {}
 ): Promise<Capacity> {
+  // Manual pause: BILLS_PAUSED=1 in Vercel stops every new order (site, bulk, exams, Pay for Me, plans, bots)
+  // with the same calm notice, until it is removed. Checked first so nothing gets through.
+  if (process.env.BILLS_PAUSED === "1") return { ok: false, balance: 0 };
   const now = opts.now ?? Date.now();
   if (opts.testMode ?? billsTestMode()) return { ok: true };
   if (!Number.isFinite(neededNgn) || neededNgn <= 0) return { ok: true };

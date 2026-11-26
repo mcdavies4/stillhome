@@ -12,8 +12,8 @@ export default function BackSoon({ className = "mt-4" }: { className?: string })
         <path d="M12 7v5l3 2" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
       </svg>
       <div>
-        <p className="font-semibold">We&rsquo;re restocking. Back in a few minutes.</p>
-        <p className="text-haze text-sm leading-relaxed mt-1">Nothing has been charged. Please try again shortly.</p>
+        <p className="font-semibold">Payments are paused for now.</p>
+        <p className="text-haze text-sm leading-relaxed mt-1">Nothing has been charged. We are fixing a delivery problem, so please check back soon.</p>
       </div>
     </div>
   );
