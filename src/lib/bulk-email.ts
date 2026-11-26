@@ -30,7 +30,7 @@ export async function sendBulkReceiptEmail(b: Record<string, any>): Promise<bool
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${process.env.RESEND_API_KEY}` },
       body: JSON.stringify({
-        from: process.env.RESEND_FROM ?? "Nolgic <noreply@songsnap.online>",
+        from: process.env.RESEND_FROM ?? "Nolgic <noreply@mail.nolgic.com>",
         to: b.email,
         subject: `Nolgic bulk airtime — ${Number(b.delivered_count ?? 0)} of ${Number(b.recipients_count)} delivered`,
         html,

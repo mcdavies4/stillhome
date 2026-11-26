@@ -1,4 +1,4 @@
-// Founder alerts via Resend (songsnap.online verified domain pattern).
+// Founder alerts via Resend (mail.nolgic.com verified domain).
 // Non-fatal: alerting must never break the payment pipeline.
 
 import { adminChatIds, esc, sendMessage, telegramConfigured } from "@/lib/tg/api";
@@ -37,7 +37,7 @@ async function alertEmail(subject: string, text: string) {
       method: "POST",
       headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
       body: JSON.stringify({
-        from: process.env.ALERT_FROM ?? "Nolgic <alerts@songsnap.online>",
+        from: process.env.ALERT_FROM ?? "Nolgic <alerts@mail.nolgic.com>",
         to: [to],
         subject: `[Nolgic] ${subject}`,
         text,

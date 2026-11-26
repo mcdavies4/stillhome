@@ -471,7 +471,7 @@ export async function sendReconcileEmail(): Promise<{ ok: boolean; flags: number
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${process.env.RESEND_API_KEY}` },
     body: JSON.stringify({
-      from: process.env.RESEND_FROM ?? "Nolgic <noreply@songsnap.online>",
+      from: process.env.RESEND_FROM ?? "Nolgic <noreply@mail.nolgic.com>",
       to: ADMIN_EMAIL,
       subject: reconSubject(result),
       html: reconEmailHtml(result),
