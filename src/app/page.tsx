@@ -838,7 +838,7 @@ export default function Home() {
                 <p className="text-haze text-xs mt-3 text-center leading-relaxed">
                   {inNgn
                     ? (tab === "electricity" ? "Your token appears on this page and is emailed to you. " : "") + "Pay by card, bank transfer or USSD. If delivery fails, you’re refunded automatically."
-                    : "Card payment handled by Stripe. If delivery fails, you’re refunded automatically — you can never lose money."}
+                    : "Card payment handled by Paystack. If delivery fails, you’re refunded automatically — you can never lose money."}
                 </p>
               </div>
             )}

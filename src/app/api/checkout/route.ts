@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server";
-import { stripe } from "@/lib/stripe";
 import { supabaseAdmin } from "@/lib/supabase";
 import { validateCustomer, checkPurchase } from "@/lib/bills";
 import { quoteGbp, gbp, money } from "@/lib/fx";
@@ -20,7 +19,6 @@ import { cleanRep, tagRep } from "@/lib/rep";
 import { createPendingPlan, recurringEnabled } from "@/lib/recurring";
 
 // Creates the order row + a payment session:
-//   - default: Stripe Checkout in GBP (diaspora, any supported country)
 //   - payIn:"ngn" (Nigeria only): hosted checkout in naira (card / bank transfer / USSD) on Paystack,
 //     or Flutterwave when NGN_PAY_PROVIDER=flutterwave. Fee = 2% of the amount, min ₦100, max ₦500 (see lib/ngn-fee.ts).
 // Re-validates the identifier server-side where the biller supports it —
@@ -79,15 +77,13 @@ export async function POST(req: Request) {
     const country = getCountry(countryCode);
 
     // ---- Launch gates ------------------------------------------------------
-    // UK/£ (Stripe) and Ghana are built but switched off until funded/ready.
-    // Open each with a Vercel env var; the code paths below stay intact.
-    //   NEXT_PUBLIC_UK_PAY_ENABLED=1   allow pay-in-£ (Stripe)
+    // Ghana is built but switched off until ready. Pay-in-£ (Stripe) has been removed: naira only.
     //   NEXT_PUBLIC_GH_ENABLED=1       allow Ghana
     if (countryCode === "GH" && process.env.NEXT_PUBLIC_GH_ENABLED !== "1") {
       return NextResponse.json({ error: "Ghana is coming soon." }, { status: 400 });
     }
-    if (b.payIn !== "ngn" && process.env.NEXT_PUBLIC_UK_PAY_ENABLED !== "1") {
-      return NextResponse.json({ error: "Payments in pounds are coming soon. For now, please pay in naira." }, { status: 400 });
+    if (b.payIn !== "ngn") {
+      return NextResponse.json({ error: "Please pay in naira." }, { status: 400 });
     }
 
     const identifier = String(b.identifier).trim();
@@ -239,89 +235,6 @@ export async function POST(req: Request) {
       return NextResponse.json({ url: init.authorizationUrl, orderId: orderN.id, total: `₦${totalNgn.toLocaleString()}` });
     }
 
-    const quote = quoteGbp(Number(amountLocal), countryCode);
-
-    // Fraud velocity gate (cashout pattern / first-order cap)
-    const vel = await velocityCheck({ email: b.email, ip, amountGbpPence: quote.totalPence });
-    if (vel.blocked) {
-      alertFounder(
-        "Order blocked by velocity check",
-        `Email: ${b.email}\nIP: ${ip}\nReason: ${vel.reason}\nAmount: £${(quote.totalPence/100).toFixed(2)} · ${b.billerName} · ${countryCode}`
-      );
-      return NextResponse.json(
-        { error: "For your security this order needs review. Please contact nolgichq@gmail.com if you believe this is a mistake." },
-        { status: 403 }
-      );
-    }
-
-    const db = supabaseAdmin();
-    const { data: order, error } = await db
-      .from("orders")
-      .insert({
-        user_id: b.userId ?? null,
-        email: b.email,
-        ip,
-        country: countryCode,
-        currency: country.currency,
-        biller_code: b.billerCode,
-        item_code: b.itemCode,
-        biller_name: b.billerName,
-        identifier,
-        identifier_label: b.identifierLabel,
-        customer_name: v.name,
-        recipient_whatsapp: b.recipientWhatsapp ?? null,
-        amount_ngn: quote.amountLocal,          // legacy column name; now holds local-currency amount
-        fx_ngn_per_gbp: quote.fxLocalPerGbp,    // legacy column name; now holds local-per-GBP rate
-        service_fee_pence: quote.serviceFeePence,
-        amount_gbp_pence: quote.totalPence,
-        status: "pending_payment",
-        ...(orderIsTest() ? { is_test: true } : {}),
-      })
-      .select("id")
-      .single();
-    if (error) throw error;
-
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL!;
-    const session = await stripe.checkout.sessions.create({
-      mode: "payment",
-      customer_email: b.email,
-      line_items: [
-        {
-          price_data: {
-            currency: "gbp",
-            unit_amount: quote.subtotalPence,
-            product_data: {
-              name: `${b.billerName} — ${money(quote.amountLocal, countryCode)}`,
-              description: v.name
-                ? `${b.identifierLabel}: ${identifier} · ${v.name}`
-                : `${b.identifierLabel}: ${identifier}`,
-            },
-          },
-          quantity: 1,
-        },
-        {
-          price_data: {
-            currency: "gbp",
-            unit_amount: quote.serviceFeePence,
-            product_data: { name: "Service fee" },
-          },
-          quantity: 1,
-        },
-      ],
-      metadata: { order_id: order.id },
-      payment_method_options: {
-        card: {
-          request_three_d_secure:
-            quote.totalPence >= Number(process.env.THREEDS_MIN_PENCE ?? "5000") ? "any" : "automatic",
-        },
-      },
-      success_url: `${appUrl}/order/${order.id}?paid=1`,
-      cancel_url: `${appUrl}/?cancelled=1`,
-    });
-
-    await db.from("orders").update({ stripe_session_id: session.id }).eq("id", order.id);
-
-    return NextResponse.json({ url: session.url, orderId: order.id, total: gbp(quote.totalPence) });
   } catch (e: any) {
     // Only pass through errors we raised on purpose (provider validation, amount range);
     // never leak database / Stripe / Paystack internals to the browser.
