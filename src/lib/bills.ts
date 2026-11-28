@@ -11,22 +11,24 @@
 import * as flw from "@/lib/flutterwave";
 import * as vtp from "@/lib/vtpass";
 import * as pb from "@/lib/paybeta";
+import * as sme from "@/lib/smeplug";
 
 export { FlwError } from "@/lib/flutterwave";
 export type { BillerItem, ValidateResult, BillPaymentResult } from "@/lib/flutterwave";
 
-export type BillsProviderName = "flutterwave" | "vtpass" | "paybeta";
+export type BillsProviderName = "flutterwave" | "vtpass" | "paybeta" | "smeplug";
 
 export function activeProvider(): BillsProviderName {
   const v = (process.env.BILLS_PROVIDER ?? "").trim().toLowerCase();
-  return v === "vtpass" ? "vtpass" : v === "paybeta" ? "paybeta" : "flutterwave";
+  return v === "vtpass" ? "vtpass" : v === "paybeta" ? "paybeta" : v === "smeplug" ? "smeplug" : "flutterwave";
 }
 
 export const providerLabel = (p: BillsProviderName = activeProvider()) =>
-  p === "vtpass" ? "VTpass" : p === "paybeta" ? "Paybeta" : "Flutterwave";
+  p === "vtpass" ? "VTpass" : p === "paybeta" ? "Paybeta" : p === "smeplug" ? "SMEPlug" : "Flutterwave";
 
 export function providerForReference(ref: string): BillsProviderName {
   if (pb.isPbReference(ref)) return "paybeta";
+  if (sme.isSmeReference(ref)) return "smeplug";
   return vtp.isVtRequestId(ref) ? "vtpass" : "flutterwave";
 }
 
@@ -35,6 +37,7 @@ export function billsTestMode(): boolean {
   const p = activeProvider();
   if (p === "vtpass") return vtp.vtpassIsSandbox();
   if (p === "paybeta") return pb.paybetaIsSandbox();
+  if (p === "smeplug") return false; // SMEPlug publishes no sandbox
   return (process.env.FLW_SECRET_KEY ?? "").startsWith("FLWSECK_TEST");
 }
 
@@ -42,6 +45,7 @@ export function billsConfigured(): boolean {
   const p = activeProvider();
   if (p === "vtpass") return vtp.vtpassConfigured();
   if (p === "paybeta") return pb.paybetaConfigured();
+  if (p === "smeplug") return sme.smeplugConfigured();
   return !!(process.env.FLW_SECRET_KEY ?? "").trim();
 }
 
@@ -53,6 +57,7 @@ export function makeReference(orderId: string, existing?: unknown): string {
   const want = activeProvider();
   if (typeof existing === "string" && existing && providerForReference(existing) === want) return existing;
   if (want === "paybeta") return pb.pbReference(orderId);
+  if (want === "smeplug") return sme.smeReference(orderId);
   return want === "vtpass" ? vtp.vtRequestId(orderId) : `NOLGIC-${orderId}`;
 }
 
@@ -62,6 +67,7 @@ export async function getBillCategories(country: string = "NG"): Promise<flw.Bil
   const p = activeProvider();
   if (p === "vtpass") return country.toUpperCase() === "NG" ? vtp.vtGetBillCategories() : [];
   if (p === "paybeta") return country.toUpperCase() === "NG" ? pb.pbGetBillCategories() : [];
+  if (p === "smeplug") return country.toUpperCase() === "NG" ? sme.smeCatalogue() : [];
   return flw.getBillCategories(country);
 }
 
@@ -73,6 +79,7 @@ export async function validateCustomer(
   const p = activeProvider();
   if (p === "vtpass") return vtp.vtValidate(itemCode, billerCode, identifier);
   if (p === "paybeta") return pb.pbValidate(itemCode, billerCode, identifier);
+  if (p === "smeplug") return sme.smeValidate(identifier);
   return flw.validateCustomer(itemCode, billerCode, identifier);
 }
 
@@ -123,6 +130,7 @@ export async function createBillPayment(params: {
   const p = activeProvider();
   if (p === "vtpass") return vtp.vtPay(params);
   if (p === "paybeta") return pb.pbPay(params);
+  if (p === "smeplug") return sme.smeVend(params);
   return flw.createBillPayment(params);
 }
 
@@ -148,6 +156,11 @@ export async function checkBillStatus(reference: string): Promise<BillStatus> {
     const s = await pb.pbStatus(reference);
     return { provider, found: s.found, state: s.state, token: s.token, detail: s.detail };
   }
+  if (provider === "smeplug") {
+    // SMEPlug requery: only an explicit failure refunds; anything unclear stays pending.
+    const s = await sme.smeStatus(reference);
+    return { provider, found: s.found, state: s.state, token: null, detail: s.detail };
+  }
   if (provider === "vtpass") {
     const s = await vtp.vtStatus(reference);
     return { provider, found: s.found, state: s.state, token: s.token, detail: s.detail };
@@ -172,6 +185,7 @@ export async function checkBillStatus(reference: string): Promise<BillStatus> {
 // ───────────────────────── wallet ─────────────────────────
 
 export async function balanceOf(p: BillsProviderName, currency: string = "NGN"): Promise<number> {
+  if (p === "smeplug") return sme.smeBalance();
   if (p === "vtpass" || p === "paybeta") {
     if (currency.toUpperCase() !== "NGN") throw new flw.FlwError(`${providerLabel(p)} wallet is NGN only`);
     return p === "vtpass" ? vtp.vtBalance() : pb.pbBalance();
@@ -191,11 +205,12 @@ export async function getBalance(currency: string = "NGN"): Promise<number> {
 // second vend would then be a double delivery. Off unless BILLS_FAILOVER_PROVIDER names a different,
 // configured provider.
 
-const ALL_PROVIDERS: BillsProviderName[] = ["flutterwave", "vtpass", "paybeta"];
+const ALL_PROVIDERS: BillsProviderName[] = ["flutterwave", "vtpass", "paybeta", "smeplug"];
 
 export function providerConfigured(p: BillsProviderName): boolean {
   if (p === "vtpass") return vtp.vtpassConfigured();
   if (p === "paybeta") return pb.paybetaConfigured();
+  if (p === "smeplug") return sme.smeplugConfigured();
   return !!(process.env.FLW_SECRET_KEY ?? "").trim();
 }
 
@@ -208,18 +223,21 @@ export function failoverProvider(): BillsProviderName | null {
 
 export function makeReferenceFor(p: BillsProviderName, orderId: string): string {
   if (p === "paybeta") return pb.pbReference(orderId);
+  if (p === "smeplug") return sme.smeReference(orderId);
   return p === "vtpass" ? vtp.vtRequestId(orderId) : `NOLGIC-${orderId}`;
 }
 
 export async function catalogueOf(p: BillsProviderName, country: string = "NG"): Promise<flw.BillerItem[]> {
   if (p === "vtpass") return country.toUpperCase() === "NG" ? vtp.vtGetBillCategories() : [];
   if (p === "paybeta") return country.toUpperCase() === "NG" ? pb.pbGetBillCategories() : [];
+  if (p === "smeplug") return country.toUpperCase() === "NG" ? sme.smeCatalogue() : [];
   return flw.getBillCategories(country);
 }
 
 export async function validateVia(p: BillsProviderName, itemCode: string, billerCode: string, identifier: string): Promise<flw.ValidateResult> {
   if (p === "vtpass") return vtp.vtValidate(itemCode, billerCode, identifier);
   if (p === "paybeta") return pb.pbValidate(itemCode, billerCode, identifier);
+  if (p === "smeplug") return sme.smeValidate(identifier);
   return flw.validateCustomer(itemCode, billerCode, identifier);
 }
 
@@ -255,6 +273,7 @@ export function findEquivalentItem(
 export async function vendVia(p: BillsProviderName, params: Parameters<typeof createBillPayment>[0]): Promise<flw.BillPaymentResult> {
   if (p === "vtpass") return vtp.vtPay(params);
   if (p === "paybeta") return pb.pbPay(params);
+  if (p === "smeplug") return sme.smeVend(params);
   return flw.createBillPayment(params);
 }
 
@@ -269,7 +288,7 @@ export async function bestNgnBalance(): Promise<number> {
 /** The provider's current price for a fixed-price item, or null if unknown or not fixed. Used to ask a payer to approve a new price. */
 export async function currentItemPrice(billerCode: string, itemCode: string): Promise<number | null> {
   const prov = activeProvider();
-  if (prov === "flutterwave") return null;
+  if (prov === "flutterwave" || prov === "smeplug") return null; // SMEPlug publishes no fixed prices
   const { item } = prov === "paybeta"
     ? await pb.pbLookupItem(billerCode, itemCode)
     : await vtp.vtLookupItem(billerCode, itemCode);

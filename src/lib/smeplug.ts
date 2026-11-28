@@ -158,3 +158,65 @@ export async function smeStatus(customerReference: string): Promise<SmeStatus> {
   if (st.includes("fail")) return { found: true, state: "failed", detail: st };
   return { found: true, state: "pending", detail: st || "unknown" };
 }
+
+// ───────────────────────── bills-provider adapter (airtime only) ─────────────────────────
+// SMEPlug is wired in as a provider for AIRTIME only. Data needs plan IDs mapped to our catalogue,
+// which is not built yet, so SMEPlug never lists data and failover can't pick it for a data order.
+
+import type { BillerItem, ValidateResult, BillPaymentResult } from "@/lib/flutterwave";
+
+const SME_AIRTIME_NETWORKS: { biller_code: string; biller_name: string }[] = [
+  { biller_code: "MTN", biller_name: "MTN" },
+  { biller_code: "AIRTEL", biller_name: "Airtel" },
+  { biller_code: "9MOBILE", biller_name: "9mobile" },
+  { biller_code: "GLO", biller_name: "Glo" },
+];
+
+/** Airtime products SMEPlug can sell (variable amount, so price 0 = any amount). */
+export function smeCatalogue(): BillerItem[] {
+  return SME_AIRTIME_NETWORKS.map((n, i) => ({
+    id: 900000 + i,
+    biller_code: n.biller_code,
+    item_code: "airtime",
+    name: `${n.biller_name} Airtime`,
+    biller_name: n.biller_name,
+    short_name: n.biller_name,
+    amount: 0,
+    fee: 0,
+    country: "NG",
+    is_airtime: true,
+    label_name: `${n.biller_name} Airtime`,
+  }));
+}
+
+/** Airtime needs no customer lookup at SMEPlug, so the number is accepted as entered (checked on vend). */
+export function smeValidate(identifier: string): ValidateResult {
+  return { response_code: "00", response_message: "Not verified", name: null, customer: identifier, minimum: 0, maximum: 0, fee: 0 };
+}
+
+/** Vend one airtime order. Only a clean rejection throws notVended (refundable); anything unclear does not. */
+export async function smeVend(params: {
+  billerCode: string;
+  billerName: string;
+  itemCode: string;
+  identifier: string;
+  amountLocal: number;
+  reference: string;
+}): Promise<BillPaymentResult> {
+  if (params.itemCode !== "airtime") throw notVended("SMEPlug only sells airtime through Nolgic for now");
+  const networkId = smeNetworkFor(params.billerCode, params.billerName, params.itemCode);
+  if (!networkId) throw notVended(`SMEPlug has no network mapping for ${params.billerName} (${params.billerCode})`);
+  const r = await smeBuyAirtime({
+    networkId,
+    phone: params.identifier,
+    amount: params.amountLocal,
+    reference: params.reference,
+  });
+  return {
+    amount: params.amountLocal,
+    flw_ref: r.reference,
+    tx_ref: params.reference,
+    reference: params.reference,
+    extra: null,
+  };
+}
