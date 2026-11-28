@@ -271,14 +271,14 @@ export async function smeDataCatalogue(): Promise<BillerItem[]> {
         id: 700000 + items.length,
         biller_code: net.biller_code,
         item_code: `data:${netId}:${String(p.id)}`,
-        name: String(p.name ?? "Data plan").trim(),
+        name: `${String(p.name ?? "Plan").trim()} (Data)`, // the site files items under Data by matching the name
         biller_name: net.biller_name,
         short_name: net.biller_name,
         amount: sellPrice(price),
         fee: 0,
         country: "NG",
         is_airtime: false,
-        label_name: String(p.name ?? "Data plan").trim(),
+        label_name: "Phone number",
       } as BillerItem);
     }
   }
