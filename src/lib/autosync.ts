@@ -120,8 +120,8 @@ export async function autosyncBuyElectricity(p: AutosyncElectricityParams): Prom
   const secret = pin();
   if (!secret) throw new FlwError("AUTOSYNC_PIN is not set; AutoSyncNG purchases need the transaction PIN");
 
-  // UNVERIFIED path: the docs paste showed the body but not the URL. Confirm before any live purchase.
-  const r = await asCall("/elect", {
+  // Path from the v1 docs ("POST electricity"). Product id/code from GET /electricity. Confirm with a test before live use.
+  const r = await asCall("/electricity", {
     method: "POST",
     body: {
       request_ref: p.requestRef,
