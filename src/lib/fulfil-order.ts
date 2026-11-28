@@ -15,7 +15,7 @@
 
 import { supabaseAdmin } from "@/lib/supabase";
 import {
-  checkBillStatus, FlwError, makeReference, makeReferenceFor, providerLabel, activeProvider, balanceOf, billsTestMode,
+  checkBillStatus, FlwError, makeReferenceFor, providerForBiller, providerForReference, providerLabel, balanceOf, billsTestMode,
   failoverProvider, catalogueOf, findEquivalentItem, validateVia, vendVia,
   type BillsProviderName, type BillPaymentResult,
 } from "@/lib/bills";
@@ -73,10 +73,11 @@ export async function fulfilClaimedOrder(order: ClaimedOrder, hooks: FulfilHooks
   const sym = country.currencySymbol;
   const amountLocal = Number(order.amount_ngn);
   // Provider-specific, and stable across replays (reuses a reference already stored on the order).
-  const primary = activeProvider();
+  const primary = providerForBiller(order.biller_code, order.item_code);
+  const existingRef = typeof order.flw_reference === "string" ? order.flw_reference : "";
   const primaryRoute: Route = {
     provider: primary,
-    reference: makeReference(order.id, order.flw_reference),
+    reference: existingRef && providerForReference(existingRef) === primary ? existingRef : makeReferenceFor(primary, order.id),
     biller_code: order.biller_code,
     item_code: order.item_code,
     biller_name: order.biller_name,
@@ -118,7 +119,7 @@ export async function fulfilClaimedOrder(order: ClaimedOrder, hooks: FulfilHooks
   // Returns null (no failover) on any doubt, so the order falls back to the normal refund path.
   const failoverRoute = async (): Promise<Route | null> => {
     if (state.failedOver) return null;
-    const alt = failoverProvider();
+    const alt = failoverProvider(primary);
     if (!alt) return null;
     if (await fundsProblem(alt)) return null;
     if ((await providerHealth(alt)).open) return null; // don't hand an order to a backup that is failing too

@@ -24,6 +24,29 @@ export function activeProvider(): BillsProviderName {
   return v === "vtpass" ? "vtpass" : v === "paybeta" ? "paybeta" : v === "smeplug" ? "smeplug" : v === "autosync" ? "autosync" : "flutterwave";
 }
 
+const PROVIDER_NAMES: BillsProviderName[] = ["flutterwave", "vtpass", "paybeta", "smeplug", "autosync"];
+const TV_BILLER_CODES = new Set(["dstv", "gotv", "showmax", "startimes"]);
+
+function routeEnv(name: string): BillsProviderName | null {
+  const v = (process.env[name] ?? "").trim().toLowerCase();
+  return PROVIDER_NAMES.find((x) => x === v) ?? null;
+}
+
+/**
+ * Which provider sells this product. Optional per-category overrides:
+ *   BILLS_PROVIDER_AIRTIME      airtime (SMEPlug)
+ *   BILLS_PROVIDER_ELECTRICITY  the 12 DISCOs (AutoSyncNG)
+ *   BILLS_PROVIDER_TV           DSTV, GOtv, Showmax, StarTimes (AutoSyncNG, once its TV catalogue is built)
+ * Unset, or a product outside these groups, uses BILLS_PROVIDER as before.
+ */
+export function providerForBiller(billerCode: string, itemCode: string = ""): BillsProviderName {
+  const code = String(billerCode ?? "").trim().toLowerCase();
+  if (asn.AUTOSYNC_DISCO_IDS[code]) return routeEnv("BILLS_PROVIDER_ELECTRICITY") ?? activeProvider();
+  if (TV_BILLER_CODES.has(code)) return routeEnv("BILLS_PROVIDER_TV") ?? activeProvider();
+  if (itemCode === "airtime") return routeEnv("BILLS_PROVIDER_AIRTIME") ?? activeProvider();
+  return activeProvider();
+}
+
 export const providerLabel = (p: BillsProviderName = activeProvider()) =>
   p === "vtpass" ? "VTpass" : p === "paybeta" ? "Paybeta" : p === "smeplug" ? "SMEPlug" : p === "autosync" ? "AutoSyncNG" : "Flutterwave";
 
@@ -69,6 +92,14 @@ export function makeReference(orderId: string, existing?: unknown): string {
 // ───────────────────────── catalogue + lookup ─────────────────────────
 
 export async function getBillCategories(country: string = "NG"): Promise<flw.BillerItem[]> {
+  const overrides = [routeEnv("BILLS_PROVIDER_AIRTIME"), routeEnv("BILLS_PROVIDER_ELECTRICITY"), routeEnv("BILLS_PROVIDER_TV")]
+    .filter((x): x is BillsProviderName => x !== null);
+  if (overrides.length > 0) {
+    // Per-category routing: each provider's catalogue contributes only the products routed to it.
+    const provs = Array.from(new Set<BillsProviderName>([activeProvider(), ...overrides]));
+    const lists = await Promise.all(provs.map((x) => catalogueOf(x, country).catch(() => [] as flw.BillerItem[])));
+    return provs.flatMap((x, i) => lists[i].filter((it) => providerForBiller(it.biller_code, it.item_code) === x));
+  }
   const p = activeProvider();
   if (p === "vtpass") return country.toUpperCase() === "NG" ? vtp.vtGetBillCategories() : [];
   if (p === "paybeta") return country.toUpperCase() === "NG" ? pb.pbGetBillCategories() : [];
@@ -82,7 +113,7 @@ export async function validateCustomer(
   billerCode: string,
   identifier: string
 ): Promise<flw.ValidateResult> {
-  const p = activeProvider();
+  const p = providerForBiller(billerCode, itemCode);
   if (p === "vtpass") return vtp.vtValidate(itemCode, billerCode, identifier);
   if (p === "paybeta") return pb.pbValidate(itemCode, billerCode, identifier);
   if (p === "smeplug") return sme.smeValidate(identifier);
@@ -102,7 +133,7 @@ export type PurchaseCheck = { ok: true; item?: { biller_code: string; item_code:
  * Flutterwave keeps its existing behaviour (it validates amounts itself).
  */
 export async function checkPurchase(billerCode: string, itemCode: string, amountLocal: number): Promise<PurchaseCheck> {
-  const prov = activeProvider();
+  const prov = providerForBiller(billerCode, itemCode);
   if (prov === "flutterwave") return { ok: true };
   if (prov === "smeplug" || prov === "autosync") {
     // Fixed catalogue for these providers (the VTpass/Paybeta lookup does not apply to them).
@@ -141,7 +172,7 @@ export async function createBillPayment(params: {
   /** Recipient mobile — VTpass requires one on every vend; Flutterwave ignores it. */
   phone?: string | null;
 }): Promise<flw.BillPaymentResult> {
-  const p = activeProvider();
+  const p = providerForBiller(params.billerCode, params.itemCode);
   if (p === "vtpass") return vtp.vtPay(params);
   if (p === "paybeta") return pb.pbPay(params);
   if (p === "smeplug") return sme.smeVend(params);
@@ -237,10 +268,10 @@ export function providerConfigured(p: BillsProviderName): boolean {
   return !!(process.env.FLW_SECRET_KEY ?? "").trim();
 }
 
-export function failoverProvider(): BillsProviderName | null {
+export function failoverProvider(from: BillsProviderName = activeProvider()): BillsProviderName | null {
   const v = (process.env.BILLS_FAILOVER_PROVIDER ?? "").trim().toLowerCase();
   const p = ALL_PROVIDERS.find((x) => x === v) ?? null;
-  if (!p || p === activeProvider()) return null;
+  if (!p || p === from) return null;
   return providerConfigured(p) ? p : null;
 }
 
@@ -314,7 +345,7 @@ export async function bestNgnBalance(): Promise<number> {
 
 /** The provider's current price for a fixed-price item, or null if unknown or not fixed. Used to ask a payer to approve a new price. */
 export async function currentItemPrice(billerCode: string, itemCode: string): Promise<number | null> {
-  const prov = activeProvider();
+  const prov = providerForBiller(billerCode, itemCode);
   if (prov === "flutterwave" || prov === "smeplug" || prov === "autosync") return null; // SMEPlug publishes no fixed prices
   const { item } = prov === "paybeta"
     ? await pb.pbLookupItem(billerCode, itemCode)
