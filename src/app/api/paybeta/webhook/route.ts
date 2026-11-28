@@ -5,7 +5,6 @@ import { paybetaConfigured, pbParseWebhook, pbVerifySignature, isPbReference } f
 import { canAutoRefund, paymentRefLabel, refundOrderPayment } from "@/lib/refund-order";
 import { sendNgnReceiptEmail } from "@/lib/receipt-ngn";
 import { sendReceipt } from "@/lib/whatsapp";
-import { waOnFulfilled, waOnFailedRefunded } from "@/lib/wa/hooks";
 import { sendOrderRefundEmail, sendOrderRefundDelayedEmail } from "@/lib/order-status-mail";
 
 // Paybeta webhook — the ONLY way Paybeta tells us the final result of a vend that was pending.
@@ -106,7 +105,6 @@ export async function POST(req: Request) {
     try {
       if (done.email) await sendNgnReceiptEmail(done as any, token);
       if (done.recipient_whatsapp && done.source !== "whatsapp") await sendReceipt(done.recipient_whatsapp, { ...done, flw_token: token } as any);
-      await waOnFulfilled({ ...done, flw_token: token } as any);
     } catch (e) {
       console.error("[paybeta-webhook] receipt failed", e);
     }
@@ -126,7 +124,6 @@ export async function POST(req: Request) {
   try {
     await refundOrderPayment(order);
     await alertFounder("Paybeta reported failure — customer auto-refunded", `Order ${order.id} (${label}) ${paymentRefLabel(order)}`);
-    await waOnFailedRefunded(claimed as any);
     await sendOrderRefundEmail(order as any);
     return NextResponse.json({ received: true, state: "failed", order: "failed_refunded" });
   } catch (e: any) {

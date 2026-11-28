@@ -7,7 +7,6 @@ import { getCountry } from "@/lib/countries";
 import { alertFounder } from "@/lib/alerts";
 import { sendReceipt } from "@/lib/whatsapp";
 import { sendReceiptEmail } from "@/lib/email";
-import { waOnFulfilled, waOnFailedRefunded, waOnNeedsReview } from "@/lib/wa/hooks";
 
 // The heart of the product:
 //   checkout.session.completed
@@ -159,7 +158,6 @@ export async function POST(req: Request) {
     if (order.recipient_whatsapp && order.source !== "whatsapp") {
       await sendReceipt(order.recipient_whatsapp, { ...order, flw_token: token });
     }
-    await waOnFulfilled({ ...order, flw_token: token });
 
     return NextResponse.json({ fulfilled: true });
   } catch (e) {
@@ -181,7 +179,6 @@ export async function POST(req: Request) {
         if (order.recipient_whatsapp && order.source !== "whatsapp") {
           await sendReceipt(order.recipient_whatsapp, { ...order, flw_token: token });
         }
-        await waOnFulfilled({ ...order, flw_token: token });
         return NextResponse.json({ fulfilled: true, note: "recovered after error" });
       }
       if (outcome === "ambiguous") {
@@ -190,7 +187,6 @@ export async function POST(req: Request) {
           "🔍 Order needs review — do NOT ignore",
           `Order ${order.id} (${order.biller_name} ${sym}${amountLocal.toLocaleString()} ${currency})\nVend outcome unknown after error: ${errMsg}\nCheck FLW dashboard for reference ${reference}: refund in Stripe if NOT delivered.`
         );
-        await waOnNeedsReview(order);
         return NextResponse.json({ fulfilled: false, review: true });
       }
       // outcome === "failed": confirmed no delivery — safe to refund below.
@@ -209,7 +205,6 @@ export async function POST(req: Request) {
         "Vend failed — customer auto-refunded",
         `Order ${order.id} (${order.biller_name} ${sym}${amountLocal.toLocaleString()} ${currency})\nError: ${errMsg}`
       );
-      await waOnFailedRefunded(order);
     } catch (refundErr: any) {
       await db
         .from("orders")
@@ -219,7 +214,6 @@ export async function POST(req: Request) {
         "🚨 REFUND FAILED — manual action needed",
         `Order ${order.id}\nVend error: ${errMsg}\nRefund error: ${refundErr.message}\nPayment intent: ${session.payment_intent}`
       );
-      await waOnNeedsReview(order);
     }
 
     return NextResponse.json({ fulfilled: false, refunded: true });
