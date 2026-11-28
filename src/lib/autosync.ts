@@ -334,3 +334,72 @@ export async function autosyncVendElectricity(params: {
     extra: r.token,
   } as BillPaymentResult;
 }
+
+// ───────────────────────── TV (cable) bills ─────────────────────────
+// Renewal is charged at the account's own outstanding balance from AutoSyncNG's validation. The vend
+// re-checks that balance right before buying and refuses (notVended, so it is refunded) if it has moved.
+
+export const AUTOSYNC_TV_PRODUCTS: Record<string, { id: string; name: string }> = {
+  dstv: { id: "51", name: "DStv" },
+  gotv: { id: "50", name: "GOtv" },
+  showmax: { id: "53", name: "Showmax" },
+  startimes: { id: "52", name: "StarTimes" },
+};
+
+export const isAutosyncTvCode = (billerCode: string): boolean => Object.prototype.hasOwnProperty.call(AUTOSYNC_TV_PRODUCTS, String(billerCode ?? "").toLowerCase());
+
+export function autosyncTvCatalogue(): BillerItem[] {
+  return Object.entries(AUTOSYNC_TV_PRODUCTS).map(([code, p], i) => ({
+    id: 600000 + i,
+    biller_code: code,
+    item_code: "renew",
+    name: `${p.name} renewal`,
+    biller_name: p.name,
+    short_name: p.name.toUpperCase(),
+    amount: 0, // the account's own outstanding balance, checked at validation and again at vend
+    fee: 0,
+    country: "NG",
+    is_airtime: false,
+    label_name: `${p.name} renewal`,
+  } as BillerItem));
+}
+
+/** Validates a decoder. The outstanding balance is exposed as minimum = maximum, so the amount is fixed to it. */
+export async function autosyncValidateTv(identifier: string, billerCode: string): Promise<ValidateResult> {
+  const p = AUTOSYNC_TV_PRODUCTS[String(billerCode).toLowerCase()];
+  if (!p) return { response_code: "01", response_message: "Unknown TV provider", name: null, customer: identifier, minimum: 0, maximum: 0, fee: 0 } as ValidateResult;
+  const c = await autosyncValidateCable(identifier, p.id);
+  const owed = c.valid && c.outstanding !== null ? Math.round(c.outstanding) : 0;
+  return {
+    response_code: c.valid && owed > 0 ? "00" : "01",
+    response_message: c.valid && owed > 0 ? "Verified" : "Decoder not verified or nothing outstanding",
+    name: c.customerName,
+    customer: identifier,
+    minimum: owed,
+    maximum: owed,
+    fee: 0,
+  } as ValidateResult;
+}
+
+export async function autosyncVendTv(params: { billerCode: string; identifier: string; amountLocal: number; reference: string }): Promise<BillPaymentResult> {
+  const p = AUTOSYNC_TV_PRODUCTS[String(params.billerCode).toLowerCase()];
+  if (!p) throw notVended(`AutoSyncNG has no TV mapping for ${params.billerCode}`);
+  const amount = Math.round(params.amountLocal);
+  const check = await autosyncValidateCable(params.identifier, p.id);
+  if (!check.valid || check.outstanding === null || Math.round(check.outstanding) !== amount) {
+    throw notVended("The decoder's outstanding balance no longer matches the amount paid, so nothing was bought.");
+  }
+  const r = await autosyncRenewCable({ requestRef: params.reference, iucNumber: params.identifier, productId: p.id, amount });
+  return { amount: params.amountLocal, flw_ref: r.reference, tx_ref: params.reference, reference: params.reference, extra: null } as BillPaymentResult;
+}
+
+/** Electricity or TV, chosen by the biller code. */
+export async function autosyncValidateAny(identifier: string, billerCode: string, itemCode: string): Promise<ValidateResult> {
+  return isAutosyncTvCode(billerCode) ? autosyncValidateTv(identifier, billerCode) : autosyncValidateElectricity(identifier, billerCode, itemCode);
+}
+
+export async function autosyncVendAny(params: {
+  billerCode: string; itemCode: string; identifier: string; amountLocal: number; reference: string;
+}): Promise<BillPaymentResult> {
+  return isAutosyncTvCode(params.billerCode) ? autosyncVendTv(params) : autosyncVendElectricity(params);
+}

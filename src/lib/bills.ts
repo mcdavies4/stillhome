@@ -104,7 +104,7 @@ export async function getBillCategories(country: string = "NG"): Promise<flw.Bil
   if (p === "vtpass") return country.toUpperCase() === "NG" ? vtp.vtGetBillCategories() : [];
   if (p === "paybeta") return country.toUpperCase() === "NG" ? pb.pbGetBillCategories() : [];
   if (p === "smeplug") return country.toUpperCase() === "NG" ? sme.smeCatalogue() : [];
-  if (p === "autosync") return country.toUpperCase() === "NG" ? asn.autosyncCatalogue() : [];
+  if (p === "autosync") return country.toUpperCase() === "NG" ? [...asn.autosyncCatalogue(), ...asn.autosyncTvCatalogue()] : [];
   return flw.getBillCategories(country);
 }
 
@@ -117,7 +117,7 @@ export async function validateCustomer(
   if (p === "vtpass") return vtp.vtValidate(itemCode, billerCode, identifier);
   if (p === "paybeta") return pb.pbValidate(itemCode, billerCode, identifier);
   if (p === "smeplug") return sme.smeValidate(identifier);
-  if (p === "autosync") return asn.autosyncValidateElectricity(identifier, billerCode, itemCode);
+  if (p === "autosync") return asn.autosyncValidateAny(identifier, billerCode, itemCode);
   return flw.validateCustomer(itemCode, billerCode, identifier);
 }
 
@@ -137,7 +137,7 @@ export async function checkPurchase(billerCode: string, itemCode: string, amount
   if (prov === "flutterwave") return { ok: true };
   if (prov === "smeplug" || prov === "autosync") {
     // Fixed catalogue for these providers (the VTpass/Paybeta lookup does not apply to them).
-    const cat = prov === "smeplug" ? sme.smeCatalogue() : asn.autosyncCatalogue();
+    const cat = prov === "smeplug" ? sme.smeCatalogue() : [...asn.autosyncCatalogue(), ...asn.autosyncTvCatalogue()];
     const it = cat.find((c) => c.biller_code === billerCode && c.item_code === itemCode);
     if (!it) return { ok: false, error: "That plan isn't available right now — please pick it again." };
     return { ok: true, item: { biller_code: it.biller_code, item_code: it.item_code, biller_name: it.biller_name, name: it.name, short_name: it.short_name, is_airtime: it.is_airtime } };
@@ -176,7 +176,7 @@ export async function createBillPayment(params: {
   if (p === "vtpass") return vtp.vtPay(params);
   if (p === "paybeta") return pb.pbPay(params);
   if (p === "smeplug") return sme.smeVend(params);
-  if (p === "autosync") return asn.autosyncVendElectricity(params);
+  if (p === "autosync") return asn.autosyncVendAny(params);
   return flw.createBillPayment(params);
 }
 
@@ -286,7 +286,7 @@ export async function catalogueOf(p: BillsProviderName, country: string = "NG"):
   if (p === "vtpass") return country.toUpperCase() === "NG" ? vtp.vtGetBillCategories() : [];
   if (p === "paybeta") return country.toUpperCase() === "NG" ? pb.pbGetBillCategories() : [];
   if (p === "smeplug") return country.toUpperCase() === "NG" ? sme.smeCatalogue() : [];
-  if (p === "autosync") return country.toUpperCase() === "NG" ? asn.autosyncCatalogue() : [];
+  if (p === "autosync") return country.toUpperCase() === "NG" ? [...asn.autosyncCatalogue(), ...asn.autosyncTvCatalogue()] : [];
   return flw.getBillCategories(country);
 }
 
@@ -294,7 +294,7 @@ export async function validateVia(p: BillsProviderName, itemCode: string, biller
   if (p === "vtpass") return vtp.vtValidate(itemCode, billerCode, identifier);
   if (p === "paybeta") return pb.pbValidate(itemCode, billerCode, identifier);
   if (p === "smeplug") return sme.smeValidate(identifier);
-  if (p === "autosync") return asn.autosyncValidateElectricity(identifier, billerCode, itemCode);
+  if (p === "autosync") return asn.autosyncValidateAny(identifier, billerCode, itemCode);
   return flw.validateCustomer(itemCode, billerCode, identifier);
 }
 
@@ -331,7 +331,7 @@ export async function vendVia(p: BillsProviderName, params: Parameters<typeof cr
   if (p === "vtpass") return vtp.vtPay(params);
   if (p === "paybeta") return pb.pbPay(params);
   if (p === "smeplug") return sme.smeVend(params);
-  if (p === "autosync") return asn.autosyncVendElectricity(params);
+  if (p === "autosync") return asn.autosyncVendAny(params);
   return flw.createBillPayment(params);
 }
 
