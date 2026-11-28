@@ -43,7 +43,8 @@ export function providerForBiller(billerCode: string, itemCode: string = ""): Bi
   const code = String(billerCode ?? "").trim().toLowerCase();
   if (asn.AUTOSYNC_DISCO_IDS[code]) return routeEnv("BILLS_PROVIDER_ELECTRICITY") ?? activeProvider();
   if (TV_BILLER_CODES.has(code)) return routeEnv("BILLS_PROVIDER_TV") ?? activeProvider();
-  if (itemCode === "airtime") return routeEnv("BILLS_PROVIDER_AIRTIME") ?? activeProvider();
+  // SMEPlug sells airtime and data; BILLS_PROVIDER_AIRTIME routes both.
+  if (itemCode === "airtime" || sme.isSmeDataItem(itemCode)) return routeEnv("BILLS_PROVIDER_AIRTIME") ?? activeProvider();
   return activeProvider();
 }
 
@@ -103,7 +104,7 @@ export async function getBillCategories(country: string = "NG"): Promise<flw.Bil
   const p = activeProvider();
   if (p === "vtpass") return country.toUpperCase() === "NG" ? vtp.vtGetBillCategories() : [];
   if (p === "paybeta") return country.toUpperCase() === "NG" ? pb.pbGetBillCategories() : [];
-  if (p === "smeplug") return country.toUpperCase() === "NG" ? sme.smeCatalogue() : [];
+  if (p === "smeplug") return country.toUpperCase() === "NG" ? sme.smeCatalogueLive() : [];
   if (p === "autosync") return country.toUpperCase() === "NG" ? [...asn.autosyncCatalogue(), ...asn.autosyncTvCatalogue()] : [];
   return flw.getBillCategories(country);
 }
@@ -137,9 +138,13 @@ export async function checkPurchase(billerCode: string, itemCode: string, amount
   if (prov === "flutterwave") return { ok: true };
   if (prov === "smeplug" || prov === "autosync") {
     // Fixed catalogue for these providers (the VTpass/Paybeta lookup does not apply to them).
-    const cat = prov === "smeplug" ? sme.smeCatalogue() : [...asn.autosyncCatalogue(), ...asn.autosyncTvCatalogue()];
+    const cat = prov === "smeplug" ? await sme.smeCatalogueLive() : [...asn.autosyncCatalogue(), ...asn.autosyncTvCatalogue()];
     const it = cat.find((c) => c.biller_code === billerCode && c.item_code === itemCode);
     if (!it) return { ok: false, error: "That plan isn't available right now — please pick it again." };
+    // Fixed-price plans (SMEPlug data) must be bought at the live price; the browser amount is never trusted.
+    if (Number(it.amount) > 0 && Math.round(Number(it.amount)) !== Math.round(Number(amountLocal))) {
+      return { ok: false, error: "That plan's price has changed — please reload the page and try again." };
+    }
     return { ok: true, item: { biller_code: it.biller_code, item_code: it.item_code, biller_name: it.biller_name, name: it.name, short_name: it.short_name, is_airtime: it.is_airtime } };
   }
   const { item, min, max } = prov === "paybeta"
@@ -285,7 +290,7 @@ export function makeReferenceFor(p: BillsProviderName, orderId: string): string 
 export async function catalogueOf(p: BillsProviderName, country: string = "NG"): Promise<flw.BillerItem[]> {
   if (p === "vtpass") return country.toUpperCase() === "NG" ? vtp.vtGetBillCategories() : [];
   if (p === "paybeta") return country.toUpperCase() === "NG" ? pb.pbGetBillCategories() : [];
-  if (p === "smeplug") return country.toUpperCase() === "NG" ? sme.smeCatalogue() : [];
+  if (p === "smeplug") return country.toUpperCase() === "NG" ? sme.smeCatalogueLive() : [];
   if (p === "autosync") return country.toUpperCase() === "NG" ? [...asn.autosyncCatalogue(), ...asn.autosyncTvCatalogue()] : [];
   return flw.getBillCategories(country);
 }
@@ -346,7 +351,11 @@ export async function bestNgnBalance(): Promise<number> {
 /** The provider's current price for a fixed-price item, or null if unknown or not fixed. Used to ask a payer to approve a new price. */
 export async function currentItemPrice(billerCode: string, itemCode: string): Promise<number | null> {
   const prov = providerForBiller(billerCode, itemCode);
-  if (prov === "flutterwave" || prov === "smeplug" || prov === "autosync") return null; // SMEPlug publishes no fixed prices
+  if (prov === "smeplug" && sme.isSmeDataItem(itemCode)) {
+    const live = await sme.smeDataPrice(itemCode).catch(() => null);
+    return live === null ? null : Math.round(live);
+  }
+  if (prov === "flutterwave" || prov === "smeplug" || prov === "autosync") return null; // airtime and TV have no fixed price
   const { item } = prov === "paybeta"
     ? await pb.pbLookupItem(billerCode, itemCode)
     : await vtp.vtLookupItem(billerCode, itemCode);
