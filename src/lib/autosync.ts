@@ -103,6 +103,34 @@ export async function autosyncRequery(reference: string): Promise<AutosyncRequer
   return { found: true, state: "pending", detail: st || "unknown" };
 }
 
+export interface AutosyncMeterCheck {
+  valid: boolean;
+  customerName: string | null;
+  outstanding: number | null;
+}
+
+/**
+ * Check a meter number before taking money (POST /validate/electricity, from the v1 docs).
+ * A missing or unreadable answer is "not valid", so nothing is sold on a guess.
+ * The customer name is returned to the caller only; it is never logged.
+ */
+export async function autosyncValidateMeter(meterNumber: string, productId: string, type: "prepaid" | "postpaid"): Promise<AutosyncMeterCheck> {
+  const r = await asCall("/validate/electricity", {
+    method: "POST",
+    body: { meter_number: meterNumber, product_id: productId, type },
+  });
+  const d = r.body?.data;
+  if (r.http < 200 || r.http >= 300 || r.body?.status !== "ok" || d?.is_valid !== true) {
+    return { valid: false, customerName: null, outstanding: null };
+  }
+  const out = Number(d?.outstanding_amount);
+  return {
+    valid: true,
+    customerName: d?.customer_name ? String(d.customer_name).trim() : null,
+    outstanding: Number.isFinite(out) ? out : null,
+  };
+}
+
 export interface AutosyncElectricityParams {
   requestRef: string; // our reference, sent as request_ref
   meterNumber: string;
