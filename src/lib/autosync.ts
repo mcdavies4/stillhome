@@ -161,6 +161,47 @@ export async function autosyncValidateCable(iucNumber: string, productId: string
   };
 }
 
+export interface AutosyncCableRenewParams {
+  requestRef: string; // our reference, sent as request_ref
+  iucNumber: string;
+  productId: string; // dstv | gotv | showmax | startimes (or the numeric id)
+  amount: number; // the customer's outstanding_amount from validation
+}
+
+/**
+ * Renew a cable (TV) subscription (POST /cable, from the v1 docs).
+ * variation_code is "none" for a renewal, per the docs. Same safety rules as electricity:
+ * only a clean 4xx is "not vended"; anything else is unknown and goes to requery, never an automatic refund.
+ * Uses the transaction PIN from AUTOSYNC_PIN; the PIN is never logged or returned.
+ */
+export async function autosyncRenewCable(p: AutosyncCableRenewParams): Promise<{ reference: string }> {
+  const secret = pin();
+  if (!secret) throw new FlwError("AUTOSYNC_PIN is not set; AutoSyncNG purchases need the transaction PIN");
+
+  const r = await asCall("/cable", {
+    method: "POST",
+    body: {
+      request_ref: p.requestRef,
+      iuc_number: p.iucNumber,
+      product_id: p.productId,
+      variation_code: "none",
+      type: "renew",
+      amount: p.amount,
+      pin: secret,
+    },
+  });
+  const tx = r.body?.data?.transaction;
+  const msg = String(r.body?.message ?? "");
+
+  if (r.http >= 200 && r.http < 300 && r.body?.status === "ok" && tx?.reference) {
+    return { reference: String(tx.reference) };
+  }
+  if (r.http >= 400 && r.http < 500 && r.http !== 408 && r.http !== 429) {
+    throw notVended(`AutoSyncNG rejected the cable renewal (HTTP ${r.http})${msg ? `: ${msg}` : ""}`);
+  }
+  throw new FlwError(`AutoSyncNG cable outcome unclear (HTTP ${r.http})`);
+}
+
 export interface AutosyncElectricityParams {
   requestRef: string; // our reference, sent as request_ref
   meterNumber: string;
