@@ -227,10 +227,10 @@ export async function smeVend(params: {
 // within the cache window. Only plans with a wallet price (price > 0) are sold.
 // Item code: "data:<network_id>:<plan_id>". Price = wallet price in naira (fixed, checked at checkout).
 
-/** Our markup on the SMEPlug wallet price. Default 35%, override with SMEPLUG_DATA_MARKUP_PCT. Rounded up to N10. */
+/** Our markup on the SMEPlug wallet price. Default 20%, override with SMEPLUG_DATA_MARKUP_PCT. Rounded up to N10. */
 export function markupPct(): number {
   const v = Number(process.env.SMEPLUG_DATA_MARKUP_PCT);
-  return process.env.SMEPLUG_DATA_MARKUP_PCT !== undefined && Number.isFinite(v) && v >= 0 ? v : 35;
+  return process.env.SMEPLUG_DATA_MARKUP_PCT !== undefined && Number.isFinite(v) && v >= 0 ? v : 20;
 }
 export function sellPrice(walletPrice: number): number {
   return Math.ceil((walletPrice * (100 + markupPct())) / 100 / 10) * 10;
