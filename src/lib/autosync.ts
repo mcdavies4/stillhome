@@ -131,6 +131,36 @@ export async function autosyncValidateMeter(meterNumber: string, productId: stri
   };
 }
 
+export interface AutosyncCableCheck {
+  valid: boolean;
+  customerName: string | null;
+  outstanding: number | null;
+  accountStatus: string | null;
+}
+
+/**
+ * Check a decoder IUC / smartcard number before taking money (POST /validate/cable, from the v1 docs).
+ * product_id is the cable provider's id (DSTV 51, GOtv 50, Showmax 53, StarTimes 52 per GET /cable).
+ * A missing or unreadable answer is "not valid". The customer name is never logged.
+ */
+export async function autosyncValidateCable(iucNumber: string, productId: string): Promise<AutosyncCableCheck> {
+  const r = await asCall("/validate/cable", {
+    method: "POST",
+    body: { iuc_number: iucNumber, product_id: productId },
+  });
+  const d = r.body?.data;
+  if (r.http < 200 || r.http >= 300 || r.body?.status !== "ok" || d?.is_valid !== true) {
+    return { valid: false, customerName: null, outstanding: null, accountStatus: null };
+  }
+  const out = Number(d?.outstanding_amount);
+  return {
+    valid: true,
+    customerName: d?.customer_name ? String(d.customer_name).trim() : null,
+    outstanding: Number.isFinite(out) ? out : null,
+    accountStatus: d?.account_status ? String(d.account_status) : null,
+  };
+}
+
 export interface AutosyncElectricityParams {
   requestRef: string; // our reference, sent as request_ref
   meterNumber: string;
