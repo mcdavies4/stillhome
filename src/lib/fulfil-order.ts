@@ -22,7 +22,6 @@ import {
 import { getCountry } from "@/lib/countries";
 import { alertFounder } from "@/lib/alerts";
 import { sendReceipt } from "@/lib/whatsapp";
-import { waOnFulfilled, waOnFailedRefunded, waOnNeedsReview } from "@/lib/wa/hooks";
 import { tgNotifyOrder } from "@/lib/tg/notify";
 import { sendOrderRefundEmail, sendOrderCheckingEmail, sendOrderRefundDelayedEmail } from "@/lib/order-status-mail";
 import { providerHealth, noteBreakerOpen } from "@/lib/breaker";
@@ -92,7 +91,6 @@ export async function fulfilClaimedOrder(order: ClaimedOrder, hooks: FulfilHooks
     if (order.recipient_whatsapp && order.source !== "whatsapp") {
       await sendReceipt(order.recipient_whatsapp, { ...order, flw_token: token } as any);
     }
-    await waOnFulfilled({ ...order, flw_token: token } as any);
     await tgTell(order);
   };
 
@@ -232,7 +230,6 @@ export async function fulfilClaimedOrder(order: ClaimedOrder, hooks: FulfilHooks
           "🔍 Order needs review — do NOT ignore",
           `Order ${order.id} (${order.biller_name} ${sym}${amountLocal.toLocaleString()} ${currency})\nVend outcome unknown after error: ${errMsg}\nCheck the ${providerLabel(attempted!.provider)} dashboard for reference ${reference}: refund (${hooks.paymentLabel}) if NOT delivered.`
         );
-        await waOnNeedsReview(order as any);
         await sendOrderCheckingEmail(order as any);
         await tgTell(order);
         return { outcome: "needs_review" };
@@ -247,7 +244,6 @@ export async function fulfilClaimedOrder(order: ClaimedOrder, hooks: FulfilHooks
         "Vend failed — customer auto-refunded",
         `Order ${order.id} (${order.biller_name} ${sym}${amountLocal.toLocaleString()} ${currency})\n${hooks.paymentLabel}\nError: ${errMsg}`
       );
-      await waOnFailedRefunded(order as any);
       await sendOrderRefundEmail(order as any);
       await tgTell(order);
       return { outcome: "refunded" };
@@ -260,7 +256,6 @@ export async function fulfilClaimedOrder(order: ClaimedOrder, hooks: FulfilHooks
         "🚨 REFUND FAILED — manual action needed",
         `Order ${order.id}\nVend error: ${errMsg}\nRefund error: ${refundErr?.message}\n${hooks.paymentLabel}`
       );
-      await waOnNeedsReview(order as any);
       await sendOrderRefundDelayedEmail(order as any);
       await tgTell(order);
       return { outcome: "refund_failed" };

@@ -5,7 +5,6 @@ import { smeplugConfigured, smeStatus, isSmeReference } from "@/lib/smeplug";
 import { canAutoRefund, paymentRefLabel, refundOrderPayment } from "@/lib/refund-order";
 import { sendNgnReceiptEmail } from "@/lib/receipt-ngn";
 import { sendReceipt } from "@/lib/whatsapp";
-import { waOnFulfilled, waOnFailedRefunded } from "@/lib/wa/hooks";
 import { sendOrderRefundEmail, sendOrderRefundDelayedEmail } from "@/lib/order-status-mail";
 
 // SMEPlug transaction webhook. SMEPlug's docs describe no signature header, so the payload is
@@ -75,7 +74,6 @@ export async function POST(req: Request) {
     try {
       if (done.email) await sendNgnReceiptEmail(done as any, null);
       if (done.recipient_whatsapp && done.source !== "whatsapp") await sendReceipt(done.recipient_whatsapp, done as any);
-      await waOnFulfilled(done as any);
     } catch (e) {
       console.error("[smeplug-webhook] receipt failed", e);
     }
@@ -95,7 +93,6 @@ export async function POST(req: Request) {
   try {
     await refundOrderPayment(order);
     await alertFounder("SMEPlug reported failure — customer auto-refunded", `Order ${order.id} (${label}) ${paymentRefLabel(order)}`);
-    await waOnFailedRefunded(claimed as any);
     await sendOrderRefundEmail(order as any);
     return NextResponse.json({ received: true, state: "failed", order: "failed_refunded" });
   } catch (e: any) {
