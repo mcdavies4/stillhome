@@ -227,6 +227,15 @@ export async function smeVend(params: {
 // within the cache window. Only plans with a wallet price (price > 0) are sold.
 // Item code: "data:<network_id>:<plan_id>". Price = wallet price in naira (fixed, checked at checkout).
 
+/** Our markup on the SMEPlug wallet price. Default 35%, override with SMEPLUG_DATA_MARKUP_PCT. Rounded up to N10. */
+export function markupPct(): number {
+  const v = Number(process.env.SMEPLUG_DATA_MARKUP_PCT);
+  return process.env.SMEPLUG_DATA_MARKUP_PCT !== undefined && Number.isFinite(v) && v >= 0 ? v : 35;
+}
+export function sellPrice(walletPrice: number): number {
+  return Math.ceil((walletPrice * (100 + markupPct())) / 100 / 10) * 10;
+}
+
 const DATA_CACHE_MS = 5 * 60 * 1000;
 let dataCache: { at: number; items: BillerItem[] } | null = null;
 const NETWORK_BY_ID: Record<string, { biller_code: string; biller_name: string }> = {
@@ -265,7 +274,7 @@ export async function smeDataCatalogue(): Promise<BillerItem[]> {
         name: String(p.name ?? "Data plan").trim(),
         biller_name: net.biller_name,
         short_name: net.biller_name,
-        amount: Math.round(price),
+        amount: sellPrice(price),
         fee: 0,
         country: "NG",
         is_airtime: false,
