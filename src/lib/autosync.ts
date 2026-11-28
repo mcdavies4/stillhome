@@ -21,6 +21,7 @@
 // The whole provider stays off until BILLS_PROVIDER or BILLS_FAILOVER_PROVIDER names "autosync".
 
 import { FlwError } from "@/lib/flutterwave";
+import type { BillerItem, ValidateResult, BillPaymentResult } from "@/lib/flutterwave";
 
 const base = () => (process.env.AUTOSYNC_BASE ?? "https://autosyncng.com/api/v1").trim().replace(/\/+$/, "");
 const apiKey = () => (process.env.AUTOSYNC_API_KEY ?? "").trim();
@@ -243,4 +244,93 @@ export async function autosyncBuyElectricity(p: AutosyncElectricityParams): Prom
   }
   // Anything else is unknown. Requery before deciding anything.
   throw new FlwError(`AutoSyncNG electricity outcome unclear (HTTP ${r.http})`);
+}
+
+// ───────────────────────── bills-provider adapter (electricity) ─────────────────────────
+// Electricity only for now. Cable renewals need a variable-amount flow that isn't wired yet.
+
+/** AutoSync's disco product ids (from GET /electricity), keyed by the code we use as biller_code. */
+export const AUTOSYNC_DISCO_IDS: Record<string, { id: number; name: string }> = {
+  aba: { id: 49, name: "Aba Electricity Distribution Company [APLE]" },
+  abuja: { id: 44, name: "Abuja Electricity Distribution Company [AEDC]" },
+  benin: { id: 46, name: "Benin Electricity Distribution Company [BEDC]" },
+  eko: { id: 45, name: "Eko Electricity Distribution Company [EKEDC]" },
+  enugu: { id: 43, name: "Enugu Electricity Distribution Company [EEDC]" },
+  ibadan: { id: 38, name: "Ibadan Electricity Distribution Company [IBEDC]" },
+  ikeja: { id: 39, name: "Ikeja Electricity Distribution Company [IKEDC]" },
+  jos: { id: 42, name: "Jos Electricity Distribution Company [JED]" },
+  kaduna: { id: 48, name: "Kaduna Electricity Distribution Company [KAEDC]" },
+  kano: { id: 40, name: "Kano Electricity Distribution Company [KEDCO]" },
+  port: { id: 41, name: "Port Harcourt Electricity Distribution Company [PHED]" },
+  yola: { id: 47, name: "Yola Electricity Distribution Company [YEDC]" },
+};
+
+export const autosyncReference = (orderId: string): string => `ASN${orderId.replace(/-/g, "").toLowerCase()}`;
+export const isAutosyncReference = (ref: string): boolean => /^ASN[0-9a-f]{32}$/i.test(ref);
+
+/** Electricity products for the catalogue: each distributor, prepaid or postpaid. Amount is chosen by the customer. */
+export function autosyncCatalogue(): BillerItem[] {
+  const out: BillerItem[] = [];
+  for (const [code, d] of Object.entries(AUTOSYNC_DISCO_IDS)) {
+    for (const [type, n] of [["prepaid", 1], ["postpaid", 2]] as const) {
+      out.push({
+        id: d.id * 10 + n,
+        biller_code: code,
+        item_code: type,
+        name: `${d.name} (${type})`,
+        biller_name: d.name,
+        short_name: code.toUpperCase(),
+        amount: 0,
+        fee: 0,
+        country: "NG",
+        is_airtime: false,
+        label_name: `${d.name} (${type})`,
+      } as BillerItem);
+    }
+  }
+  return out;
+}
+
+/** Meter check for the bills flow. A failed or unreadable check is "not valid", so nothing is sold on a guess. */
+export async function autosyncValidateElectricity(identifier: string, billerCode: string, itemCode: string): Promise<ValidateResult> {
+  const d = AUTOSYNC_DISCO_IDS[billerCode];
+  const type = itemCode === "postpaid" ? "postpaid" : "prepaid";
+  if (!d) return { response_code: "01", response_message: "Unknown distributor", name: null, customer: identifier, minimum: 0, maximum: 0, fee: 0 } as ValidateResult;
+  const c = await autosyncValidateMeter(identifier, String(d.id), type);
+  return {
+    response_code: c.valid ? "00" : "01",
+    response_message: c.valid ? "Verified" : "Meter not verified",
+    name: c.customerName,
+    customer: identifier,
+    minimum: 0,
+    maximum: 0,
+    fee: 0,
+  } as ValidateResult;
+}
+
+/** Vend one electricity order through the bills flow. Clean rejections are refundable; everything else is not. */
+export async function autosyncVendElectricity(params: {
+  billerCode: string;
+  itemCode: string;
+  identifier: string;
+  amountLocal: number;
+  reference: string;
+}): Promise<BillPaymentResult> {
+  const d = AUTOSYNC_DISCO_IDS[params.billerCode];
+  if (!d) throw notVended(`AutoSyncNG has no distributor mapping for ${params.billerCode}`);
+  const type = params.itemCode === "postpaid" ? "postpaid" : "prepaid";
+  const r = await autosyncBuyElectricity({
+    requestRef: params.reference,
+    meterNumber: params.identifier,
+    productId: String(d.id),
+    type,
+    amount: Math.round(params.amountLocal),
+  });
+  return {
+    amount: params.amountLocal,
+    flw_ref: r.reference,
+    tx_ref: params.reference,
+    reference: params.reference,
+    extra: r.token,
+  } as BillPaymentResult;
 }
